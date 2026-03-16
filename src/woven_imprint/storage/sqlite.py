@@ -83,7 +83,19 @@ END;
 CREATE INDEX IF NOT EXISTS idx_memories_character ON memories(character_id, tier, status);
 CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
 CREATE INDEX IF NOT EXISTS idx_relationships_character ON relationships(character_id);
+
+-- Schema version tracking
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER PRIMARY KEY,
+    applied_at DATETIME DEFAULT (datetime('now'))
+);
+INSERT OR IGNORE INTO schema_version (version) VALUES (1);
 """
+
+# Future migrations go here: version → SQL
+_MIGRATIONS: dict[int, str] = {
+    # 2: "ALTER TABLE characters ADD COLUMN ...",
+}
 
 
 def _serialize_embedding(vec: list[float]) -> bytes:
@@ -111,6 +123,21 @@ class SQLiteStorage:
 
     def _init_schema(self) -> None:
         self._conn.executescript(_SCHEMA)
+        self._run_migrations()
+
+    def _run_migrations(self) -> None:
+        """Apply pending schema migrations."""
+        try:
+            row = self._conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+            current = row[0] if row and row[0] else 1
+        except Exception:
+            current = 1
+
+        for version in sorted(_MIGRATIONS.keys()):
+            if version > current:
+                self._conn.executescript(_MIGRATIONS[version])
+                self._conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
+                self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
@@ -264,13 +291,24 @@ class SQLiteStorage:
         return self._conn.execute(q, params).fetchone()["c"]
 
     def fts_search(self, character_id: str, query: str, limit: int = 50) -> list[dict]:
-        """Full-text search using FTS5 (BM25 ranking)."""
+        """Full-text search using FTS5 (BM25 ranking).
+
+        Query is sanitized to prevent FTS5 operator injection.
+        """
+        # Sanitize: strip FTS5 operators, wrap each word in quotes
+        import re
+
+        words = re.findall(r"\w+", query)
+        if not words:
+            return []
+        safe_query = " OR ".join(f'"{w}"' for w in words[:20])
+
         rows = self._conn.execute(
             """SELECT m.*, rank FROM memories_fts
                JOIN memories m ON memories_fts.rowid = m.rowid
                WHERE memories_fts MATCH ? AND m.character_id = ? AND m.status = 'active'
                ORDER BY rank LIMIT ?""",
-            (query, character_id, limit),
+            (safe_query, character_id, limit),
         ).fetchall()
         return [self._row_to_memory(r) for r in rows]
 

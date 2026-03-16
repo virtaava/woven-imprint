@@ -231,25 +231,27 @@ woven_imprint/
 │   └── consistency.py    # NLI-inspired consistency checker
 ├── relationship/
 │   ├── __init__.py
-│   ├── model.py          # RelationshipModel — dimensional tracking
-│   └── graph.py          # Multi-character relationship graph
+│   └── model.py          # RelationshipModel — dimensional tracking
+├── narrative/
+│   ├── __init__.py
+│   └── arc.py            # Narrative arc tracking + story beats
 ├── llm/
 │   ├── __init__.py
 │   ├── base.py           # Abstract LLM interface
-│   ├── openai.py         # OpenAI / compatible API
-│   ├── anthropic.py      # Anthropic Claude
-│   ├── ollama.py         # Ollama local models
-│   └── vllm.py           # vLLM local models
+│   ├── openai_llm.py     # OpenAI / compatible API
+│   ├── anthropic_llm.py  # Anthropic Claude
+│   └── ollama.py         # Ollama local models
 ├── embedding/
 │   ├── __init__.py
 │   ├── base.py           # Abstract embedding interface
-│   ├── openai.py         # OpenAI embeddings
-│   ├── ollama.py         # Ollama embeddings (nomic-embed-text)
-│   └── sentence_transformers.py
+│   ├── openai_embedding.py  # OpenAI embeddings
+│   └── ollama.py         # Ollama embeddings (nomic-embed-text)
+├── server/
+│   ├── __init__.py
+│   └── api.py            # OpenAI-compatible HTTP proxy
 ├── storage/
 │   ├── __init__.py
-│   ├── sqlite.py         # SQLite backend (default)
-│   └── qdrant.py         # Qdrant backend (optional)
+│   └── sqlite.py         # SQLite backend (default)
 └── utils/
     ├── __init__.py
     ├── rrf.py            # Reciprocal Rank Fusion
@@ -265,12 +267,12 @@ engine = Engine(db_path="characters.db", llm=OllamaLLM("qwen3"), embedding=Ollam
 character = engine.create_character(name, persona, constraints)
 character = engine.load_character(character_id)
 
-response = character.chat(message, user_id=None, session_id=None)
+response = character.chat(message, user_id=None)
 character.reflect()  # generate higher-level reflections
 character.consolidate()  # compress buffer → core
 
 memories = character.recall(query, limit=10)
-relationship = character.get_relationship(target_id)
+relationship = character.relationships.get(target_id)
 
 character.export(path)  # full character state as JSON
 character = engine.import_character(path)

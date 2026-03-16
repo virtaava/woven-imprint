@@ -168,6 +168,10 @@ def group_interaction(
 
             accumulated_context += f"\n{char.name}: {response[:200]}"
 
+        # Trim accumulated context to prevent unbounded growth
+        if len(accumulated_context) > 5000:
+            accumulated_context = accumulated_context[-4000:]
+
         results.append(round_result)
 
     return results

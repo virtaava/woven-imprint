@@ -208,6 +208,41 @@ def cmd_export(args):
     engine.close()
 
 
+def cmd_delete(args):
+    """Delete a character."""
+    engine = _get_db_only_engine(args.db)
+    chars = engine.list_characters()
+    query = args.character.lower()
+    match = next(
+        (c for c in chars if c["id"] == args.character or c["name"].lower().startswith(query)),
+        None,
+    )
+    if not match:
+        print(f"Character not found: {args.character}")
+        engine.close()
+        return
+
+    name = match["name"]
+    if not args.yes:
+        confirm = input(f"Delete {name} and all their data? [y/N] ").strip().lower()
+        if confirm != "y":
+            print("Cancelled.")
+            engine.close()
+            return
+
+    engine.storage.delete_character(match["id"])
+    print(f"Deleted: {name}")
+    engine.close()
+
+
+def cmd_import(args):
+    """Import a character from JSON."""
+    engine = _get_engine(args.db, args.model)
+    char = engine.import_character(args.path)
+    print(f"Imported: {char.name} (id: {char.id})")
+    engine.close()
+
+
 def cmd_serve(args):
     """Start the OpenAI-compatible API server."""
     from .server.api import run_server
@@ -310,14 +345,22 @@ def _print_subtle_feedback(char, user_id):
 
 
 def main():
+    from . import __version__
+
     parser = argparse.ArgumentParser(
         prog="woven-imprint",
         description="Woven Imprint — Persistent Character Infrastructure",
     )
+    parser.add_argument("--version", action="version", version=f"woven-imprint {__version__}")
     parser.add_argument(
         "--db", default=None, help="Database path (default: ~/.woven_imprint/characters.db)"
     )
-    parser.add_argument("--model", default="qwen3-coder:30b", help="Ollama model name")
+    import os
+
+    default_model = os.environ.get("WOVEN_IMPRINT_MODEL", "llama3.2")
+    parser.add_argument(
+        "--model", default=default_model, help="Ollama model name (env: WOVEN_IMPRINT_MODEL)"
+    )
 
     sub = parser.add_subparsers(dest="command")
 
@@ -344,6 +387,15 @@ def main():
     p_export.add_argument("character", help="Character name or ID")
     p_export.add_argument("-o", "--output", help="Output file path")
 
+    # delete
+    p_delete = sub.add_parser("delete", help="Delete a character")
+    p_delete.add_argument("character", help="Character name or ID")
+    p_delete.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
+
+    # import
+    p_import = sub.add_parser("import", help="Import character from JSON")
+    p_import.add_argument("path", help="Path to exported JSON file")
+
     # serve
     p_serve = sub.add_parser("serve", help="Start OpenAI-compatible API server")
     p_serve.add_argument("--port", type=int, default=8650)
@@ -357,6 +409,8 @@ def main():
         "list": cmd_list,
         "stats": cmd_stats,
         "export": cmd_export,
+        "delete": cmd_delete,
+        "import": cmd_import,
         "serve": cmd_serve,
     }
 

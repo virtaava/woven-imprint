@@ -180,6 +180,12 @@ class Engine:
         """Close the database connection."""
         self.storage.close()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
     def _seed_bedrock(self, char: Character, persona: dict) -> None:
         """Seed bedrock memories from the persona definition."""
         seeds = []

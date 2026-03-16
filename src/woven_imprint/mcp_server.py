@@ -105,7 +105,16 @@ def chat(character_id: str, message: str, user_id: str = "mcp_user") -> str:
         return json.dumps({"error": f"Character {character_id} not found"})
 
     response = char.chat(message, user_id=user_id)
-    return json.dumps({"character": char.name, "response": response})
+    return json.dumps(
+        {
+            "character": char.name,
+            "response": response,
+            "emotion": char.emotion.mood,
+            "emotion_intensity": char.emotion.intensity,
+            "arc_phase": char.arc.current_phase.value,
+            "arc_tension": char.arc.tension,
+        }
+    )
 
 
 @mcp.tool()

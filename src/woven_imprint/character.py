@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .context import ContextBudget, ContextManager
 from .llm.base import LLMProvider
+from .log import logger
 from .embedding.base import EmbeddingProvider
 from .memory.store import MemoryStore
 from .memory.retrieval import MemoryRetriever
@@ -251,6 +253,14 @@ class Character:
             for e in events
         ]
 
+    def get_relationship(self, target_id: str) -> dict | None:
+        """Get the relationship with another entity.
+
+        Returns:
+            Relationship dict with dimensions, or None if no relationship exists.
+        """
+        return self.relationships.get(target_id)
+
     def recall(self, query: str, limit: int = 10) -> list[dict]:
         """Explicitly recall memories relevant to a query."""
         return self.retriever.retrieve(query, limit=limit)
@@ -357,11 +367,18 @@ class Character:
         """Export full character state as JSON.
 
         Args:
-            path: Optional file path to write JSON to.
+            path: Optional file path to write JSON to. Must be a regular
+                  file path (no directory traversal to system locations).
 
         Returns:
             Character state dict.
         """
+        if path:
+            resolved = Path(path).resolve()
+            # Block writing to system directories
+            blocked = ("/etc", "/usr", "/bin", "/sbin", "/var", "/sys", "/proc")
+            if any(str(resolved).startswith(b) for b in blocked):
+                raise ValueError(f"Cannot export to system directory: {resolved}")
         data = {
             "id": self.id,
             "persona": self.persona.to_dict(),
@@ -523,8 +540,8 @@ class Character:
                         importance=0.6,
                         metadata={"source": "extraction", "user_id": user_id},
                     )
-        except (ValueError, KeyError):
-            pass  # Extraction failed — not critical
+        except (ValueError, KeyError) as e:
+            logger.debug("Fact extraction failed: %s", e)
 
     def _update_relationship(self, user_msg: str, response: str, user_id: str) -> None:
         """LLM-assess how an interaction shifts relationship dimensions."""
@@ -570,8 +587,8 @@ class Character:
                     deltas[key] = float(val)
             if deltas:
                 self.relationships.update(user_id, deltas)
-        except (ValueError, KeyError, TypeError):
-            pass  # Relationship update failed — not critical
+        except (ValueError, KeyError, TypeError) as e:
+            logger.debug("Relationship update failed: %s", e)
 
     def _format_memories(self, memories: list[dict]) -> str:
         """Format retrieved memories for inclusion in prompt.

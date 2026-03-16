@@ -194,6 +194,65 @@ def cmd_export(args):
     engine.close()
 
 
+def cmd_sync(args):
+    """Inject a character into an AI system."""
+    engine = _get_engine(args.db, args.model)
+    chars = engine.list_characters()
+    query = args.character.lower()
+    match = next(
+        (c for c in chars if c["id"] == args.character or c["name"].lower().startswith(query)),
+        None,
+    )
+    if not match:
+        print(f"Character not found: {args.character}")
+        engine.close()
+        return
+
+    char = engine.load_character(match["id"])
+
+    from .sync import ClaudeCodeSync, HermesSync, OpenClawSync, GenericMarkdownSync
+
+    adapters = {
+        "claude": lambda: ClaudeCodeSync(project_dir=args.path or "."),
+        "hermes": lambda: HermesSync(hermes_dir=args.path),
+        "openclaw": lambda: OpenClawSync(workspace_dir=args.path),
+        "cursor": lambda: GenericMarkdownSync(args.path or ".cursorrules"),
+        "file": lambda: GenericMarkdownSync(args.path or "character.md"),
+    }
+
+    adapter = adapters[args.target]()
+    files = adapter.sync(char)
+
+    print(f"Synced {char.name} to {args.target}:")
+    for desc, path in files.items():
+        print(f"  {desc}: {path}")
+    engine.close()
+
+
+def cmd_unsync(args):
+    """Remove character injection from an AI system."""
+    from .sync import ClaudeCodeSync, HermesSync, OpenClawSync, GenericMarkdownSync
+
+    adapters = {
+        "claude": lambda: ClaudeCodeSync(project_dir=args.path or "."),
+        "hermes": lambda: HermesSync(hermes_dir=args.path),
+        "openclaw": lambda: OpenClawSync(workspace_dir=args.path),
+        "cursor": lambda: GenericMarkdownSync(args.path or ".cursorrules"),
+        "file": lambda: GenericMarkdownSync(args.path or "character.md"),
+    }
+
+    adapter = adapters[args.target]()
+    adapter.unsync()
+    print(f"Removed character injection from {args.target}.")
+
+
+def cmd_serve(args):
+    """Start the OpenAI-compatible API server."""
+    from .server.api import run_server
+
+    run_server(port=args.port, db_path=args.db, model=args.model)
+
+
 def _chat_loop(char, engine):
     """Interactive chat REPL with live system feedback."""
     user_id = "cli_user"
@@ -323,6 +382,30 @@ def main():
     p_export.add_argument("character", help="Character name or ID")
     p_export.add_argument("-o", "--output", help="Output file path")
 
+    # sync
+    p_sync = sub.add_parser("sync", help="Inject character into an AI system")
+    p_sync.add_argument("character", help="Character name or ID")
+    p_sync.add_argument(
+        "--target",
+        choices=["claude", "hermes", "openclaw", "cursor", "file"],
+        default="claude",
+        help="Target system (default: claude)",
+    )
+    p_sync.add_argument("--path", default=None, help="Target path (for file/cursor mode)")
+
+    # unsync
+    p_unsync = sub.add_parser("unsync", help="Remove character injection")
+    p_unsync.add_argument(
+        "--target",
+        choices=["claude", "hermes", "openclaw", "cursor", "file"],
+        default="claude",
+    )
+    p_unsync.add_argument("--path", default=None)
+
+    # serve
+    p_serve = sub.add_parser("serve", help="Start OpenAI-compatible API server")
+    p_serve.add_argument("--port", type=int, default=8650)
+
     args = parser.parse_args()
 
     commands = {
@@ -332,6 +415,9 @@ def main():
         "list": cmd_list,
         "stats": cmd_stats,
         "export": cmd_export,
+        "sync": cmd_sync,
+        "unsync": cmd_unsync,
+        "serve": cmd_serve,
     }
 
     if args.command in commands:

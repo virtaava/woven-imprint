@@ -52,25 +52,33 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         elif self.path == "/health":
             self._send_json({"status": "ok"})
         else:
-            self._send_json({"error": "not found"}, 404)
+            self._send_error("not found", 404)
+
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests."""
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.end_headers()
 
     def do_POST(self):
         if self.path == "/v1/chat/completions":
             self._handle_chat()
         else:
-            self._send_json({"error": "not found"}, 404)
+            self._send_error("not found", 404)
 
     def _handle_chat(self):
         body = self._read_body()
         if not body:
-            self._send_json({"error": "empty body"}, 400)
+            self._send_error("empty body", 400)
             return
 
         model_name = body.get("model", "").lower().strip()
         messages = body.get("messages", [])
 
         if not model_name or not messages:
-            self._send_json({"error": "model and messages required"}, 400)
+            self._send_error("model and messages required", 400)
             return
 
         engine = _get_engine()
@@ -90,12 +98,9 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         )
 
         if not match:
-            self._send_json(
-                {
-                    "error": f"Character '{model_name}' not found. "
-                    f"Available: {', '.join(c['name'] for c in chars)}. "
-                    f"Create one with: woven-imprint create '{model_name}'"
-                },
+            self._send_error(
+                f"Character '{model_name}' not found. "
+                f"Use GET /v1/models to list available characters.",
                 404,
             )
             return
@@ -110,7 +115,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
                 break
 
         if not user_msg:
-            self._send_json({"error": "no user message found"}, 400)
+            self._send_error("no user message found", 400)
             return
 
         # Extract user_id from the first system message or use default
@@ -173,15 +178,24 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             )
         self._send_json({"object": "list", "data": models})
 
-    def _read_body(self) -> dict | None:
+    def _read_body(self, max_size: int = 1_048_576) -> dict | None:
         length = int(self.headers.get("Content-Length", 0))
         if length == 0:
+            return None
+        if length > max_size:
             return None
         raw = self.rfile.read(length)
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
             return None
+
+    def _send_error(self, message: str, status: int = 400):
+        """Send OpenAI-compatible error response."""
+        self._send_json(
+            {"error": {"message": message, "type": "invalid_request_error", "code": status}},
+            status,
+        )
 
     def _send_json(self, data: Any, status: int = 200):
         body = json.dumps(data).encode()

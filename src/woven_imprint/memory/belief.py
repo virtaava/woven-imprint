@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..embedding.base import EmbeddingProvider
 from ..storage.sqlite import SQLiteStorage
 from ..utils.text import generate_id
 
@@ -12,9 +13,12 @@ class BeliefReviser:
     REINFORCE_DELTA = 0.15
     CONTRADICT_CERTAINTY = 0.0
 
-    def __init__(self, storage: SQLiteStorage, character_id: str):
+    def __init__(
+        self, storage: SQLiteStorage, character_id: str, embedder: EmbeddingProvider | None = None
+    ):
         self.storage = storage
         self.character_id = character_id
+        self.embedder = embedder
 
     def reinforce(self, memory_id: str) -> float:
         """Increase certainty of a memory. Returns new certainty value."""
@@ -45,7 +49,7 @@ class BeliefReviser:
             "character_id": self.character_id,
             "tier": tier,
             "content": new_content,
-            "embedding": None,  # Caller should compute embedding
+            "embedding": self.embedder.embed(new_content) if self.embedder else None,
             "importance": old.get("importance", 0.5) if old else 0.5,
             "certainty": 0.8,  # New contradicting info starts slightly below max
             "status": "active",

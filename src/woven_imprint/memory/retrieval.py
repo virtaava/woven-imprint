@@ -154,12 +154,15 @@ class MemoryRetriever:
 
         # Return top-N memories
         results = []
+        touch_ids = []
         for mem_id, score in fused[:limit]:
             if mem_id in memory_map:
                 mem = memory_map[mem_id].copy()
                 mem["_retrieval_score"] = score
-                # Touch accessed_at for recency tracking
-                self.storage.touch_memory(mem_id)
                 results.append(mem)
+                touch_ids.append(mem_id)
+
+        # Batch-update accessed_at (single transaction, no FTS reindex)
+        self.storage.touch_memories_batch(touch_ids)
 
         return results

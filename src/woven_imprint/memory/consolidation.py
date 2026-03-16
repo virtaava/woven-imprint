@@ -92,7 +92,7 @@ class ConsolidationEngine:
         Returns:
             Dict with keys: clusters, summarized, created, archived.
         """
-        buffer = self.storage.get_memories(self.character_id, tier="buffer")
+        buffer = self.storage.get_memories(self.character_id, tier="buffer", limit=500)
         if len(buffer) < 10:
             return {"clusters": 0, "summarized": 0, "created": 0, "archived": 0}
 

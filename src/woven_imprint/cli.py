@@ -23,6 +23,20 @@ def _get_engine(db_path: str | None = None, model: str = "qwen3-coder:30b") -> E
     )
 
 
+def _get_db_only_engine(db_path: str | None = None) -> Engine:
+    """Engine for DB-only operations (list, stats) — no LLM needed."""
+    from .storage.sqlite import SQLiteStorage
+
+    db = db_path or DEFAULT_DB
+    Path(db).parent.mkdir(parents=True, exist_ok=True)
+    # Use a dummy engine that only needs storage
+    engine = object.__new__(Engine)
+    engine.storage = SQLiteStorage(db)
+    engine.llm = None
+    engine.embedder = None
+    return engine
+
+
 def cmd_demo(args):
     """Run the interactive demo with a pre-built character."""
     engine = _get_engine(args.db, args.model)
@@ -119,7 +133,7 @@ def cmd_chat(args):
 
 def cmd_list(args):
     """List all characters."""
-    engine = _get_engine(args.db)
+    engine = _get_db_only_engine(args.db)
     chars = engine.list_characters()
     if not chars:
         print("No characters. Create one with: woven-imprint create 'Name'")
@@ -133,7 +147,7 @@ def cmd_list(args):
 
 def cmd_stats(args):
     """Show character statistics."""
-    engine = _get_engine(args.db)
+    engine = _get_db_only_engine(args.db)
     chars = engine.list_characters()
     query = args.character.lower()
     match = next(

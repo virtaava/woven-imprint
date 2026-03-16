@@ -116,6 +116,17 @@ class Engine:
             persona_model,
         )
 
+    def get_character(self, character_id: str) -> Character:
+        """Load a character, raising if not found.
+
+        Raises:
+            KeyError: If no character with this ID exists.
+        """
+        char = self.load_character(character_id)
+        if char is None:
+            raise KeyError(f"Character not found: {character_id}")
+        return char
+
     def list_characters(self) -> list[dict]:
         """List all characters in the database."""
         return self.storage.list_characters()

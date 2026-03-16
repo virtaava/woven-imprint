@@ -1,17 +1,17 @@
 from .base import LLMProvider
 from .ollama import OllamaLLM
 
-__all__ = ["LLMProvider", "OllamaLLM"]
+__all__ = ["LLMProvider", "OllamaLLM", "OpenAILLM", "AnthropicLLM"]
 
 
-# Lazy imports for optional providers
-def OpenAILLM(*args, **kwargs):
-    from .openai_llm import OpenAILLM as _cls
+def __getattr__(name: str):
+    """Lazy imports for optional providers — proper module-level __getattr__."""
+    if name == "OpenAILLM":
+        from .openai_llm import OpenAILLM
 
-    return _cls(*args, **kwargs)
+        return OpenAILLM
+    if name == "AnthropicLLM":
+        from .anthropic_llm import AnthropicLLM
 
-
-def AnthropicLLM(*args, **kwargs):
-    from .anthropic_llm import AnthropicLLM as _cls
-
-    return _cls(*args, **kwargs)
+        return AnthropicLLM
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

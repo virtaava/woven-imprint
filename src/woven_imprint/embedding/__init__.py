@@ -1,11 +1,13 @@
 from .base import EmbeddingProvider
 from .ollama import OllamaEmbedding
 
-__all__ = ["EmbeddingProvider", "OllamaEmbedding"]
+__all__ = ["EmbeddingProvider", "OllamaEmbedding", "OpenAIEmbedding"]
 
 
-# Lazy import for optional provider
-def OpenAIEmbedding(*args, **kwargs):
-    from .openai_embedding import OpenAIEmbedding as _cls
+def __getattr__(name: str):
+    """Lazy import for optional provider."""
+    if name == "OpenAIEmbedding":
+        from .openai_embedding import OpenAIEmbedding
 
-    return _cls(*args, **kwargs)
+        return OpenAIEmbedding
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

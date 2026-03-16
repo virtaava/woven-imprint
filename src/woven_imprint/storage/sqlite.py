@@ -73,7 +73,7 @@ CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
     VALUES ('delete', old.rowid, old.content, old.character_id, old.tier);
 END;
 
-CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE OF content ON memories BEGIN
     INSERT INTO memories_fts(memories_fts, rowid, content, character_id, tier)
     VALUES ('delete', old.rowid, old.content, old.character_id, old.tier);
     INSERT INTO memories_fts(rowid, content, character_id, tier)
@@ -106,6 +106,7 @@ class SQLiteStorage:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -241,6 +242,16 @@ class SQLiteStorage:
         self._conn.execute(
             "UPDATE memories SET accessed_at = datetime('now') WHERE id = ?",
             (memory_id,),
+        )
+        self._conn.commit()
+
+    def touch_memories_batch(self, memory_ids: list[str]) -> None:
+        """Update accessed_at for multiple memories in one transaction."""
+        if not memory_ids:
+            return
+        self._conn.executemany(
+            "UPDATE memories SET accessed_at = datetime('now') WHERE id = ?",
+            [(mid,) for mid in memory_ids],
         )
         self._conn.commit()
 

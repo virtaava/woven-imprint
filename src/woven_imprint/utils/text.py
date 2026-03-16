@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import hashlib
 
 
 def truncate(text: str, max_chars: int = 500) -> str:
@@ -14,11 +13,10 @@ def truncate(text: str, max_chars: int = 500) -> str:
 
 
 def generate_id(prefix: str = "") -> str:
-    """Generate a short unique ID."""
-    import time
+    """Generate a short unique ID. Uses uuid4 for collision resistance."""
+    import uuid
 
-    raw = f"{time.time_ns()}"
-    h = hashlib.sha256(raw.encode()).hexdigest()[:12]
+    h = uuid.uuid4().hex[:12]
     return f"{prefix}{h}" if prefix else h
 
 

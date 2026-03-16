@@ -73,6 +73,10 @@ class Character:
 
         # Config
         self.enforce_consistency: bool = True
+        self.lightweight: bool = False  # C6: skip emotion/arc/extraction when True
+
+        # Restore persisted transient state (C3)
+        self._restore_state()
 
     @property
     def name(self) -> str:
@@ -150,13 +154,12 @@ class Character:
             importance=0.5,
         )
 
-        # 7. Update emotional state
-        self.emotion = self.emotion_engine.assess(message, response, self.emotion, self.name)
+        # Subsystem updates — skipped in lightweight mode (C6)
+        if not self.lightweight:
+            self.emotion = self.emotion_engine.assess(message, response, self.emotion, self.name)
+            self.arc_tracker.analyze_beat(message, response, self.arc, self.name, user_id or "")
 
-        # 8. Track narrative beats
-        self.arc_tracker.analyze_beat(message, response, self.arc, self.name, user_id or "")
-
-        # 9. Extract and store notable facts from the exchange
+        # Fact extraction + relationship updates (always run, throttled internally)
         self._extract_memories(message, response, user_id)
 
         self._turn_count += 1
@@ -310,7 +313,40 @@ class Character:
 
         self._session_id = None
         self._turn_count = 0
+
+        # Persist transient state (emotion, arc) so it survives reload
+        self._save_state()
+
         return summary
+
+    def _save_state(self) -> None:
+        """Persist emotion and arc state to the characters.state column."""
+        state = {
+            "emotion": self.emotion.to_dict(),
+            "narrative_arc": self.arc.to_dict(),
+        }
+        char_data = self.storage.load_character(self.id)
+        if char_data:
+            self.storage.save_character(
+                self.id,
+                char_data["name"],
+                char_data["persona"],
+                birthdate=char_data.get("birthdate"),
+                state=state,
+            )
+
+    def _restore_state(self) -> None:
+        """Restore emotion and arc state from the characters.state column."""
+        char_data = self.storage.load_character(self.id)
+        if not char_data:
+            return
+        state = char_data.get("state", {})
+        if not state:
+            return
+        if "emotion" in state:
+            self.emotion = EmotionalState.from_dict(state["emotion"])
+        if "narrative_arc" in state:
+            self.arc = NarrativeArc.from_dict(state["narrative_arc"])
 
     def export(self, path: str | None = None) -> dict:
         """Export full character state as JSON.

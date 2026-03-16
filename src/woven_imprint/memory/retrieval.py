@@ -80,17 +80,28 @@ class MemoryRetriever:
         self, query: str, limit: int = 10, relationship_target: str | None = None
     ) -> list[dict]:
         """Retrieve the most relevant memories using RRF across strategies."""
-        # Get memories by tier — bedrock and core first (always included),
-        # then limited buffer to avoid loading thousands of ephemeral entries
+        # Two-phase retrieval (C5 fix):
+        # Phase 1: Load recent memories per tier (recency window)
         bedrock = self.storage.get_memories(self.character_id, tier="bedrock", limit=50)
         core = self.storage.get_memories(self.character_id, tier="core", limit=200)
         buffer = self.storage.get_memories(self.character_id, tier="buffer", limit=100)
 
-        all_memories = bedrock + core + buffer
+        # Phase 2: FTS pre-filter finds relevant OLD memories beyond the recency window
+        # This ensures a memory from months ago can be found if the query matches
+        try:
+            fts_candidates = self.storage.fts_search(self.character_id, query, limit=50)
+        except Exception:
+            fts_candidates = []
+
+        # Merge — deduplicate by ID
+        memory_map: dict[str, dict] = {}
+        for m in bedrock + core + buffer + fts_candidates:
+            if m["id"] not in memory_map:
+                memory_map[m["id"]] = m
+
+        all_memories = list(memory_map.values())
         if not all_memories:
             return []
-
-        memory_map = {m["id"]: m for m in all_memories}
 
         # Strategy 1: Semantic ranking
         query_embedding = self.embedder.embed(query)
@@ -102,12 +113,8 @@ class MemoryRetriever:
         semantic_scores.sort(key=lambda x: x[1], reverse=True)
         semantic_ranked = [mid for mid, _ in semantic_scores]
 
-        # Strategy 2: Keyword ranking (BM25 via FTS5)
-        try:
-            fts_results = self.storage.fts_search(self.character_id, query, limit=100)
-            keyword_ranked = [m["id"] for m in fts_results]
-        except Exception:
-            keyword_ranked = []
+        # Strategy 2: Keyword ranking (BM25 via FTS5) — uses pre-fetched candidates
+        keyword_ranked = [m["id"] for m in fts_candidates]
 
         # Strategy 3: Tier-aware recency ranking
         recency_scores = [

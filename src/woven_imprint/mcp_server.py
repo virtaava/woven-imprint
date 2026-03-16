@@ -16,21 +16,36 @@ except ImportError:
 
 mcp = FastMCP("WovenImprint", version="0.1.0")
 
-# Global engine — initialized on first use
+# Global engine + character cache — state persists between tool calls (C2 fix)
 _engine: Engine | None = None
 _db_path: str = str(Path.home() / ".woven_imprint" / "characters.db")
+_char_cache: dict = {}  # character_id → Character instance
 
 
 def _get_engine() -> Engine:
     global _engine
     if _engine is None:
         Path(_db_path).parent.mkdir(parents=True, exist_ok=True)
+        import os
+
+        model = os.environ.get("WOVEN_IMPRINT_MODEL", "qwen3-coder:30b")
         _engine = Engine(
             db_path=_db_path,
-            llm=OllamaLLM(),
+            llm=OllamaLLM(model=model),
             embedding=OllamaEmbedding(),
         )
     return _engine
+
+
+def _get_character(character_id: str):
+    """Get a character from cache or load it. Keeps state between calls."""
+    if character_id in _char_cache:
+        return _char_cache[character_id]
+    engine = _get_engine()
+    char = engine.load_character(character_id)
+    if char:
+        _char_cache[character_id] = char
+    return char
 
 
 @mcp.tool()
@@ -72,6 +87,7 @@ def create_character(
         persona=persona,
         birthdate=birthdate or None,
     )
+    _char_cache[char.id] = char  # Cache for subsequent tool calls
     return json.dumps({"id": char.id, "name": char.name, "age": char.persona.age}, default=str)
 
 
@@ -84,8 +100,7 @@ def chat(character_id: str, message: str, user_id: str = "mcp_user") -> str:
         message: Your message to the character.
         user_id: Your identifier for relationship tracking.
     """
-    engine = _get_engine()
-    char = engine.load_character(character_id)
+    char = _get_character(character_id)
     if not char:
         return json.dumps({"error": f"Character {character_id} not found"})
 
@@ -102,8 +117,7 @@ def recall(character_id: str, query: str, limit: int = 5) -> str:
         query: What to search for in their memories.
         limit: Maximum number of memories to return.
     """
-    engine = _get_engine()
-    char = engine.load_character(character_id)
+    char = _get_character(character_id)
     if not char:
         return json.dumps({"error": f"Character {character_id} not found"})
 
@@ -128,8 +142,7 @@ def get_relationship(character_id: str, target_id: str) -> str:
         character_id: The character's ID.
         target_id: The other entity's ID.
     """
-    engine = _get_engine()
-    char = engine.load_character(character_id)
+    char = _get_character(character_id)
     if not char:
         return json.dumps({"error": f"Character {character_id} not found"})
 
@@ -154,8 +167,7 @@ def reflect(character_id: str) -> str:
     Args:
         character_id: The character's ID.
     """
-    engine = _get_engine()
-    char = engine.load_character(character_id)
+    char = _get_character(character_id)
     if not char:
         return json.dumps({"error": f"Character {character_id} not found"})
 
@@ -170,8 +182,7 @@ def evolve(character_id: str) -> str:
     Args:
         character_id: The character's ID.
     """
-    engine = _get_engine()
-    char = engine.load_character(character_id)
+    char = _get_character(character_id)
     if not char:
         return json.dumps({"error": f"Character {character_id} not found"})
 
@@ -186,8 +197,7 @@ def end_session(character_id: str) -> str:
     Args:
         character_id: The character's ID.
     """
-    engine = _get_engine()
-    char = engine.load_character(character_id)
+    char = _get_character(character_id)
     if not char:
         return json.dumps({"error": f"Character {character_id} not found"})
 

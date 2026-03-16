@@ -53,10 +53,16 @@ class PersonaModel:
         if not self.birthdate:
             return None
         today = date.today()
-        next_bday = self.birthdate.replace(year=today.year)
-        if next_bday < today:
-            next_bday = next_bday.replace(year=today.year + 1)
-        return (next_bday - today).days
+        # Handle Feb 29 birthdays in non-leap years
+        for year in (today.year, today.year + 1):
+            try:
+                next_bday = self.birthdate.replace(year=year)
+            except ValueError:
+                # Feb 29 in non-leap year → use Feb 28
+                next_bday = date(year, 2, 28)
+            if next_bday >= today:
+                return (next_bday - today).days
+        return 0
 
     def build_system_prompt(self) -> str:
         """Build the character's system prompt from all constraint levels."""

@@ -13,6 +13,7 @@ from .memory.belief import BeliefReviser
 from .memory.consolidation import ConsolidationEngine
 from .persona.model import PersonaModel
 from .persona.consistency import ConsistencyChecker
+from .persona.growth import GrowthEngine
 from .relationship.model import RelationshipModel
 from .storage.sqlite import SQLiteStorage
 from .utils.text import generate_id
@@ -49,6 +50,7 @@ class Character:
         self.relationships = RelationshipModel(storage, char_id)
         self.consolidator = ConsolidationEngine(storage, llm, embedder, char_id)
         self.consistency = ConsistencyChecker(llm, persona)
+        self.growth = GrowthEngine(storage, llm, char_id, persona)
 
         # Session tracking
         self._session_id: str | None = None
@@ -201,6 +203,31 @@ class Character:
             Stats dict: {clusters, summarized, created, archived}.
         """
         return self.consolidator.consolidate()
+
+    def evolve(self, min_memories: int = 20, threshold: float = 0.6) -> list[dict]:
+        """Detect and apply character growth from accumulated experiences.
+
+        Analyzes core memories to find evidence of personality evolution.
+        Only soft constraints change — hard facts and identity never shift.
+
+        Args:
+            min_memories: Minimum core memories before growth detection runs.
+            threshold: Confidence threshold for applying a growth event.
+
+        Returns:
+            List of applied growth events as dicts.
+        """
+        events = self.growth.grow(min_memories=min_memories, threshold=threshold)
+        return [
+            {
+                "trait": e.trait,
+                "old_value": e.old_value,
+                "new_value": e.new_value,
+                "reason": e.reason,
+                "confidence": e.confidence,
+            }
+            for e in events
+        ]
 
     def recall(self, query: str, limit: int = 10) -> list[dict]:
         """Explicitly recall memories relevant to a query."""

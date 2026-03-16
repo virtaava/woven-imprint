@@ -107,9 +107,9 @@
 - Future proprietary layers: hosted character services, advanced memory systems, tooling
 - Apache 2.0 is what Kubernetes, TensorFlow, and LangChain use — proven for infra adoption
 
-### 6. Acquisition targets
+### 6. Target adopters
 - **Game studios** (Unity, Epic, Roblox) want NPC persistence but don't want Inworld/Convai lock-in
 - **AI companion startups** need character infrastructure (many are failing because memory sucks)
 - **Enterprise** (training simulations, virtual employees) need consistent personas
-- **Platform plays** (Meta, Google, Apple) want character SDKs for their AI assistants
+- **Platform teams** (Meta, Google, Apple) want character SDKs for their AI assistants
 - **Key hook for studios**: characters that remember the player weeks later, develop relationships across sessions — most games reset NPC memory every session, and studios are actively experimenting with alternatives

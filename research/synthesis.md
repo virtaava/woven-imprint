@@ -144,7 +144,7 @@ Relationship {
 
 ### 4.1 Storage: Local-First, Like Engram
 
-Engram proves SQLite is sufficient for consumer-grade character memory. No cloud dependency. This aligns with our acquisition target profile — buyers want self-hostable infrastructure.
+Engram proves SQLite is sufficient for consumer-grade character memory. No cloud dependency. Self-hostable infrastructure is what developers and studios want.
 
 **Decision**: SQLite primary, with optional PostgreSQL/Qdrant for production deployments. All state in one portable file per character.
 

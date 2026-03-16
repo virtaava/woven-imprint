@@ -11,10 +11,10 @@ and other characters.
 
 Every interaction leaves an imprint. Every memory is woven into who the character becomes.
 
-## Status: Research Phase
+## Status: Phase 1 (Core Engine)
 
 Architecture decisions informed by 471 academic papers across 6 domains.
-No code yet — zero compromise, built to acquisition quality.
+Core memory engine, retrieval, persona model, and relationship tracking implemented.
 
 ## Use Cases
 
@@ -32,6 +32,38 @@ No code yet — zero compromise, built to acquisition quality.
 - **Memory-first** — memory architecture is the core product
 - **Zero compromise** — built to be acquired
 
+## Quick Start
+
+```python
+from woven_imprint import Engine
+
+engine = Engine("characters.db")
+
+alice = engine.create_character(
+    name="Alice",
+    birthdate="1998-03-15",
+    persona={
+        "backstory": "A sharp-witted detective who left the force after her partner's death.",
+        "personality": "witty, skeptical, secretly lonely",
+        "speaking_style": "clipped sentences, dark humor, avoids emotional topics",
+        "occupation": "private investigator",
+    },
+)
+
+response = alice.chat("Hey Alice, how's the case going?")
+print(response)
+
+# Memory persists across sessions
+alice.end_session()
+response = alice.chat("Remember the harbor case we discussed?")
+
+# Character reflects on experiences
+alice.reflect()
+
+# Export full character state
+alice.export("alice_backup.json")
+```
+
 ## License
 
-Proprietary. All rights reserved.
+MIT

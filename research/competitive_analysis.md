@@ -63,7 +63,7 @@
 
 ## Positioning Matrix
 
-| Capability | Character.AI | Inworld | Convai | Replika | Letta | Mem0 | Zep | **Woven Imprint** |
+| Capability | Character.AI | Inworld | Convai | Replika | Letta | Mem0 | Zep | **Woven Imprint (PCI)** |
 |-----------|-------------|---------|--------|---------|-------|------|-----|--------------------|
 | Persistent memory | ⚠️ 3-5 anchors | ✅ | ✅ | ⚠️ unreliable | ✅ | ✅ | ✅ | ✅ |
 | Character persona | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
@@ -81,11 +81,12 @@
 
 ## Key Strategic Insights
 
-### 1. Nobody owns the "character-specific memory + persona + relationships" stack
+### 1. Nobody owns "persistent character infrastructure"
 - Mem0/Zep/Letta = generic memory (no persona, no relationships, no consistency)
 - Character.AI/Replika = consumer apps (no API, no developer access)
 - Inworld/Convai = game platforms (tied to game engines, heavy infrastructure)
-- **Gap: standalone, LLM-agnostic character engine with developer API**
+- **Gap: standalone, LLM-agnostic character persistence layer with developer API**
+- **Positioning: "Persistent Character Infrastructure" — not another chatbot, but the foundation layer**
 
 ### 2. Long-term memory is still unsolved at scale
 - Replika: 64% dissatisfied with memory after years of work
@@ -101,8 +102,14 @@
 - No persona model, no relationship tracking, no consistency verification, no character growth
 - We differentiate by being opinionated about CHARACTER specifically
 
-### 5. Acquisition targets
-- **Game studios** (Unity, Epic, Roblox) want NPC engines but don't want Inworld/Convai lock-in
+### 5. Licensing strategy: Apache 2.0 core
+- Core engine Apache 2.0 — patent grant makes enterprise legal say yes, easy adoption
+- Future proprietary layers: hosted character services, advanced memory systems, tooling
+- Apache 2.0 is what Kubernetes, TensorFlow, and LangChain use — proven for infra adoption
+
+### 6. Acquisition targets
+- **Game studios** (Unity, Epic, Roblox) want NPC persistence but don't want Inworld/Convai lock-in
 - **AI companion startups** need character infrastructure (many are failing because memory sucks)
 - **Enterprise** (training simulations, virtual employees) need consistent personas
 - **Platform plays** (Meta, Google, Apple) want character SDKs for their AI assistants
+- **Key hook for studios**: characters that remember the player weeks later, develop relationships across sessions — most games reset NPC memory every session, and studios are actively experimenting with alternatives

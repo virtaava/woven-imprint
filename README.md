@@ -1,36 +1,37 @@
 # Woven Imprint
 
-**Persistent AI Character Engine**
+**Persistent Character Infrastructure**
 
-Characters that remember. Personalities that stay consistent. Relationships that evolve.
+Characters that survive across time.
 
-Woven Imprint is a local-first engine for creating AI characters with persistent memory,
-consistent personality, and evolving relationships. Characters accumulate experiences
-across interactions, maintain emotional states, and develop genuine bonds with users
-and other characters.
+Woven Imprint is infrastructure for building AI characters that persist. Characters
+accumulate memories across sessions, maintain consistent personalities, and develop
+relationships that evolve over weeks and months of interaction.
+
+Your NPC remembers the player who helped them three weeks ago. Your companion recalls
+a conversation from last summer. Your training partner adapts to the learner's
+progress over hundreds of sessions.
 
 Every interaction leaves an imprint. Every memory is woven into who the character becomes.
 
+## The Problem
+
+Most AI characters reset every session. They forget who you are, what you told them,
+and what happened between you. The few systems that try to persist memory do it poorly —
+stuffing facts into a prompt window until it overflows.
+
+Games, companions, simulations, and interactive fiction all need characters that:
+- **Remember** the player weeks later — not just the last 5 minutes
+- **Stay consistent** — same personality, same backstory, same voice
+- **Develop relationships** — trust builds slowly, betrayal has consequences
+- **Grow** — opinions shift, habits form, characters change through experience
+
+No existing tool does all of this. Woven Imprint does.
+
 ## Status: Phase 1 (Core Engine)
 
-Architecture decisions informed by 471 academic papers across 6 domains.
-Core memory engine, retrieval, persona model, and relationship tracking implemented.
-
-## Use Cases
-
-- **AI Companions** — persistent personality, remembers your conversations, evolves
-- **Game NPCs** — RPG characters with real memory across sessions
-- **Interactive Fiction** — characters that develop relationships over branching stories
-- **Training Simulations** — consistent role-playing partners
-- **Virtual Personalities** — AI characters with maintained identity
-
-## Architecture Principles
-
-- **Local-first** — runs on local hardware, no cloud dependency
-- **Model-agnostic** — works with any LLM (Ollama, vLLM, API)
-- **Engine, not app** — provides character infrastructure via API/SDK
-- **Memory-first** — memory architecture is the core product
-- **Zero compromise** — built to be acquired
+Architecture informed by 471 academic papers across 6 research domains.
+Core memory engine, multi-strategy retrieval, persona model, and relationship tracking implemented.
 
 ## Quick Start
 
@@ -39,9 +40,10 @@ from woven_imprint import Engine
 
 engine = Engine("characters.db")
 
+# Create a character with persistent identity
 alice = engine.create_character(
     name="Alice",
-    birthdate="1998-03-15",
+    birthdate="1998-03-15",  # age derived automatically, increments on birthday
     persona={
         "backstory": "A sharp-witted detective who left the force after her partner's death.",
         "personality": "witty, skeptical, secretly lonely",
@@ -50,20 +52,63 @@ alice = engine.create_character(
     },
 )
 
+# Conversation — memories persist automatically
 response = alice.chat("Hey Alice, how's the case going?")
-print(response)
 
-# Memory persists across sessions
+# End session — generates summary, stores to long-term memory
 alice.end_session()
+
+# Days later... she remembers
 response = alice.chat("Remember the harbor case we discussed?")
 
-# Character reflects on experiences
+# Character reflects on accumulated experiences
 alice.reflect()
 
-# Export full character state
-alice.export("alice_backup.json")
+# Relationship tracking — trust, affection, respect evolve per interaction
+print(alice.relationships.describe("player_1"))
+
+# Export full character state — portable, self-contained
+alice.export("alice_v1.json")
 ```
+
+## Architecture
+
+### Three-Tier Memory
+- **Buffer** — raw observations from recent interactions
+- **Core** — consolidated memories, session summaries, reflections
+- **Bedrock** — fundamental identity, defining moments, core beliefs
+
+### Multi-Strategy Retrieval
+Reciprocal Rank Fusion across five rankers: semantic similarity, BM25 keyword match,
+recency decay, importance scoring, and relationship context boost.
+
+### Persona Enforcement
+Four constraint levels: hard (immutable identity), temporal (age from birthdate,
+location changes), soft (personality traits that evolve), emergent (formed through interaction).
+
+### Relationship Model
+Five emotional dimensions (trust, affection, respect, familiarity, tension) with
+bounded change per interaction, trajectory detection, and key moment tracking.
+
+### Belief Revision
+Memories carry certainty scores. Contradictions are tracked, not overwritten —
+characters can genuinely change their mind while remembering what they used to believe.
+
+## Use Cases
+
+- **Game NPCs** — characters with real memory across play sessions
+- **AI Companions** — persistent personality that remembers and evolves
+- **Interactive Fiction** — characters that develop relationships over branching narratives
+- **Training Simulations** — consistent role-playing partners that adapt over time
+- **Virtual Personalities** — maintained identity across platforms and contexts
+
+## Design Principles
+
+- **Local-first** — SQLite default, runs on consumer hardware, no cloud dependency
+- **Model-agnostic** — works with any LLM (Ollama, vLLM, OpenAI, Anthropic)
+- **Infrastructure, not app** — provides the persistence layer via clean Python API
+- **Characters survive across time** — the core differentiator
 
 ## License
 
-MIT
+Apache 2.0 — the core engine is open and easy to adopt.

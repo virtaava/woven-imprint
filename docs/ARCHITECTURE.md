@@ -2,7 +2,7 @@
 
 ## Overview
 
-Woven Imprint is a persistent AI character engine. It sits between the application
+Woven Imprint is persistent character infrastructure. It sits between the application
 and the LLM, providing memory management, persona enforcement, relationship tracking,
 and consistency verification.
 

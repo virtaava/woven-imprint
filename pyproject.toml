@@ -5,9 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "woven-imprint"
 version = "0.1.0"
-description = "Persistent AI Character Engine — characters that remember, stay consistent, and evolve"
+description = "Persistent Character Infrastructure — characters that survive across time"
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [
     {name = "Toni Virtanen", email = "toni@virtaava.dev"},

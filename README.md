@@ -119,6 +119,13 @@ belief revision, relationship bounds, persona consistency, character growth.
 
 Full results: [docs/RESULTS.md](docs/RESULTS.md)
 
+## Documentation
+
+- **[Getting Started](docs/GETTING_STARTED.md)** — installation, creating characters, chatting, memory, relationships, LLM backends, integrations
+- **[Architecture](docs/ARCHITECTURE.md)** — technical design, schemas, module structure
+- **[Evaluation Results](docs/RESULTS.md)** — benchmarks, Pride and Prejudice demo
+- **[MCP Setup](examples/mcp_setup.md)** — Claude Desktop, Cursor, Hermes, OpenClaw
+
 ## Design Principles
 
 - **Local-first** — SQLite default, runs on consumer hardware, no cloud dependency

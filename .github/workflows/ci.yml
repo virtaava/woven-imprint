@@ -92,6 +92,11 @@ jobs:
           OPENAI_API_KEY: ""
           ANTHROPIC_API_KEY: ""
 
+      - name: Run eval suite
+        run: |
+          source .venv/bin/activate
+          python eval/run_eval.py
+
   secrets-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 3

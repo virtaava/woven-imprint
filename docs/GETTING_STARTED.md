@@ -1,29 +1,166 @@
 # Getting Started with Woven Imprint
 
+## Requirements
+
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Python | 3.11+ | Only hard dependency |
+| An LLM backend | any | Ollama (free, local), OpenAI, or Anthropic |
+
+The core engine has **one Python dependency** (`requests`). Everything else is optional.
+
+You do NOT need Ollama if you use OpenAI or Anthropic as your LLM backend.
+
 ## Installation
+
+### From GitHub (current — repo is private)
+
+```bash
+git clone https://github.com/virtaava/woven-imprint.git
+cd woven-imprint
+pip install -e .
+```
+
+### From PyPI (when published)
 
 ```bash
 pip install woven-imprint
 ```
 
-**Requirements:**
-- Python 3.11+
-- [Ollama](https://ollama.com) running locally (default LLM backend)
+### Platform-specific Python setup
 
-Pull the required models:
-```bash
-ollama pull qwen3-coder:30b    # or any chat model you prefer
-ollama pull nomic-embed-text    # for memory embeddings
-```
-
-### Optional backends
+<details>
+<summary><strong>Ubuntu / Debian</strong></summary>
 
 ```bash
-pip install woven-imprint[openai]      # OpenAI / Azure / vLLM
-pip install woven-imprint[anthropic]   # Anthropic Claude
-pip install woven-imprint[mcp]         # MCP server for IDE integration
-pip install woven-imprint[all]         # everything
+sudo apt update && sudo apt install -y python3 python3-pip python3-venv
+python3 -m venv ~/.venvs/woven-imprint
+source ~/.venvs/woven-imprint/bin/activate
+git clone https://github.com/virtaava/woven-imprint.git
+cd woven-imprint && pip install -e .
 ```
+</details>
+
+<details>
+<summary><strong>macOS</strong></summary>
+
+```bash
+# Python 3.11+ via Homebrew
+brew install python@3.12
+python3 -m venv ~/.venvs/woven-imprint
+source ~/.venvs/woven-imprint/bin/activate
+git clone https://github.com/virtaava/woven-imprint.git
+cd woven-imprint && pip install -e .
+```
+</details>
+
+<details>
+<summary><strong>Windows</strong></summary>
+
+```powershell
+# Install Python from https://www.python.org/downloads/ (check "Add to PATH")
+python -m venv %USERPROFILE%\.venvs\woven-imprint
+%USERPROFILE%\.venvs\woven-imprint\Scripts\activate
+git clone https://github.com/virtaava/woven-imprint.git
+cd woven-imprint
+pip install -e .
+```
+</details>
+
+<details>
+<summary><strong>Docker (no local Python needed)</strong></summary>
+
+```bash
+git clone https://github.com/virtaava/woven-imprint.git
+cd woven-imprint
+docker build -t woven-imprint .
+docker run -it --network host woven-imprint demo
+```
+
+The Docker image includes Python and Woven Imprint. You still need Ollama
+running on the host (or use `--model` with an OpenAI-compatible endpoint).
+</details>
+
+### Optional extras
+
+```bash
+pip install -e ".[openai]"           # OpenAI / Azure / vLLM backend
+pip install -e ".[anthropic]"        # Anthropic Claude backend
+pip install -e ".[mcp]"             # MCP server for IDE integration
+pip install -e ".[all]"             # everything
+```
+
+## LLM Backend Setup
+
+You need at least one LLM backend. Pick the one that fits your setup:
+
+### Option A: Ollama (free, local, recommended)
+
+Install Ollama from [ollama.com](https://ollama.com), then pull models:
+
+```bash
+ollama pull llama3.2            # or any chat model (qwen3, mistral, etc.)
+ollama pull nomic-embed-text    # required for memory embeddings
+```
+
+That's it. Woven Imprint uses Ollama by default.
+
+### Option B: OpenAI API
+
+```bash
+pip install -e ".[openai]"
+export OPENAI_API_KEY=sk-...
+```
+
+```python
+from woven_imprint import Engine
+from woven_imprint.llm import OpenAILLM
+from woven_imprint.embedding import OpenAIEmbedding
+
+engine = Engine(
+    llm=OpenAILLM(model="gpt-4o-mini"),
+    embedding=OpenAIEmbedding(model="text-embedding-3-small"),
+)
+```
+
+### Option C: Anthropic Claude
+
+```bash
+pip install -e ".[anthropic]"
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+```python
+from woven_imprint import Engine
+from woven_imprint.llm import AnthropicLLM
+from woven_imprint.embedding.ollama import OllamaEmbedding  # Claude has no embedding API
+
+engine = Engine(
+    llm=AnthropicLLM(model="claude-sonnet-4-6"),
+    embedding=OllamaEmbedding(),  # or OpenAIEmbedding()
+)
+```
+
+### Option D: Any OpenAI-compatible server (vLLM, llama.cpp, LiteLLM)
+
+```python
+from woven_imprint import Engine
+from woven_imprint.llm import OpenAILLM
+from woven_imprint.embedding.ollama import OllamaEmbedding
+
+engine = Engine(
+    llm=OpenAILLM(model="my-model", base_url="http://localhost:8000/v1", api_key="not-needed"),
+    embedding=OllamaEmbedding(),
+)
+```
+
+### Verify your setup
+
+```bash
+woven-imprint demo
+```
+
+If you see a character respond, everything is working.
 
 ---
 
@@ -365,95 +502,6 @@ marcus = engine.create_character(
         "personality": "gruff but kind",
         "speaking_style": "short sentences, working-class dialect",
     },
-)
-```
-
----
-
-## Using Different LLM Backends
-
-### Ollama (default, local)
-
-```python
-from woven_imprint import Engine
-from woven_imprint.llm.ollama import OllamaLLM
-from woven_imprint.embedding.ollama import OllamaEmbedding
-
-engine = Engine(
-    db_path="characters.db",
-    llm=OllamaLLM(model="llama3.2", num_ctx=8192),
-    embedding=OllamaEmbedding(model="nomic-embed-text"),
-)
-```
-
-### OpenAI
-
-```python
-from woven_imprint import Engine
-from woven_imprint.llm import OpenAILLM
-from woven_imprint.embedding import OpenAIEmbedding
-
-engine = Engine(
-    db_path="characters.db",
-    llm=OpenAILLM(model="gpt-4o-mini"),
-    embedding=OpenAIEmbedding(model="text-embedding-3-small"),
-)
-```
-
-### Anthropic Claude
-
-```python
-from woven_imprint import Engine
-from woven_imprint.llm import AnthropicLLM
-from woven_imprint.embedding.ollama import OllamaEmbedding  # Claude has no embedding API
-
-engine = Engine(
-    db_path="characters.db",
-    llm=AnthropicLLM(model="claude-sonnet-4-6"),
-    embedding=OllamaEmbedding(),  # or OpenAIEmbedding()
-)
-```
-
-### Any OpenAI-compatible server (vLLM, llama.cpp, LiteLLM)
-
-```python
-from woven_imprint.llm import OpenAILLM
-
-engine = Engine(
-    llm=OpenAILLM(model="my-model", base_url="http://localhost:8000/v1", api_key="not-needed"),
-    embedding=OllamaEmbedding(),
-)
-```
-
----
-
-## Integration with AI Systems
-
-### MCP Server (Claude Desktop, Cursor, Hermes Agent)
-
-Woven Imprint exposes all character operations as MCP tools.
-See [examples/mcp_setup.md](../examples/mcp_setup.md) for configuration.
-
-Tools available: `list_characters`, `create_character`, `chat`, `recall`,
-`get_relationship`, `reflect`, `evolve`, `end_session`.
-
-### OpenAI-Compatible API Server
-
-Run characters as an OpenAI-compatible HTTP endpoint:
-
-```bash
-woven-imprint serve --port 8650
-```
-
-Any system that speaks OpenAI API can now use persistent characters:
-
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:8650/v1", api_key="not-needed")
-response = client.chat.completions.create(
-    model="marcus",  # character name = model name
-    messages=[{"role": "user", "content": "I need a sword."}],
 )
 ```
 

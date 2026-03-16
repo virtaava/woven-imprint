@@ -10,7 +10,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [
-    {name = "Toni Virtanen", email = "toni@virtaava.dev"},
+    {name = "Toni Mikkola", email = "virtaava@gmail.com"},
 ]
 keywords = ["ai", "character", "memory", "persona", "llm", "npc"]
 classifiers = [

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from .context import ContextManager
 from .llm.base import LLMProvider
 from .embedding.base import EmbeddingProvider
 from .memory.store import MemoryStore
@@ -62,6 +63,9 @@ class Character:
         # Narrative arc
         self.arc = NarrativeArc()
 
+        # Conversation buffer (sliding window with compression)
+        self._context = ContextManager()
+
         # Session tracking
         self._session_id: str | None = None
         self._turn_count: int = 0
@@ -77,6 +81,7 @@ class Character:
         """Start a new conversation session. Returns session ID."""
         self._session_id = generate_id("sess-")
         self._turn_count = 0
+        self._context.clear()
         self.storage.save_session(
             {
                 "id": self._session_id,
@@ -135,21 +140,38 @@ class Character:
         if rel_context:
             system_prompt += f"\n\n{rel_context}"
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message},
-        ]
+        # 5. Build message list with conversation history
+        messages = [{"role": "system", "content": system_prompt}]
 
-        # 5. Generate response (with optional consistency enforcement)
+        # Add compressed conversation history
+        history = self._context.get_messages()
+        messages.extend(history)
+
+        # Add current user message
+        messages.append({"role": "user", "content": message})
+
+        # Check if context is getting too large, compress if needed
+        total_chars = sum(len(m["content"]) for m in messages)
+        if total_chars > self._context.budget.total * 4:  # chars ≈ tokens * 4
+            self._context.compress(self.llm)
+            # Rebuild messages after compression
+            messages = [{"role": "system", "content": system_prompt}]
+            messages.extend(self._context.get_messages())
+            messages.append({"role": "user", "content": message})
+
+        # 6. Generate response (with optional consistency enforcement)
         response = self.llm.generate(messages, temperature=0.7)
 
         if self.enforce_consistency:
             response, report = self.consistency.enforce(response, messages)
             if report.soft_flags:
-                # Store soft flags as metadata on the response memory
                 pass  # Flags captured in the consistency report, not blocking
 
-        # 6. Store character response as buffer memory
+        # 7. Add both turns to conversation buffer
+        self._context.add_turn("user", message)
+        self._context.add_turn("assistant", response)
+
+        # 8. Store character response as buffer memory
         self.memory.add(
             content=f"[{self.name}] {response}",
             tier="buffer",

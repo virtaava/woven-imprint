@@ -10,18 +10,22 @@ class TestRRF:
         assert ids == ["a", "b", "c"]
 
     def test_two_agreeing_lists(self):
-        result = reciprocal_rank_fusion([
-            ["a", "b", "c"],
-            ["a", "b", "c"],
-        ])
+        result = reciprocal_rank_fusion(
+            [
+                ["a", "b", "c"],
+                ["a", "b", "c"],
+            ]
+        )
         # Both lists agree: a should be first
         assert result[0][0] == "a"
 
     def test_two_disagreeing_lists(self):
-        result = reciprocal_rank_fusion([
-            ["a", "b", "c"],
-            ["c", "b", "a"],
-        ])
+        result = reciprocal_rank_fusion(
+            [
+                ["a", "b", "c"],
+                ["c", "b", "a"],
+            ]
+        )
         # b is rank 2 in both lists, a is rank 1+3, c is rank 3+1
         # With k=60: b gets 2/(61+2)=2/63, a gets 1/61+1/63, c gets 1/63+1/61
         # a and c tie, b is slightly lower. All are very close.
@@ -36,10 +40,12 @@ class TestRRF:
         assert result == []
 
     def test_disjoint_lists(self):
-        result = reciprocal_rank_fusion([
-            ["a", "b"],
-            ["c", "d"],
-        ])
+        result = reciprocal_rank_fusion(
+            [
+                ["a", "b"],
+                ["c", "d"],
+            ]
+        )
         assert len(result) == 4
 
     def test_scores_decrease(self):

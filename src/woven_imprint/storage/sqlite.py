@@ -116,8 +116,14 @@ class SQLiteStorage:
 
     # ── Characters ──────────────────────────────────────────────
 
-    def save_character(self, char_id: str, name: str, persona: dict,
-                       birthdate: str | None = None, state: dict | None = None) -> None:
+    def save_character(
+        self,
+        char_id: str,
+        name: str,
+        persona: dict,
+        birthdate: str | None = None,
+        state: dict | None = None,
+    ) -> None:
         self._conn.execute(
             """INSERT INTO characters (id, name, persona, birthdate, state)
                VALUES (?, ?, ?, ?, ?)
@@ -125,15 +131,12 @@ class SQLiteStorage:
                    name=excluded.name, persona=excluded.persona,
                    birthdate=excluded.birthdate, state=excluded.state,
                    updated_at=datetime('now')""",
-            (char_id, name, json.dumps(persona), birthdate,
-             json.dumps(state or {})),
+            (char_id, name, json.dumps(persona), birthdate, json.dumps(state or {})),
         )
         self._conn.commit()
 
     def load_character(self, char_id: str) -> dict | None:
-        row = self._conn.execute(
-            "SELECT * FROM characters WHERE id = ?", (char_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM characters WHERE id = ?", (char_id,)).fetchone()
         if not row:
             return None
         d = dict(row)
@@ -169,19 +172,25 @@ class SQLiteStorage:
                    status=excluded.status, source_refs=excluded.source_refs,
                    metadata=excluded.metadata, accessed_at=datetime('now')""",
             (
-                memory["id"], memory["character_id"], memory["tier"],
-                memory["content"], emb_blob,
-                memory.get("importance", 0.5), memory.get("certainty", 1.0),
+                memory["id"],
+                memory["character_id"],
+                memory["tier"],
+                memory["content"],
+                emb_blob,
+                memory.get("importance", 0.5),
+                memory.get("certainty", 1.0),
                 memory.get("status", "active"),
                 json.dumps(memory.get("source_refs", [])),
-                memory.get("session_id"), memory.get("role"),
+                memory.get("session_id"),
+                memory.get("role"),
                 json.dumps(memory.get("metadata", {})),
             ),
         )
         self._conn.commit()
 
-    def get_memories(self, character_id: str, tier: str | None = None,
-                     status: str = "active", limit: int = 1000) -> list[dict]:
+    def get_memories(
+        self, character_id: str, tier: str | None = None, status: str = "active", limit: int = 1000
+    ) -> list[dict]:
         """Retrieve memories for a character, optionally filtered by tier."""
         q = "SELECT * FROM memories WHERE character_id = ? AND status = ?"
         params: list[Any] = [character_id, status]
@@ -194,12 +203,12 @@ class SQLiteStorage:
         return [self._row_to_memory(r) for r in rows]
 
     def get_memory(self, memory_id: str) -> dict | None:
-        row = self._conn.execute(
-            "SELECT * FROM memories WHERE id = ?", (memory_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
         return self._row_to_memory(row) if row else None
 
-    def update_memory_status(self, memory_id: str, status: str, certainty: float | None = None) -> None:
+    def update_memory_status(
+        self, memory_id: str, status: str, certainty: float | None = None
+    ) -> None:
         if certainty is not None:
             self._conn.execute(
                 "UPDATE memories SET status = ?, certainty = ? WHERE id = ?",
@@ -275,9 +284,13 @@ class SQLiteStorage:
                    type=excluded.type, trajectory=excluded.trajectory,
                    key_moments=excluded.key_moments, last_interaction=datetime('now')""",
             (
-                rel["id"], rel["character_id"], rel["target_id"],
-                json.dumps(rel["dimensions"]), rel.get("power_balance", 0.0),
-                rel.get("type", "stranger"), rel.get("trajectory", "stable"),
+                rel["id"],
+                rel["character_id"],
+                rel["target_id"],
+                json.dumps(rel["dimensions"]),
+                rel.get("power_balance", 0.0),
+                rel.get("type", "stranger"),
+                rel.get("trajectory", "stable"),
                 json.dumps(rel.get("key_moments", [])),
             ),
         )

@@ -47,8 +47,11 @@ class TestMemoryCRUD:
     def test_save_and_get(self, storage):
         storage.save_character("c1", "Alice", {})
         mem = {
-            "id": "m1", "character_id": "c1", "tier": "buffer",
-            "content": "Hello world", "importance": 0.7,
+            "id": "m1",
+            "character_id": "c1",
+            "tier": "buffer",
+            "content": "Hello world",
+            "importance": 0.7,
         }
         storage.save_memory(mem)
         result = storage.get_memory("m1")
@@ -71,10 +74,14 @@ class TestMemoryCRUD:
     def test_count_memories(self, storage):
         storage.save_character("c1", "Alice", {})
         for i in range(5):
-            storage.save_memory({
-                "id": f"m{i}", "character_id": "c1", "tier": "buffer",
-                "content": f"memory {i}",
-            })
+            storage.save_memory(
+                {
+                    "id": f"m{i}",
+                    "character_id": "c1",
+                    "tier": "buffer",
+                    "content": f"memory {i}",
+                }
+            )
         assert storage.count_memories("c1") == 5
         assert storage.count_memories("c1", tier="buffer") == 5
         assert storage.count_memories("c1", tier="core") == 0
@@ -90,10 +97,15 @@ class TestMemoryCRUD:
 
     def test_certainty_update(self, storage):
         storage.save_character("c1", "Alice", {})
-        storage.save_memory({
-            "id": "m1", "character_id": "c1", "tier": "core",
-            "content": "x", "certainty": 0.5,
-        })
+        storage.save_memory(
+            {
+                "id": "m1",
+                "character_id": "c1",
+                "tier": "core",
+                "content": "x",
+                "certainty": 0.5,
+            }
+        )
         new_val = storage.update_memory_certainty("m1", 0.15)
         assert abs(new_val - 0.65) < 0.01
 
@@ -104,14 +116,22 @@ class TestMemoryCRUD:
 
     def test_fts_search(self, storage):
         storage.save_character("c1", "Alice", {})
-        storage.save_memory({
-            "id": "m1", "character_id": "c1", "tier": "buffer",
-            "content": "The cat sat on the mat",
-        })
-        storage.save_memory({
-            "id": "m2", "character_id": "c1", "tier": "buffer",
-            "content": "Dogs are loyal companions",
-        })
+        storage.save_memory(
+            {
+                "id": "m1",
+                "character_id": "c1",
+                "tier": "buffer",
+                "content": "The cat sat on the mat",
+            }
+        )
+        storage.save_memory(
+            {
+                "id": "m2",
+                "character_id": "c1",
+                "tier": "buffer",
+                "content": "Dogs are loyal companions",
+            }
+        )
         results = storage.fts_search("c1", "cat mat")
         assert len(results) >= 1
         assert results[0]["id"] == "m1"
@@ -119,10 +139,15 @@ class TestMemoryCRUD:
     def test_embedding_roundtrip(self, storage):
         storage.save_character("c1", "Alice", {})
         vec = [0.1, 0.2, 0.3, 0.4]
-        storage.save_memory({
-            "id": "m1", "character_id": "c1", "tier": "buffer",
-            "content": "test", "embedding": vec,
-        })
+        storage.save_memory(
+            {
+                "id": "m1",
+                "character_id": "c1",
+                "tier": "buffer",
+                "content": "test",
+                "embedding": vec,
+            }
+        )
         mem = storage.get_memory("m1")
         assert mem["embedding"] is not None
         assert len(mem["embedding"]) == 4
@@ -133,7 +158,9 @@ class TestRelationshipCRUD:
     def test_save_and_get(self, storage):
         storage.save_character("c1", "Alice", {})
         rel = {
-            "id": "r1", "character_id": "c1", "target_id": "user1",
+            "id": "r1",
+            "character_id": "c1",
+            "target_id": "user1",
             "dimensions": {"trust": 0.5, "affection": 0.3},
         }
         storage.save_relationship(rel)
@@ -144,9 +171,13 @@ class TestRelationshipCRUD:
     def test_get_all_relationships(self, storage):
         storage.save_character("c1", "Alice", {})
         for i, target in enumerate(["user1", "user2", "bob"]):
-            storage.save_relationship({
-                "id": f"r{i}", "character_id": "c1", "target_id": target,
-                "dimensions": {"trust": 0.0},
-            })
+            storage.save_relationship(
+                {
+                    "id": f"r{i}",
+                    "character_id": "c1",
+                    "target_id": target,
+                    "dimensions": {"trust": 0.0},
+                }
+            )
         rels = storage.get_relationships("c1")
         assert len(rels) == 3

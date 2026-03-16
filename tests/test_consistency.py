@@ -1,13 +1,12 @@
 """Tests for persona consistency checker."""
 
-import pytest
-
 from woven_imprint.persona.model import PersonaModel
-from woven_imprint.persona.consistency import ConsistencyChecker, ConsistencyReport
+from woven_imprint.persona.consistency import ConsistencyChecker
 
 
 class FakeLLM:
     """Configurable fake LLM for testing consistency checks."""
+
     def __init__(self, json_response=None):
         self._json = json_response or {
             "hard_violations": [],
@@ -24,27 +23,33 @@ class FakeLLM:
 
 class TestConsistencyChecker:
     def test_consistent_response(self):
-        persona = PersonaModel({
-            "name": "Alice",
-            "hard": {"name": "Alice", "species": "human"},
-            "backstory": "A detective from London",
-        })
+        persona = PersonaModel(
+            {
+                "name": "Alice",
+                "hard": {"name": "Alice", "species": "human"},
+                "backstory": "A detective from London",
+            }
+        )
         checker = ConsistencyChecker(FakeLLM(), persona)
         report = checker.check("I'm working on the case.")
         assert report.consistent is True
         assert report.score == 1.0
 
     def test_hard_violation_detected(self):
-        persona = PersonaModel({
-            "name": "Alice",
-            "hard": {"name": "Alice"},
-            "backstory": "Born in London",
-        })
-        llm = FakeLLM({
-            "hard_violations": ["Character claims to be named Bob"],
-            "soft_flags": [],
-            "score": 0.2,
-        })
+        persona = PersonaModel(
+            {
+                "name": "Alice",
+                "hard": {"name": "Alice"},
+                "backstory": "Born in London",
+            }
+        )
+        llm = FakeLLM(
+            {
+                "hard_violations": ["Character claims to be named Bob"],
+                "soft_flags": [],
+                "score": 0.2,
+            }
+        )
         checker = ConsistencyChecker(llm, persona)
         report = checker.check("My name is Bob.")
         assert report.consistent is False
@@ -52,16 +57,20 @@ class TestConsistencyChecker:
         assert report.score == 0.2
 
     def test_soft_flag_still_consistent(self):
-        persona = PersonaModel({
-            "name": "Alice",
-            "hard": {"name": "Alice"},
-            "soft": {"personality": "serious and stoic"},
-        })
-        llm = FakeLLM({
-            "hard_violations": [],
-            "soft_flags": ["Character is being unusually cheerful"],
-            "score": 0.7,
-        })
+        persona = PersonaModel(
+            {
+                "name": "Alice",
+                "hard": {"name": "Alice"},
+                "soft": {"personality": "serious and stoic"},
+            }
+        )
+        llm = FakeLLM(
+            {
+                "hard_violations": [],
+                "soft_flags": ["Character is being unusually cheerful"],
+                "score": 0.7,
+            }
+        )
         checker = ConsistencyChecker(llm, persona)
         report = checker.check("Ha ha, what a wonderful day!")
         assert report.consistent is True  # soft flags don't make it inconsistent
@@ -74,11 +83,13 @@ class TestConsistencyChecker:
         assert report.consistent is True
 
     def test_enforce_regenerates_on_violation(self):
-        persona = PersonaModel({
-            "name": "Alice",
-            "hard": {"name": "Alice"},
-            "backstory": "A detective",
-        })
+        persona = PersonaModel(
+            {
+                "name": "Alice",
+                "hard": {"name": "Alice"},
+                "backstory": "A detective",
+            }
+        )
 
         call_count = 0
 
@@ -122,6 +133,7 @@ class TestConsistencyChecker:
         class FailingLLM:
             def generate(self, messages, **kwargs):
                 return "not json"
+
             def generate_json(self, messages, **kwargs):
                 raise ValueError("Parse failed")
 

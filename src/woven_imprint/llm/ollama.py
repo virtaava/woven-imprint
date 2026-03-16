@@ -25,8 +25,9 @@ class OllamaLLM(LLMProvider):
         self.timeout = timeout
         self.num_ctx = num_ctx
 
-    def generate(self, messages: list[dict[str, str]], temperature: float = 0.7,
-                 max_tokens: int = 2048) -> str:
+    def generate(
+        self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
+    ) -> str:
         resp = requests.post(
             f"{self.base_url}/api/chat",
             json={

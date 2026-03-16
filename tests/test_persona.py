@@ -1,19 +1,20 @@
 """Tests for persona model."""
 
 from datetime import date
-from unittest.mock import patch
 
 from woven_imprint.persona.model import PersonaModel
 
 
 class TestPersonaModel:
     def test_basic_construction(self):
-        p = PersonaModel({
-            "name": "Alice",
-            "hard": {"name": "Alice", "species": "human"},
-            "soft": {"personality": "witty and sharp"},
-            "backstory": "Former detective",
-        })
+        p = PersonaModel(
+            {
+                "name": "Alice",
+                "hard": {"name": "Alice", "species": "human"},
+                "soft": {"personality": "witty and sharp"},
+                "backstory": "Former detective",
+            }
+        )
         assert p.name == "Alice"
         assert p.backstory == "Former detective"
         assert p.soft["personality"] == "witty and sharp"
@@ -43,12 +44,15 @@ class TestPersonaModel:
             assert p.is_birthday is False
 
     def test_system_prompt_contains_persona(self):
-        p = PersonaModel({
-            "name": "Alice",
-            "hard": {"name": "Alice"},
-            "soft": {"personality": "witty", "speaking_style": "clipped sentences"},
-            "backstory": "A detective in London",
-        }, birthdate="2000-03-15")
+        p = PersonaModel(
+            {
+                "name": "Alice",
+                "hard": {"name": "Alice"},
+                "soft": {"personality": "witty", "speaking_style": "clipped sentences"},
+                "backstory": "A detective in London",
+            },
+            birthdate="2000-03-15",
+        )
 
         prompt = p.build_system_prompt()
         assert "Alice" in prompt
@@ -57,11 +61,13 @@ class TestPersonaModel:
         assert "A detective in London" in prompt
 
     def test_hard_facts(self):
-        p = PersonaModel({
-            "name": "Alice",
-            "hard": {"name": "Alice", "species": "human", "birthplace": "London"},
-            "backstory": "Born in London",
-        })
+        p = PersonaModel(
+            {
+                "name": "Alice",
+                "hard": {"name": "Alice", "species": "human", "birthplace": "London"},
+                "backstory": "Born in London",
+            }
+        )
         facts = p.get_hard_facts()
         assert any("Alice" in f for f in facts)
         assert any("London" in f for f in facts)

@@ -30,20 +30,20 @@ def _recency_score(accessed_at: str, decay_rate: float = 0.995) -> float:
         accessed = accessed.replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
     hours = max(0, (now - accessed).total_seconds() / 3600)
-    return decay_rate ** hours
+    return decay_rate**hours
 
 
 class MemoryRetriever:
     """Retrieve memories using multi-strategy RRF."""
 
-    def __init__(self, storage: SQLiteStorage, embedder: EmbeddingProvider,
-                 character_id: str):
+    def __init__(self, storage: SQLiteStorage, embedder: EmbeddingProvider, character_id: str):
         self.storage = storage
         self.embedder = embedder
         self.character_id = character_id
 
-    def retrieve(self, query: str, limit: int = 10,
-                 relationship_target: str | None = None) -> list[dict]:
+    def retrieve(
+        self, query: str, limit: int = 10, relationship_target: str | None = None
+    ) -> list[dict]:
         """Retrieve the most relevant memories using RRF across strategies.
 
         Strategies:
@@ -78,17 +78,13 @@ class MemoryRetriever:
             keyword_ranked = []
 
         # Strategy 3: Recency ranking
-        recency_scores = [
-            (m["id"], _recency_score(m.get("accessed_at", "")))
-            for m in all_memories
-        ]
+        recency_scores = [(m["id"], _recency_score(m.get("accessed_at", ""))) for m in all_memories]
         recency_scores.sort(key=lambda x: x[1], reverse=True)
         recency_ranked = [mid for mid, _ in recency_scores]
 
         # Strategy 4: Importance ranking
         importance_scores = [
-            (m["id"], m.get("importance", 0.5) * m.get("certainty", 1.0))
-            for m in all_memories
+            (m["id"], m.get("importance", 0.5) * m.get("certainty", 1.0)) for m in all_memories
         ]
         importance_scores.sort(key=lambda x: x[1], reverse=True)
         importance_ranked = [mid for mid, _ in importance_scores]
@@ -103,8 +99,7 @@ class MemoryRetriever:
                 content_lower = m["content"].lower()
                 meta = m.get("metadata", {})
                 involves_target = (
-                    target_lower in content_lower
-                    or meta.get("target_id") == relationship_target
+                    target_lower in content_lower or meta.get("target_id") == relationship_target
                 )
                 rel_scores.append((m["id"], 1.0 if involves_target else 0.0))
             rel_scores.sort(key=lambda x: x[1], reverse=True)

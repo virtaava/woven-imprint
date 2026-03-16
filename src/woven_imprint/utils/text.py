@@ -16,6 +16,7 @@ def truncate(text: str, max_chars: int = 500) -> str:
 def generate_id(prefix: str = "") -> str:
     """Generate a short unique ID."""
     import time
+
     raw = f"{time.time_ns()}"
     h = hashlib.sha256(raw.encode()).hexdigest()[:12]
     return f"{prefix}{h}" if prefix else h

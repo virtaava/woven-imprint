@@ -9,8 +9,9 @@ class LLMProvider(ABC):
     """Generate text completions from an LLM."""
 
     @abstractmethod
-    def generate(self, messages: list[dict[str, str]], temperature: float = 0.7,
-                 max_tokens: int = 2048) -> str:
+    def generate(
+        self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
+    ) -> str:
         """Generate a completion from a message list.
 
         Args:

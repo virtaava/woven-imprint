@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: |
+          uv venv .venv --python 3.12
+          source .venv/bin/activate
+          uv pip install -e ".[dev]"
+
+      - name: Lint with ruff
+        run: |
+          source .venv/bin/activate
+          ruff check src/ tests/
+
+      - name: Check formatting
+        run: |
+          source .venv/bin/activate
+          ruff format --check src/ tests/
+
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: |
+          uv venv .venv --python 3.12
+          source .venv/bin/activate
+          uv pip install -e ".[dev]"
+          uv pip install pyright
+
+      - name: Type check with pyright
+        run: |
+          source .venv/bin/activate
+          pyright --project pyrightconfig.json
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          uv venv .venv --python ${{ matrix.python-version }}
+          source .venv/bin/activate
+          uv pip install -e ".[dev]"
+
+      - name: Run tests
+        run: |
+          source .venv/bin/activate
+          python -m pytest tests/ -v --tb=short -x
+        env:
+          OPENAI_API_KEY: ""
+          ANTHROPIC_API_KEY: ""
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for secrets
+        run: |
+          echo "Scanning for hardcoded secrets..."
+          if grep -rn "sk-[a-zA-Z0-9]\{20,\}\|nvapi-\|ghp_\|gho_\|AKIA[A-Z0-9]\{16\}\|AIza[a-zA-Z0-9_-]\{35\}" \
+            src/ tests/ --include="*.py" --include="*.yaml" --include="*.yml" --include="*.json" 2>/dev/null; then
+            echo "::error::Possible hardcoded secret detected"
+            exit 1
+          fi
+          echo "No secrets detected"
+
+      - name: Check for large files
+        run: |
+          echo "Checking for files >1MB..."
+          find src/ tests/ -type f -size +1M 2>/dev/null | while read f; do
+            echo "::warning::Large file: $f ($(du -h "$f" | cut -f1))"
+          done

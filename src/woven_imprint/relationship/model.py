@@ -48,8 +48,7 @@ class RelationshipModel:
         self.storage.save_relationship(rel)
         return rel
 
-    def update(self, target_id: str, deltas: dict[str, float],
-               new_type: str | None = None) -> dict:
+    def update(self, target_id: str, deltas: dict[str, float], new_type: str | None = None) -> dict:
         """Update relationship dimensions with bounded deltas.
 
         Args:
@@ -123,16 +122,39 @@ class RelationshipModel:
 
         # Describe each dimension
         descriptors = {
-            "trust": [(-1, "deeply suspicious"), (-0.3, "wary"), (0.3, "neutral"),
-                      (0.7, "trusting"), (1, "complete trust")],
-            "affection": [(-1, "hostile"), (-0.3, "cold"), (0.3, "neutral"),
-                          (0.7, "warm"), (1, "deep affection")],
-            "respect": [(-1, "contemptuous"), (-0.3, "dismissive"), (0.3, "neutral"),
-                        (0.7, "respectful"), (1, "deeply admiring")],
-            "familiarity": [(0, "strangers"), (0.3, "acquaintances"),
-                            (0.6, "well-known"), (1, "intimate knowledge")],
-            "tension": [(0, "calm"), (0.3, "some tension"),
-                        (0.6, "significant tension"), (1, "explosive")],
+            "trust": [
+                (-1, "deeply suspicious"),
+                (-0.3, "wary"),
+                (0.3, "neutral"),
+                (0.7, "trusting"),
+                (1, "complete trust"),
+            ],
+            "affection": [
+                (-1, "hostile"),
+                (-0.3, "cold"),
+                (0.3, "neutral"),
+                (0.7, "warm"),
+                (1, "deep affection"),
+            ],
+            "respect": [
+                (-1, "contemptuous"),
+                (-0.3, "dismissive"),
+                (0.3, "neutral"),
+                (0.7, "respectful"),
+                (1, "deeply admiring"),
+            ],
+            "familiarity": [
+                (0, "strangers"),
+                (0.3, "acquaintances"),
+                (0.6, "well-known"),
+                (1, "intimate knowledge"),
+            ],
+            "tension": [
+                (0, "calm"),
+                (0.3, "some tension"),
+                (0.6, "significant tension"),
+                (1, "explosive"),
+            ],
         }
 
         for dim, levels in descriptors.items():

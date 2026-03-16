@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-from datetime import datetime, timezone
 
 from ..embedding.base import EmbeddingProvider
 from ..storage.sqlite import SQLiteStorage
@@ -13,15 +11,20 @@ from ..utils.text import generate_id
 class MemoryStore:
     """Manages buffer/core/bedrock memory tiers for a character."""
 
-    def __init__(self, storage: SQLiteStorage, embedder: EmbeddingProvider,
-                 character_id: str):
+    def __init__(self, storage: SQLiteStorage, embedder: EmbeddingProvider, character_id: str):
         self.storage = storage
         self.embedder = embedder
         self.character_id = character_id
 
-    def add(self, content: str, tier: str = "buffer", role: str | None = None,
-            session_id: str | None = None, importance: float = 0.5,
-            metadata: dict | None = None) -> dict:
+    def add(
+        self,
+        content: str,
+        tier: str = "buffer",
+        role: str | None = None,
+        session_id: str | None = None,
+        importance: float = 0.5,
+        metadata: dict | None = None,
+    ) -> dict:
         """Add a new memory entry."""
         embedding = self.embedder.embed(content)
         memory = {
@@ -41,9 +44,14 @@ class MemoryStore:
         self.storage.save_memory(memory)
         return memory
 
-    def add_without_embedding(self, content: str, tier: str = "buffer",
-                              role: str | None = None, session_id: str | None = None,
-                              importance: float = 0.5) -> dict:
+    def add_without_embedding(
+        self,
+        content: str,
+        tier: str = "buffer",
+        role: str | None = None,
+        session_id: str | None = None,
+        importance: float = 0.5,
+    ) -> dict:
         """Add memory without computing embedding (for batch processing)."""
         memory = {
             "id": generate_id("mem-"),

@@ -85,7 +85,9 @@ class Engine:
 
         # Persist to storage
         self.storage.save_character(
-            char_id, name, normalized,
+            char_id,
+            name,
+            normalized,
             birthdate=birthdate,
         )
 
@@ -107,7 +109,11 @@ class Engine:
 
         persona_model = PersonaModel(data["persona"], birthdate=data.get("birthdate"))
         return Character(
-            data["id"], self.storage, self.llm, self.embedder, persona_model,
+            data["id"],
+            self.storage,
+            self.llm,
+            self.embedder,
+            persona_model,
         )
 
     def list_characters(self) -> list[dict]:
@@ -133,7 +139,9 @@ class Engine:
 
         # Save character
         self.storage.save_character(
-            char_id, persona.get("name", "Unknown"), persona,
+            char_id,
+            persona.get("name", "Unknown"),
+            persona,
             birthdate=birthdate,
         )
 

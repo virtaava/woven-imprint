@@ -65,10 +65,12 @@ class Character:
         """Start a new conversation session. Returns session ID."""
         self._session_id = generate_id("sess-")
         self._turn_count = 0
-        self.storage.save_session({
-            "id": self._session_id,
-            "character_id": self.id,
-        })
+        self.storage.save_session(
+            {
+                "id": self._session_id,
+                "character_id": self.id,
+            }
+        )
         return self._session_id
 
     def chat(self, message: str, user_id: str | None = None) -> str:
@@ -103,7 +105,7 @@ class Character:
         # 3. Get relationship context
         rel_context = ""
         if user_id:
-            rel = self.relationships.get_or_create(user_id)
+            self.relationships.get_or_create(user_id)
             rel_context = self.relationships.describe(user_id)
 
         # 4. Build prompt with persona + memory + relationship context
@@ -157,22 +159,23 @@ class Character:
         if len(recent) < 5:
             return "Not enough recent memories to reflect on."
 
-        recent_text = "\n".join(
-            f"- {m['content'][:200]}" for m in recent[:30]
-        )
+        recent_text = "\n".join(f"- {m['content'][:200]}" for m in recent[:30])
 
         messages = [
             {"role": "system", "content": self.persona.build_system_prompt()},
-            {"role": "user", "content": (
-                f"Based on your recent experiences, reflect on:\n"
-                f"1. What patterns do you notice?\n"
-                f"2. How do you feel about recent interactions?\n"
-                f"3. Have your opinions or feelings changed about anything?\n"
-                f"4. What do you want to do next?\n\n"
-                f"Recent memories:\n{recent_text}\n\n"
-                f"Write your reflection as inner thoughts, in first person. "
-                f"Be honest with yourself. 3-5 sentences."
-            )},
+            {
+                "role": "user",
+                "content": (
+                    f"Based on your recent experiences, reflect on:\n"
+                    f"1. What patterns do you notice?\n"
+                    f"2. How do you feel about recent interactions?\n"
+                    f"3. Have your opinions or feelings changed about anything?\n"
+                    f"4. What do you want to do next?\n\n"
+                    f"Recent memories:\n{recent_text}\n\n"
+                    f"Write your reflection as inner thoughts, in first person. "
+                    f"Be honest with yourself. 3-5 sentences."
+                ),
+            },
         ]
 
         reflection = self.llm.generate(messages, temperature=0.6)
@@ -214,7 +217,8 @@ class Character:
 
         # Get session memories
         session_memories = [
-            m for m in self.memory.get_all(tier="buffer", limit=200)
+            m
+            for m in self.memory.get_all(tier="buffer", limit=200)
             if m.get("session_id") == self._session_id
         ]
 
@@ -225,16 +229,22 @@ class Character:
         # Generate session summary
         mem_text = "\n".join(f"- {m['content'][:150]}" for m in session_memories[:30])
         messages = [
-            {"role": "system", "content": (
-                f"You are summarizing a conversation session for {self.name}. "
-                f"Capture: key events, emotional beats, relationship changes, "
-                f"new information learned, commitments made."
-            )},
-            {"role": "user", "content": (
-                f"Summarize this session:\n{mem_text}\n\n"
-                f"Write a concise summary (3-5 sentences) capturing the most important "
-                f"moments and any changes in relationships or beliefs."
-            )},
+            {
+                "role": "system",
+                "content": (
+                    f"You are summarizing a conversation session for {self.name}. "
+                    f"Capture: key events, emotional beats, relationship changes, "
+                    f"new information learned, commitments made."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Summarize this session:\n{mem_text}\n\n"
+                    f"Write a concise summary (3-5 sentences) capturing the most important "
+                    f"moments and any changes in relationships or beliefs."
+                ),
+            },
         ]
 
         summary = self.llm.generate(messages, temperature=0.3)
@@ -249,11 +259,13 @@ class Character:
         )
 
         # Update session record
-        self.storage.save_session({
-            "id": self._session_id,
-            "character_id": self.id,
-            "summary": summary,
-        })
+        self.storage.save_session(
+            {
+                "id": self._session_id,
+                "character_id": self.id,
+                "summary": summary,
+            }
+        )
 
         self._session_id = None
         self._turn_count = 0
@@ -293,8 +305,7 @@ class Character:
 
         return data
 
-    def _extract_memories(self, user_msg: str, response: str,
-                          user_id: str | None) -> None:
+    def _extract_memories(self, user_msg: str, response: str, user_id: str | None) -> None:
         """Extract notable facts from an exchange and store them.
 
         Uses LLM to identify facts worth remembering from the conversation.
@@ -304,16 +315,22 @@ class Character:
             return
 
         messages = [
-            {"role": "system", "content": (
-                "Extract specific facts, opinions, or commitments from this exchange "
-                "that are worth remembering long-term. Return a JSON array of strings. "
-                "Each string should be a single fact. Return [] if nothing notable."
-            )},
-            {"role": "user", "content": (
-                f"User said: {user_msg}\n"
-                f"{self.name} responded: {response}\n\n"
-                f"What facts should {self.name} remember?"
-            )},
+            {
+                "role": "system",
+                "content": (
+                    "Extract specific facts, opinions, or commitments from this exchange "
+                    "that are worth remembering long-term. Return a JSON array of strings. "
+                    "Each string should be a single fact. Return [] if nothing notable."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"User said: {user_msg}\n"
+                    f"{self.name} responded: {response}\n\n"
+                    f"What facts should {self.name} remember?"
+                ),
+            },
         ]
 
         try:
@@ -338,8 +355,8 @@ class Character:
             return ""
         lines = []
         for m in memories:
-            tier_tag = f"[{m['tier']}]" if m['tier'] != 'buffer' else ""
-            certainty = m.get('certainty', 1.0)
+            tier_tag = f"[{m['tier']}]" if m["tier"] != "buffer" else ""
+            certainty = m.get("certainty", 1.0)
             cert_tag = " (uncertain)" if certainty < 0.5 else ""
             lines.append(f"- {tier_tag}{cert_tag} {m['content'][:200]}")
         return "\n".join(lines)

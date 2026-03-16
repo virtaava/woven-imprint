@@ -20,8 +20,9 @@ class BeliefReviser:
         """Increase certainty of a memory. Returns new certainty value."""
         return self.storage.update_memory_certainty(memory_id, self.REINFORCE_DELTA)
 
-    def contradict(self, old_memory_id: str, new_content: str,
-                   source: str = "", session_id: str | None = None) -> dict:
+    def contradict(
+        self, old_memory_id: str, new_content: str, source: str = "", session_id: str | None = None
+    ) -> dict:
         """Mark an existing memory as contradicted and store the replacement.
 
         The old memory is not deleted — it remains queryable for character growth
@@ -60,8 +61,7 @@ class BeliefReviser:
         """Remove from retrieval without deletion. Preserved in archive."""
         self.storage.update_memory_status(memory_id, "archived")
 
-    def detect_contradictions(self, new_content: str,
-                              existing_memories: list[dict]) -> list[dict]:
+    def detect_contradictions(self, new_content: str, existing_memories: list[dict]) -> list[dict]:
         """Find existing memories that may contradict new content.
 
         This is a lightweight heuristic check. Full NLI-based contradiction
@@ -74,17 +74,22 @@ class BeliefReviser:
 
         # Simple heuristic: look for negation patterns or conflicting statements
         negation_pairs = [
-            ("likes", "dislikes"), ("loves", "hates"),
-            ("trusts", "distrusts"), ("is a", "is not a"),
-            ("always", "never"), ("can", "cannot"),
-            ("friend", "enemy"), ("alive", "dead"),
+            ("likes", "dislikes"),
+            ("loves", "hates"),
+            ("trusts", "distrusts"),
+            ("is a", "is not a"),
+            ("always", "never"),
+            ("can", "cannot"),
+            ("friend", "enemy"),
+            ("alive", "dead"),
         ]
 
         for mem in existing_memories:
             mem_lower = mem["content"].lower()
             for pos, neg in negation_pairs:
-                if (pos in new_lower and neg in mem_lower) or \
-                   (neg in new_lower and pos in mem_lower):
+                if (pos in new_lower and neg in mem_lower) or (
+                    neg in new_lower and pos in mem_lower
+                ):
                     candidates.append(mem)
                     break
 

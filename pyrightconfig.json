@@ -1,0 +1,13 @@
+{
+    "include": ["src"],
+    "exclude": [
+        "src/woven_imprint/llm/openai_llm.py",
+        "src/woven_imprint/llm/anthropic_llm.py",
+        "src/woven_imprint/embedding/openai_embedding.py"
+    ],
+    "pythonVersion": "3.12",
+    "typeCheckingMode": "basic",
+    "reportMissingImports": true,
+    "reportMissingTypeStubs": false,
+    "reportOptionalMemberAccess": false
+}

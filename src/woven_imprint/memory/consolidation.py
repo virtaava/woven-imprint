@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections import defaultdict
 
 from ..llm.base import LLMProvider
 from ..embedding.base import EmbeddingProvider
@@ -107,12 +106,14 @@ class ConsolidationEngine:
                 mem = cluster[0]
                 if mem.get("importance", 0) >= 0.6:
                     if not dry_run:
-                        self.storage.save_memory({
-                            **mem,
-                            "id": generate_id("mem-"),
-                            "tier": "core",
-                            "source_refs": [mem["id"]],
-                        })
+                        self.storage.save_memory(
+                            {
+                                **mem,
+                                "id": generate_id("mem-"),
+                                "tier": "core",
+                                "source_refs": [mem["id"]],
+                            }
+                        )
                         self.storage.update_memory_status(mem["id"], "archived")
                         stats["created"] += 1
                         stats["archived"] += 1
@@ -139,19 +140,21 @@ class ConsolidationEngine:
 
             # Create consolidated core memory
             source_ids = [m["id"] for m in cluster]
-            self.storage.save_memory({
-                "id": generate_id("mem-"),
-                "character_id": self.character_id,
-                "tier": "core",
-                "content": f"[Consolidated] {summary}",
-                "embedding": embedding,
-                "importance": max_importance,
-                "certainty": 1.0,
-                "status": "active",
-                "source_refs": source_ids,
-                "role": "observation",
-                "metadata": {"type": "consolidation", "source_count": len(cluster)},
-            })
+            self.storage.save_memory(
+                {
+                    "id": generate_id("mem-"),
+                    "character_id": self.character_id,
+                    "tier": "core",
+                    "content": f"[Consolidated] {summary}",
+                    "embedding": embedding,
+                    "importance": max_importance,
+                    "certainty": 1.0,
+                    "status": "active",
+                    "source_refs": source_ids,
+                    "role": "observation",
+                    "metadata": {"type": "consolidation", "source_count": len(cluster)},
+                }
+            )
             stats["created"] += 1
 
             # Archive original buffer entries
@@ -166,17 +169,23 @@ class ConsolidationEngine:
     def _summarize_cluster(self, cluster_text: str) -> str | None:
         """Use LLM to summarize a cluster of related memories."""
         messages = [
-            {"role": "system", "content": (
-                "You are a memory consolidation system. Summarize the following "
-                "related memories into a single dense entry that preserves all "
-                "important facts, emotions, and relationships. Be concise but "
-                "complete. Write in third person or as an observation."
-            )},
-            {"role": "user", "content": (
-                f"Consolidate these related memories into one summary:\n\n"
-                f"{cluster_text}\n\n"
-                f"Write a single paragraph capturing the key information."
-            )},
+            {
+                "role": "system",
+                "content": (
+                    "You are a memory consolidation system. Summarize the following "
+                    "related memories into a single dense entry that preserves all "
+                    "important facts, emotions, and relationships. Be concise but "
+                    "complete. Write in third person or as an observation."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Consolidate these related memories into one summary:\n\n"
+                    f"{cluster_text}\n\n"
+                    f"Write a single paragraph capturing the key information."
+                ),
+            },
         ]
         try:
             return self.llm.generate(messages, temperature=0.3, max_tokens=300)

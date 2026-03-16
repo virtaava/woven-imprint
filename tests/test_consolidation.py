@@ -8,6 +8,7 @@ from woven_imprint.memory.consolidation import ConsolidationEngine, _cluster_mem
 
 class FakeEmbedder:
     """Fake embedder that returns deterministic vectors based on content hash."""
+
     def embed(self, text: str) -> list[float]:
         h = hash(text) % 1000
         return [h / 1000, (h * 7) % 1000 / 1000, (h * 13) % 1000 / 1000]
@@ -21,6 +22,7 @@ class FakeEmbedder:
 
 class FakeLLM:
     """Fake LLM that returns predictable summaries."""
+
     def generate(self, messages, temperature=0.7, max_tokens=2048):
         return "Consolidated summary of related memories."
 
@@ -77,10 +79,14 @@ class TestConsolidationEngine:
         assert not engine.needs_consolidation()
 
         for i in range(6):
-            storage.save_memory({
-                "id": f"m{i}", "character_id": "c1", "tier": "buffer",
-                "content": f"memory {i}",
-            })
+            storage.save_memory(
+                {
+                    "id": f"m{i}",
+                    "character_id": "c1",
+                    "tier": "buffer",
+                    "content": f"memory {i}",
+                }
+            )
         assert engine.needs_consolidation()
 
     def test_consolidate_too_few(self, storage):
@@ -92,14 +98,17 @@ class TestConsolidationEngine:
         # Create 15 buffer memories with identical embeddings so they cluster
         vec = [0.5, 0.5, 0.5]
         for i in range(15):
-            storage.save_memory({
-                "id": f"m{i}", "character_id": "c1", "tier": "buffer",
-                "content": f"similar memory {i}", "embedding": vec,
-            })
+            storage.save_memory(
+                {
+                    "id": f"m{i}",
+                    "character_id": "c1",
+                    "tier": "buffer",
+                    "content": f"similar memory {i}",
+                    "embedding": vec,
+                }
+            )
 
-        engine = ConsolidationEngine(
-            storage, FakeLLM(), FakeEmbedder(), "c1", threshold=10
-        )
+        engine = ConsolidationEngine(storage, FakeLLM(), FakeEmbedder(), "c1", threshold=10)
         stats = engine.consolidate()
 
         assert stats["created"] >= 1
@@ -117,10 +126,15 @@ class TestConsolidationEngine:
     def test_dry_run(self, storage):
         vec = [0.5, 0.5, 0.5]
         for i in range(15):
-            storage.save_memory({
-                "id": f"m{i}", "character_id": "c1", "tier": "buffer",
-                "content": f"memory {i}", "embedding": vec,
-            })
+            storage.save_memory(
+                {
+                    "id": f"m{i}",
+                    "character_id": "c1",
+                    "tier": "buffer",
+                    "content": f"memory {i}",
+                    "embedding": vec,
+                }
+            )
 
         engine = ConsolidationEngine(storage, FakeLLM(), FakeEmbedder(), "c1")
         stats = engine.consolidate(dry_run=True)

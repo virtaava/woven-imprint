@@ -33,8 +33,9 @@ class AnthropicLLM(LLMProvider):
         self.model = model
         self.default_max_tokens = max_tokens
 
-    def generate(self, messages: list[dict[str, str]], temperature: float = 0.7,
-                 max_tokens: int = 2048) -> str:
+    def generate(
+        self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
+    ) -> str:
         # Anthropic uses system param separately
         system = ""
         chat_messages = []

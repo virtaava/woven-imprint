@@ -12,6 +12,7 @@ from .memory.retrieval import MemoryRetriever
 from .memory.belief import BeliefReviser
 from .memory.consolidation import ConsolidationEngine
 from .persona.model import PersonaModel
+from .narrative.arc import NarrativeArc, ArcTracker
 from .persona.consistency import ConsistencyChecker
 from .persona.emotion import EmotionalState, EmotionEngine
 from .persona.growth import GrowthEngine
@@ -53,9 +54,13 @@ class Character:
         self.consistency = ConsistencyChecker(llm, persona)
         self.growth = GrowthEngine(storage, llm, char_id, persona)
         self.emotion_engine = EmotionEngine(llm)
+        self.arc_tracker = ArcTracker(llm)
 
         # Emotional state
         self.emotion = EmotionalState()
+
+        # Narrative arc
+        self.arc = NarrativeArc()
 
         # Session tracking
         self._session_id: str | None = None
@@ -122,6 +127,9 @@ class Character:
         emotion_desc = self.emotion.describe()
         if emotion_desc:
             system_prompt += f"\n\n{emotion_desc}"
+        arc_desc = self.arc.describe()
+        if arc_desc:
+            system_prompt += f"\n\n{arc_desc}"
         if memory_text:
             system_prompt += f"\n\nYour relevant memories:\n{memory_text}"
         if rel_context:
@@ -153,7 +161,10 @@ class Character:
         # 7. Update emotional state
         self.emotion = self.emotion_engine.assess(message, response, self.emotion, self.name)
 
-        # 8. Extract and store notable facts from the exchange
+        # 8. Track narrative beats
+        self.arc_tracker.analyze_beat(message, response, self.arc, self.name, user_id or "")
+
+        # 9. Extract and store notable facts from the exchange
         self._extract_memories(message, response, user_id)
 
         self._turn_count += 1
@@ -329,6 +340,7 @@ class Character:
             },
             "relationships": self.relationships.get_all(),
             "emotion": self.emotion.to_dict(),
+            "narrative_arc": self.arc.to_dict(),
             "sessions": self.storage.get_sessions(self.id),
             "exported_at": datetime.now(timezone.utc).isoformat(),
         }

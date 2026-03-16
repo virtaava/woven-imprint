@@ -20,8 +20,30 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
-def _recency_score(accessed_at: str, decay_rate: float = 0.995) -> float:
-    """Exponential decay based on hours since last access."""
+# Decay rates per tier — bedrock and core decay much slower than buffer
+_DECAY_RATES = {
+    "bedrock": 0.9999,  # half-life ~290 days — nearly permanent
+    "core": 0.999,  # half-life ~29 days — fades over months
+    "buffer": 0.995,  # half-life ~5.8 days — fades in a week
+}
+
+# Importance floor per tier — minimum effective importance
+_TIER_IMPORTANCE_BOOST = {
+    "bedrock": 0.3,  # bedrock always gets a boost
+    "core": 0.15,  # core gets a moderate boost
+    "buffer": 0.0,  # buffer gets no boost
+}
+
+
+def _recency_score(accessed_at: str, tier: str = "buffer") -> float:
+    """Exponential decay based on hours since last access.
+
+    Different tiers decay at different rates:
+    - bedrock: nearly permanent (you don't forget who you are)
+    - core: slow decay (consolidated memories persist for months)
+    - buffer: fast decay (raw observations fade in days)
+    """
+    decay_rate = _DECAY_RATES.get(tier, 0.995)
     try:
         accessed = datetime.fromisoformat(accessed_at.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
@@ -34,7 +56,20 @@ def _recency_score(accessed_at: str, decay_rate: float = 0.995) -> float:
 
 
 class MemoryRetriever:
-    """Retrieve memories using multi-strategy RRF."""
+    """Retrieve memories using multi-strategy RRF.
+
+    Retrieval strategies:
+    1. Semantic similarity (embedding cosine distance)
+    2. Keyword match (FTS5 BM25)
+    3. Recency (tier-aware exponential decay)
+    4. Importance (score × certainty + tier boost)
+    5. Relationship boost (if target specified)
+
+    Tier-aware scoring:
+    - Bedrock memories decay extremely slowly and get importance boosts
+    - Core memories decay slowly
+    - Buffer memories decay quickly (ephemeral by design)
+    """
 
     def __init__(self, storage: SQLiteStorage, embedder: EmbeddingProvider, character_id: str):
         self.storage = storage
@@ -44,17 +79,14 @@ class MemoryRetriever:
     def retrieve(
         self, query: str, limit: int = 10, relationship_target: str | None = None
     ) -> list[dict]:
-        """Retrieve the most relevant memories using RRF across strategies.
+        """Retrieve the most relevant memories using RRF across strategies."""
+        # Get memories by tier — bedrock and core first (always included),
+        # then limited buffer to avoid loading thousands of ephemeral entries
+        bedrock = self.storage.get_memories(self.character_id, tier="bedrock", limit=50)
+        core = self.storage.get_memories(self.character_id, tier="core", limit=200)
+        buffer = self.storage.get_memories(self.character_id, tier="buffer", limit=100)
 
-        Strategies:
-        1. Semantic similarity (embedding cosine distance)
-        2. Keyword match (FTS5 BM25)
-        3. Recency (exponential decay from last access)
-        4. Importance (stored importance score)
-        5. Relationship boost (if target specified, boost memories involving them)
-        """
-        # Get all active memories with embeddings for semantic search
-        all_memories = self.storage.get_memories(self.character_id, status="active")
+        all_memories = bedrock + core + buffer
         if not all_memories:
             return []
 
@@ -77,15 +109,20 @@ class MemoryRetriever:
         except Exception:
             keyword_ranked = []
 
-        # Strategy 3: Recency ranking
-        recency_scores = [(m["id"], _recency_score(m.get("accessed_at", ""))) for m in all_memories]
+        # Strategy 3: Tier-aware recency ranking
+        recency_scores = [
+            (m["id"], _recency_score(m.get("accessed_at", ""), m.get("tier", "buffer")))
+            for m in all_memories
+        ]
         recency_scores.sort(key=lambda x: x[1], reverse=True)
         recency_ranked = [mid for mid, _ in recency_scores]
 
-        # Strategy 4: Importance ranking
-        importance_scores = [
-            (m["id"], m.get("importance", 0.5) * m.get("certainty", 1.0)) for m in all_memories
-        ]
+        # Strategy 4: Importance with tier boost
+        importance_scores = []
+        for m in all_memories:
+            base = m.get("importance", 0.5) * m.get("certainty", 1.0)
+            boost = _TIER_IMPORTANCE_BOOST.get(m.get("tier", "buffer"), 0.0)
+            importance_scores.append((m["id"], base + boost))
         importance_scores.sort(key=lambda x: x[1], reverse=True)
         importance_ranked = [mid for mid, _ in importance_scores]
 

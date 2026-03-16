@@ -102,6 +102,23 @@ characters can genuinely change their mind while remembering what they used to b
 - **Training Simulations** — consistent role-playing partners that adapt over time
 - **Virtual Personalities** — maintained identity across platforms and contexts
 
+## Evaluation: Pride and Prejudice
+
+We tested Woven Imprint by simulating 16 key scenes from Jane Austen's Pride and Prejudice
+(public domain, Project Gutenberg). The engine tracked 6 characters across the full story arc
+with no scripted outcomes — all relationship changes are LLM-assessed from conversation content.
+
+![Elizabeth → Darcy Relationship Arc](docs/charts/elizabeth_darcy_arc.svg)
+
+The arc matches the novel: hostility peaks at the Hunsford proposal (trust -0.22, tension 0.39),
+flips after Darcy rescues the Bennets (affection turns positive), and resolves at the second
+proposal (trust +0.06, affection +0.22, familiarity 0.99).
+
+**13/13 synthetic benchmarks passing** (93% avg score) — memory recall, cross-session persistence,
+belief revision, relationship bounds, persona consistency, character growth.
+
+Full results: [docs/RESULTS.md](docs/RESULTS.md)
+
 ## Design Principles
 
 - **Local-first** — SQLite default, runs on consumer hardware, no cloud dependency

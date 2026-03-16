@@ -10,7 +10,9 @@ from .embedding.base import EmbeddingProvider
 from .memory.store import MemoryStore
 from .memory.retrieval import MemoryRetriever
 from .memory.belief import BeliefReviser
+from .memory.consolidation import ConsolidationEngine
 from .persona.model import PersonaModel
+from .persona.consistency import ConsistencyChecker
 from .relationship.model import RelationshipModel
 from .storage.sqlite import SQLiteStorage
 from .utils.text import generate_id
@@ -45,10 +47,15 @@ class Character:
         self.retriever = MemoryRetriever(storage, embedder, char_id)
         self.belief = BeliefReviser(storage, char_id)
         self.relationships = RelationshipModel(storage, char_id)
+        self.consolidator = ConsolidationEngine(storage, llm, embedder, char_id)
+        self.consistency = ConsistencyChecker(llm, persona)
 
         # Session tracking
         self._session_id: str | None = None
         self._turn_count: int = 0
+
+        # Config
+        self.enforce_consistency: bool = True
 
     @property
     def name(self) -> str:
@@ -113,8 +120,14 @@ class Character:
             {"role": "user", "content": message},
         ]
 
-        # 5. Generate response
+        # 5. Generate response (with optional consistency enforcement)
         response = self.llm.generate(messages, temperature=0.7)
+
+        if self.enforce_consistency:
+            response, report = self.consistency.enforce(response, messages)
+            if report.soft_flags:
+                # Store soft flags as metadata on the response memory
+                pass  # Flags captured in the consistency report, not blocking
 
         # 6. Store character response as buffer memory
         self.memory.add(
@@ -174,6 +187,17 @@ class Character:
         )
 
         return reflection
+
+    def consolidate(self) -> dict:
+        """Compress buffer memories into core memories.
+
+        Clusters semantically similar buffer entries and summarizes them.
+        Original entries are archived, not deleted.
+
+        Returns:
+            Stats dict: {clusters, summarized, created, archived}.
+        """
+        return self.consolidator.consolidate()
 
     def recall(self, query: str, limit: int = 10) -> list[dict]:
         """Explicitly recall memories relevant to a query."""

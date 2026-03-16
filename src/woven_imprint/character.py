@@ -306,12 +306,13 @@ class Character:
         return data
 
     def _extract_memories(self, user_msg: str, response: str, user_id: str | None) -> None:
-        """Extract notable facts from an exchange and store them.
+        """Extract notable facts and update relationships from an exchange."""
+        # Relationship updates happen every turn
+        if user_id:
+            self._update_relationship(user_msg, response, user_id)
 
-        Uses LLM to identify facts worth remembering from the conversation.
-        """
+        # Fact extraction is throttled — every 3rd turn
         if self._turn_count % 3 != 0 and self._turn_count > 0:
-            # Don't extract every turn — every 3rd turn is enough
             return
 
         messages = [
@@ -348,6 +349,53 @@ class Character:
                     )
         except (ValueError, KeyError):
             pass  # Extraction failed — not critical
+
+    def _update_relationship(self, user_msg: str, response: str, user_id: str) -> None:
+        """LLM-assess how an interaction shifts relationship dimensions."""
+        current = self.relationships.get_or_create(user_id)
+        dims = current["dimensions"]
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You assess how a conversation exchange affects a relationship "
+                    "between two people. Return a JSON object with these float fields "
+                    "(each between -0.15 and 0.15, use 0.0 for no change):\n"
+                    "- trust: did this interaction build or erode trust?\n"
+                    "- affection: did warmth increase or decrease?\n"
+                    "- respect: did admiration change?\n"
+                    "- familiarity: how much did they learn about each other? (0.0 to 0.15 only)\n"
+                    "- tension: did unresolved conflict increase or decrease?\n\n"
+                    "Be conservative. Most single exchanges cause small changes (0.01-0.05). "
+                    "Only dramatic moments warrant larger shifts."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Current relationship: {current['type']}, "
+                    f"trust={dims.get('trust', 0):.2f}, "
+                    f"affection={dims.get('affection', 0):.2f}, "
+                    f"familiarity={dims.get('familiarity', 0):.2f}\n\n"
+                    f"User said: {user_msg[:300]}\n"
+                    f"{self.name} responded: {response[:300]}\n\n"
+                    f"How does this exchange shift the relationship? Return JSON."
+                ),
+            },
+        ]
+
+        try:
+            result = self.llm.generate_json(messages)
+            deltas = {}
+            for key in ("trust", "affection", "respect", "familiarity", "tension"):
+                val = result.get(key, 0.0)
+                if isinstance(val, (int, float)):
+                    deltas[key] = float(val)
+            if deltas:
+                self.relationships.update(user_id, deltas)
+        except (ValueError, KeyError, TypeError):
+            pass  # Relationship update failed — not critical
 
     def _format_memories(self, memories: list[dict]) -> str:
         """Format retrieved memories for inclusion in prompt."""

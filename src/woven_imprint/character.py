@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from .context import ContextManager
+from .context import ContextBudget, ContextManager
 from .llm.base import LLMProvider
 from .embedding.base import EmbeddingProvider
 from .memory.store import MemoryStore
@@ -39,6 +39,7 @@ class Character:
         llm: LLMProvider,
         embedder: EmbeddingProvider,
         persona: PersonaModel,
+        context_budget: ContextBudget | None = None,
     ):
         self.id = char_id
         self.storage = storage
@@ -64,7 +65,7 @@ class Character:
         self.arc = NarrativeArc()
 
         # Conversation buffer (sliding window with compression)
-        self._context = ContextManager()
+        self._context = ContextManager(budget=context_budget)
 
         # Session tracking
         self._session_id: str | None = None
@@ -125,39 +126,8 @@ class Character:
             self.relationships.get_or_create(user_id)
             rel_context = self.relationships.describe(user_id)
 
-        # 4. Build prompt with persona + memory + relationship context
-        memory_text = self._format_memories(memories)
-
-        system_prompt = self.persona.build_system_prompt()
-        emotion_desc = self.emotion.describe()
-        if emotion_desc:
-            system_prompt += f"\n\n{emotion_desc}"
-        arc_desc = self.arc.describe()
-        if arc_desc:
-            system_prompt += f"\n\n{arc_desc}"
-        if memory_text:
-            system_prompt += f"\n\nYour relevant memories:\n{memory_text}"
-        if rel_context:
-            system_prompt += f"\n\n{rel_context}"
-
-        # 5. Build message list with conversation history
-        messages = [{"role": "system", "content": system_prompt}]
-
-        # Add compressed conversation history
-        history = self._context.get_messages()
-        messages.extend(history)
-
-        # Add current user message
-        messages.append({"role": "user", "content": message})
-
-        # Check if context is getting too large, compress if needed
-        total_chars = sum(len(m["content"]) for m in messages)
-        if total_chars > self._context.budget.total * 4:  # chars ≈ tokens * 4
-            self._context.compress(self.llm)
-            # Rebuild messages after compression
-            messages = [{"role": "system", "content": system_prompt}]
-            messages.extend(self._context.get_messages())
-            messages.append({"role": "user", "content": message})
+        # 4. Build the full prompt within context budget
+        messages = self._build_context(message, memories, rel_context)
 
         # 6. Generate response (with optional consistency enforcement)
         response = self.llm.generate(messages, temperature=0.7)
@@ -377,6 +347,98 @@ class Character:
                 json.dump(data, f, indent=2, default=str)
 
         return data
+
+    def _build_context(
+        self,
+        user_message: str,
+        memories: list[dict],
+        rel_context: str,
+    ) -> list[dict[str, str]]:
+        """Build the full message list within the context budget.
+
+        Priority order for shedding when context is tight:
+        1. Always keep: persona core (name, backstory, personality)
+        2. Always keep: current user message
+        3. Keep if room: recent conversation history
+        4. Keep if room: retrieved memories (reduce count if needed)
+        5. Keep if room: emotional state, arc, relationship description
+        6. Compress conversation if still over budget
+        """
+        budget_chars = self._context.budget.total * 4  # tokens → chars
+
+        # Components with their priority (lower = keep longer)
+        system_prompt = self.persona.build_system_prompt()
+        emotion_desc = self.emotion.describe()
+        arc_desc = self.arc.describe()
+        memory_text = self._format_memories(memories)
+
+        # Start with core system prompt (always included)
+        full_system = system_prompt
+
+        # Add optional components, tracking size
+        optional_parts = []
+        if emotion_desc:
+            optional_parts.append(("emotion", f"\n\n{emotion_desc}"))
+        if arc_desc:
+            optional_parts.append(("arc", f"\n\n{arc_desc}"))
+        if rel_context:
+            optional_parts.append(("relationship", f"\n\n{rel_context}"))
+        if memory_text:
+            optional_parts.append(("memories", f"\n\nYour relevant memories:\n{memory_text}"))
+
+        # Calculate base size (system prompt + user message)
+        base_size = len(system_prompt) + len(user_message)
+
+        # Add conversation history size
+        history = self._context.get_messages()
+        history_size = sum(len(m["content"]) for m in history)
+
+        # Total with everything
+        optional_size = sum(len(part) for _, part in optional_parts)
+        total = base_size + history_size + optional_size
+
+        if total <= budget_chars:
+            # Everything fits — include all
+            for _, part in optional_parts:
+                full_system += part
+        else:
+            # Need to shed. Try compression first.
+            self._context.compress(self.llm)
+            history = self._context.get_messages()
+            history_size = sum(len(m["content"]) for m in history)
+            total = base_size + history_size + optional_size
+
+            if total <= budget_chars:
+                # Fits after compression
+                for _, part in optional_parts:
+                    full_system += part
+            else:
+                # Still too large — add optional parts by priority until budget
+                remaining = budget_chars - base_size - history_size
+                for name, part in optional_parts:
+                    if len(part) <= remaining:
+                        full_system += part
+                        remaining -= len(part)
+                    elif name == "memories" and remaining > 200:
+                        # Partial memories — include as many as fit
+                        truncated = self._format_memories(memories[: max(1, len(memories) // 2)])
+                        mem_part = f"\n\nYour relevant memories:\n{truncated}"
+                        if len(mem_part) <= remaining:
+                            full_system += mem_part
+                            remaining -= len(mem_part)
+
+                # If STILL over after shedding optional parts, trim conversation
+                total = len(full_system) + history_size + len(user_message)
+                if total > budget_chars and len(history) > 0:
+                    self._context.compress(self.llm)
+                    history = self._context.get_messages()
+
+        # Assemble final message list
+        messages = [{"role": "system", "content": full_system}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": user_message})
+
+        return messages
 
     def _extract_memories(self, user_msg: str, response: str, user_id: str | None) -> None:
         """Extract notable facts and update relationships from an exchange."""

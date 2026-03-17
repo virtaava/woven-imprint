@@ -94,7 +94,33 @@ class CharacterImporter:
         return self._build_character(parsed, name_override=name)
 
     def _read_pdf(self, path: Path) -> str:
-        """Extract text from a PDF. Falls back to filename if no parser available."""
+        """Extract text from a PDF.
+
+        Tries in order:
+        1. pymupdf (pip install pymupdf) — fast, reliable
+        2. pdftotext CLI (poppler-utils) — system tool
+        3. Fallback with install hint
+        """
+        # Try pymupdf first
+        try:
+            import fitz  # noqa: F811 — pymupdf
+
+            doc = fitz.open(str(path))
+            pages = []
+            for page in doc:
+                pages.append(page.get_text())
+                if len("\n".join(pages)) > 10000:
+                    break
+            doc.close()
+            text = "\n".join(pages)[:10000]
+            if text.strip():
+                return f"[Knowledge: {path.name}]\n{text}"
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+        # Try pdftotext CLI
         try:
             import subprocess
 
@@ -109,8 +135,10 @@ class CharacterImporter:
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
 
-        # Fallback: just note the file existed
-        return f"[Knowledge file: {path.name} — PDF content not extracted]"
+        return (
+            f"[Knowledge file: {path.name} — PDF text not extracted. "
+            f"Install pymupdf for PDF support: pip install pymupdf]"
+        )
 
     def from_text(self, text: str, name: str | None = None) -> Character:
         """Import from raw text (Custom GPT instructions, persona description, etc.).

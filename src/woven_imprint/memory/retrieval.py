@@ -133,8 +133,20 @@ class MemoryRetriever:
         importance_scores.sort(key=lambda x: x[1], reverse=True)
         importance_ranked = [mid for mid, _ in importance_scores]
 
-        # Strategy 5: Relationship boost (if target specified)
-        ranked_lists = [semantic_ranked, keyword_ranked, recency_ranked, importance_ranked]
+        # Strategy 5: Tier priority ranking (bedrock > core > buffer)
+        _TIER_RANK = {"bedrock": 3, "core": 2, "buffer": 1}
+        tier_scores = [(m["id"], _TIER_RANK.get(m.get("tier", "buffer"), 0)) for m in all_memories]
+        tier_scores.sort(key=lambda x: x[1], reverse=True)
+        tier_ranked = [mid for mid, _ in tier_scores]
+
+        # Strategy 6: Relationship boost (if target specified)
+        ranked_lists = [
+            semantic_ranked,
+            keyword_ranked,
+            recency_ranked,
+            importance_ranked,
+            tier_ranked,
+        ]
 
         if relationship_target:
             rel_scores = []

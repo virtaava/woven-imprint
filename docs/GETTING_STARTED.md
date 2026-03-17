@@ -190,6 +190,29 @@ pip install woven-imprint[ui]
 woven-imprint ui
 ```
 
+<details>
+<summary>If you installed with pipx</summary>
+
+Extras need to be injected separately with pipx:
+
+```
+pipx inject woven-imprint gradio
+woven-imprint ui
+```
+</details>
+
+<details>
+<summary>If you get "externally-managed-environment"</summary>
+
+Use the virtual environment you created in Step 2:
+
+```
+source ~/woven-imprint-env/bin/activate
+pip install woven-imprint[ui]
+woven-imprint ui
+```
+</details>
+
 This opens a browser tab where you can create characters, chat, migrate
 existing characters, and see stats — all without touching the terminal again.
 

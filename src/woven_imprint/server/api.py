@@ -32,7 +32,7 @@ _config: dict = {}
 def _get_engine() -> Engine:
     global _engine
     if _engine is None:
-        from .config import get_config
+        from ..config import get_config
 
         cfg = get_config()
         db_path = _config.get("db_path") or cfg.storage.db_path

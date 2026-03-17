@@ -197,10 +197,10 @@ class Character:
 
     def _run_subsystems_parallel(self, message: str, response: str, user_id: str | None) -> None:
         """Run emotion, arc, and extraction in parallel threads."""
-        from concurrent.futures import ThreadPoolExecutor
+        import concurrent.futures
 
         futures = {}
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
             futures["emotion"] = pool.submit(
                 self.emotion_engine.assess, message, response, self.emotion, self.name
             )

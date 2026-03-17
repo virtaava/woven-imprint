@@ -1,7 +1,7 @@
 # Woven Imprint — Research Synthesis
 
 ## Date: 2026-03-16
-## Papers reviewed: 25 (from 471 collected across 6 research blocks)
+## Papers reviewed: 25 across 6 research domains
 
 ---
 

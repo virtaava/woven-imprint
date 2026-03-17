@@ -144,9 +144,9 @@ Full results: [docs/RESULTS.md](docs/RESULTS.md)
 
 ## Research Foundations
 
-Architecture informed by academic research on memory-augmented LLM agents, persona consistency,
-and relationship modeling. Key influences: Stanford Generative Agents, Mem0, Engram, and
-NLI-based persona consistency methods.
+Architecture influenced by academic research on memory-augmented LLM agents, persona
+consistency, and relationship modeling — including work by Park et al. (Generative Agents),
+Mem0, Engram, and NLI-based persona consistency methods.
 
 Full citations and synthesis: [docs/RESEARCH.md](docs/RESEARCH.md)
 

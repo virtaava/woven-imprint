@@ -1,6 +1,5 @@
 # Research Foundations
 
-Woven Imprint's architecture is informed by 471 academic papers across 6 research domains.
 Key papers that shaped the design:
 
 - **Park et al. (2023)** — [Generative Agents: Interactive Simulacra of Human Behavior](https://doi.org/10.1145/3586183.3606763)

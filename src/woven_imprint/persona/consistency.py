@@ -88,6 +88,8 @@ class ConsistencyChecker:
 
         try:
             result = self.llm.generate_json(messages)
+            if not isinstance(result, dict):
+                return ConsistencyReport(consistent=True, score=0.8)
             hard = result.get("hard_violations", [])
             soft = result.get("soft_flags", [])
             score = float(result.get("score", 1.0))

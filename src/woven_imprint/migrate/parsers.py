@@ -62,24 +62,39 @@ def parse_tavernai_card(path: str | Path) -> dict:
     path = Path(path)
 
     if path.suffix == ".png":
-        # Character card PNG has JSON in the tEXt chunk
+        # TavernAI character cards store Base64-encoded JSON in PNG tEXt chunks.
+        # PNG chunks: 4-byte length + 4-byte type + data + 4-byte CRC.
+        # tEXt chunks contain: keyword + null byte + text value.
+        # We look for a tEXt chunk with keyword "chara".
         import base64
+        import struct
 
         with open(path, "rb") as f:
             raw = f.read()
-        # Look for the 'chara' tEXt chunk
-        marker = b"chara\x00"
-        idx = raw.find(marker)
-        if idx == -1:
-            raise ValueError("No character data found in PNG")
-        # Find the next chunk boundary or end
-        start = idx + len(marker)
-        # The base64 data runs until the next PNG chunk
-        end = raw.find(b"\x00\x00\x00", start + 100)
-        if end == -1:
-            end = len(raw)
-        b64_data = raw[start:end]
-        card_json = base64.b64decode(b64_data)
+
+        # Skip 8-byte PNG signature
+        pos = 8
+        card_b64 = None
+        while pos < len(raw) - 8:
+            chunk_len = struct.unpack(">I", raw[pos : pos + 4])[0]
+            chunk_type = raw[pos + 4 : pos + 8]
+            chunk_data = raw[pos + 8 : pos + 8 + chunk_len]
+
+            if chunk_type == b"tEXt":
+                # tEXt: keyword\x00value
+                null_idx = chunk_data.find(b"\x00")
+                if null_idx != -1:
+                    keyword = chunk_data[:null_idx]
+                    if keyword == b"chara":
+                        card_b64 = chunk_data[null_idx + 1 :]
+                        break
+
+            pos += 12 + chunk_len  # 4 len + 4 type + data + 4 CRC
+
+        if card_b64 is None:
+            raise ValueError("No 'chara' tEXt chunk found in PNG")
+
+        card_json = base64.b64decode(card_b64)
         card = json.loads(card_json)
     else:
         with open(path) as f:

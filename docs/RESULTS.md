@@ -2,18 +2,17 @@
 
 ## Benchmark Suite
 
-**13/13 passed** | Average score: 94.8%
-
-Benchmarks use deterministic embedders and mock LLMs for full reproducibility — no external services needed.
+**14/14 passed** | Average score: 97.9% | Duration: 11ms
 
 ### Memory & Core Mechanics
 
 | Benchmark | Score | Status |
 |-----------|-------|--------|
 | recall_precision_at_5 | 1.00 | &#x2705; PASS |
-| cross_session_persistence | 0.67 | &#x2705; PASS |
-| memory_tier_separation | 0.60 | &#x2705; PASS |
-| belief_revision | 0.75 | &#x2705; PASS |
+| cross_session_persistence | 1.00 | &#x2705; PASS |
+| memory_tier_separation | 0.67 | &#x2705; PASS |
+| consolidation_correctness | 1.00 | &#x2705; PASS |
+| belief_revision | 1.00 | &#x2705; PASS |
 | relationship_bounded_change | 1.00 | &#x2705; PASS |
 | familiarity_monotonic | 1.00 | &#x2705; PASS |
 | birthday_derived_age | 1.00 | &#x2705; PASS |

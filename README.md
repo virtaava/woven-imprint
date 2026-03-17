@@ -149,9 +149,9 @@ The arc matches the novel: hostility peaks at the Hunsford proposal (trust -0.22
 flips after Darcy rescues the Bennets (affection turns positive), and resolves at the second
 proposal (trust +0.06, affection +0.22, familiarity 0.99).
 
-**13/13 synthetic benchmarks passing** (94.8% avg score) — memory recall, cross-session persistence,
-belief revision, relationship bounds, persona consistency, character growth.
-Benchmarks are deterministic and fully reproducible (no LLM needed).
+**14/14 deterministic benchmarks** (97.9% avg) + **4 live persistence tests** with real LLM.
+Covers memory recall, cross-session persistence, consolidation, belief revision,
+relationship bounds, persona consistency, adversarial persona resistance, and contradiction handling.
 
 Full results: [docs/RESULTS.md](docs/RESULTS.md)
 

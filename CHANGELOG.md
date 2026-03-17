@@ -5,6 +5,58 @@ All notable changes to Woven Imprint will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-03-17
+
+### Added
+- Parallel subsystem calls via ThreadPoolExecutor (opt-in: `character.parallel = True`)
+- Thread-safe SQLite with `check_same_thread=False`
+- CI step timeouts to catch hangs
+
+### Fixed
+- Infinite recursion in SQLite `_commit()` method
+
+## [0.2.0] - 2026-03-17
+
+### Added
+- Auto-consolidation every 20 turns + at session end (was never called)
+- Belief revision wired into fact extraction (auto-detects contradictions)
+- Periodic state save every 10 turns (emotion/arc survives mid-session crash)
+- Tier priority as 6th RRF retrieval strategy
+- Consolidation correctness benchmark (14th benchmark)
+- Live persistence benchmarks: 50-session recall, adversarial persona (8/8),
+  contradiction handling (4/4), held-out character (100%)
+- Evaluation methodology doc with exact prompts and honest limitations
+- Docker Compose setup (Ollama + Woven Imprint self-contained)
+- OLLAMA_HOST env var for remote/containerized Ollama
+- API server bearer token auth (`--api-key` or `WOVEN_IMPRINT_API_KEY`)
+- Actionable Ollama error messages
+- Web UI with 4 tabs (Chat, Characters, Migrate, Settings)
+- `woven-imprint ui --browser chrome` configurable browser
+- `woven-imprint update` command with pipx support
+- `woven-imprint migrate` from ChatGPT, SillyTavern, Custom GPTs, Claude
+- Custom GPT knowledge file import (`--knowledge` flag)
+- PDF extraction via pymupdf
+- Platform-specific setup guides (Windows, macOS, Linux, Docker)
+- `/slash` commands in CLI chat
+
+### Changed
+- All model defaults unified to `llama3.2`
+- Cross-session persistence: 67% → 100%
+- Benchmarks: 13/13 (94.8%) → 14/14 (97.9%)
+- Session summary importance: 0.7 → 0.85
+- Extracted fact importance: 0.6 → 0.75
+- Core tier boost: 0.15 → 0.2, Bedrock: 0.3 → 0.35
+
+### Fixed
+- Gradio 6.0 compatibility
+- Proper PNG chunk parsing for TavernAI cards
+- save_character no longer wipes state
+- Relationship trajectory uses clamped deltas
+- Growth memories have embeddings
+- Emotion mood case-insensitive
+- FTS5 update trigger only fires on content changes
+- Consistency checker handles non-dict LLM response
+
 ## [0.1.2] - 2026-03-17
 
 ### Added

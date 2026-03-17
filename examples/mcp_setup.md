@@ -64,6 +64,10 @@ Once connected, these tools are available:
 | `reflect` | Have a character reflect on their experiences |
 | `evolve` | Detect and apply character growth |
 | `end_session` | End session and generate summary |
+| `new_session` | Start a fresh conversation session |
+| `consolidate` | Compress buffer memories into core memories |
+| `get_stats` | Memory counts, emotion, arc phase, relationships |
+| `delete_character` | Permanently delete a character |
 
 ## Usage in Claude
 

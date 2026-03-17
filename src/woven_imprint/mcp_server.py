@@ -214,5 +214,106 @@ def end_session(character_id: str) -> str:
     return json.dumps({"character": char.name, "summary": summary})
 
 
+@mcp.tool()
+def new_session(character_id: str) -> str:
+    """Start a fresh conversation session. Ends the current session first if one is active.
+
+    Args:
+        character_id: The character's ID.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+
+    # End current session if active
+    summary = None
+    if char._session_id:
+        summary = char.end_session()
+
+    session_id = char.start_session()
+    return json.dumps(
+        {
+            "character": char.name,
+            "session_id": session_id,
+            "previous_summary": summary,
+        }
+    )
+
+
+@mcp.tool()
+def consolidate(character_id: str) -> str:
+    """Compress buffer memories into consolidated core memories.
+
+    Args:
+        character_id: The character's ID.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+
+    stats = char.consolidate()
+    return json.dumps({"character": char.name, "stats": stats})
+
+
+@mcp.tool()
+def get_stats(character_id: str) -> str:
+    """Get character statistics: memory counts, emotional state, arc phase, relationships.
+
+    Args:
+        character_id: The character's ID.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+
+    rels = char.relationships.get_all()
+    rel_summaries = []
+    for r in rels:
+        rel_summaries.append(
+            {
+                "target": r["target_id"],
+                "type": r.get("type", "stranger"),
+                "dimensions": r["dimensions"],
+                "trajectory": r.get("trajectory", "stable"),
+            }
+        )
+
+    return json.dumps(
+        {
+            "character": char.name,
+            "age": char.persona.age,
+            "emotion": char.emotion.to_dict(),
+            "arc_phase": char.arc.current_phase.value,
+            "arc_tension": char.arc.tension,
+            "memory": {
+                "buffer": char.memory.count("buffer"),
+                "core": char.memory.count("core"),
+                "bedrock": char.memory.count("bedrock"),
+            },
+            "relationships": rel_summaries,
+            "session_active": char._session_id is not None,
+        },
+        indent=2,
+    )
+
+
+@mcp.tool()
+def delete_character(character_id: str) -> str:
+    """Permanently delete a character and all their data.
+
+    Args:
+        character_id: The character's ID.
+    """
+    engine = _get_engine()
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+
+    name = char.name
+    engine.delete_character(character_id)
+    _char_cache.pop(character_id, None)
+    return json.dumps({"deleted": name})
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

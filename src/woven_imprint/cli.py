@@ -277,7 +277,8 @@ def cmd_ui(args):
     """Launch the web UI."""
     from .ui import launch
 
-    launch(db_path=args.db, model=args.model, port=args.port)
+    browser = args.browser if hasattr(args, "browser") else None
+    launch(db_path=args.db, model=args.model, port=args.port, browser=browser)
 
 
 def cmd_update(args):
@@ -511,6 +512,11 @@ def main():
         "ui", help="Launch web interface (requires: pip install woven-imprint[ui])"
     )
     p_ui.add_argument("--port", type=int, default=7860)
+    p_ui.add_argument(
+        "--browser",
+        default=None,
+        help="Browser to open (e.g., chrome, firefox, edge, none). Default: auto-detect",
+    )
 
     # update
     sub.add_parser("update", help="Update Woven Imprint to the latest version")

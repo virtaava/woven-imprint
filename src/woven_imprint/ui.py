@@ -7,7 +7,12 @@ Auto-opens a browser tab with chat, character management, and settings.
 from __future__ import annotations
 
 
-def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860):
+def launch(
+    db_path: str | None = None,
+    model: str = "llama3.2",
+    port: int = 7860,
+    browser: str | None = None,
+):
     """Launch the Gradio web interface."""
     try:
         import gradio as gr
@@ -425,7 +430,26 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
         time.sleep(1.5)  # wait for server to start
         url = f"http://127.0.0.1:{port}"
 
-        # WSL: use wslview or cmd.exe to open in Windows browser
+        # User specified "none" — don't open
+        if browser and browser.lower() == "none":
+            return
+
+        # User specified a browser by name
+        if browser and browser.lower() != "auto":
+            import webbrowser
+
+            try:
+                b = webbrowser.get(browser)
+                b.open(url)
+                return
+            except webbrowser.Error:
+                # Try as a direct command
+                if shutil.which(browser):
+                    subprocess.Popen([browser, url])
+                    return
+                print(f"  Browser '{browser}' not found, using auto-detect.")
+
+        # Auto-detect: WSL → Windows default browser
         if (
             "microsoft" in platform.uname().release.lower()
             or "wsl" in platform.uname().release.lower()
@@ -449,7 +473,7 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
             subprocess.Popen(["xdg-open", url])
             return
 
-        # Fallback: Python webbrowser module
+        # Fallback
         import webbrowser
 
         webbrowser.open(url)

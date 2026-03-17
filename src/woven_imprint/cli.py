@@ -67,7 +67,7 @@ def cmd_demo(args):
     print(f"\n{'=' * 50}")
     print("  WOVEN IMPRINT — Interactive Demo")
     print(f"  Character: {alice.name} (age {alice.persona.age})")
-    print("  Type 'quit' to exit, 'stats' for character info")
+    print("  Type /help for commands, /quit to exit")
     print(f"{'=' * 50}\n")
 
     _chat_loop(alice, engine)
@@ -127,7 +127,7 @@ def cmd_chat(args):
 
     char = engine.load_character(match["id"])
     print(f"\n  Chatting with {char.name}")
-    print("  Type 'quit' to exit, 'stats' for info\n")
+    print("  Type /help for commands, /quit to exit\n")
     _chat_loop(char, engine)
 
 
@@ -283,25 +283,42 @@ def _chat_loop(char, engine):
 
             if not user_input:
                 continue
-            if user_input.lower() == "quit":
-                break
 
-            if user_input.lower() == "stats":
-                _print_live_stats(char)
-                continue
-            if user_input.lower() == "reflect":
-                print(f"\n  [{char.name} reflects...]")
-                reflection = char.reflect()
-                print(f"  {reflection}\n")
-                continue
-            if user_input.lower() == "memories":
-                mems = char.recall(input("  Search: ").strip(), limit=5)
-                for m in mems:
-                    print(f"    [{m['tier']}] {m['content'][:100]}")
-                print()
+            # Slash commands — system controls, not sent to character
+            if user_input.startswith("/"):
+                cmd = user_input[1:].lower().strip()
+                if cmd == "quit" or cmd == "exit":
+                    break
+                elif cmd == "stats":
+                    _print_live_stats(char)
+                elif cmd == "reflect":
+                    print(f"\n  [{char.name} reflects...]")
+                    reflection = char.reflect()
+                    print(f"  {reflection}\n")
+                elif cmd == "memories" or cmd.startswith("recall"):
+                    query = cmd.split(maxsplit=1)[1] if " " in cmd else ""
+                    if not query:
+                        query = input("  Search: ").strip()
+                    mems = char.recall(query, limit=5)
+                    if mems:
+                        for m in mems:
+                            print(f"    [{m['tier']}] {m['content'][:100]}")
+                    else:
+                        print("    No memories found.")
+                    print()
+                elif cmd == "help":
+                    print("  /stats     — memory counts, emotion, relationships")
+                    print("  /reflect   — character reflects on recent experiences")
+                    print("  /memories  — search character's memories")
+                    print("  /recall X  — search memories for X")
+                    print("  /quit      — end session and exit")
+                    print("  /help      — show this help")
+                    print()
+                else:
+                    print(f"  Unknown command: /{cmd} (type /help for commands)")
                 continue
 
-            # Chat
+            # Everything else is sent to the character as chat
             response = char.chat(user_input, user_id=user_id)
             print(f"\n  {char.name}: {response}\n")
 

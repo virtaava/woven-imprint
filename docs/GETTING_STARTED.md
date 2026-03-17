@@ -165,11 +165,13 @@ You should see a character named Alice Blackwood introduce herself. Type a
 message and press Enter to chat with her. Try asking her about a case or
 telling her something personal — she'll remember it.
 
-During the chat, you can type:
-- **stats** — see her memory, emotions, and how she feels about you
-- **reflect** — she thinks about what's happened so far
-- **memories** — search what she remembers (type a search term when asked)
-- **quit** — end the conversation (she'll write a summary of your session)
+During the chat, you can use these commands (everything else is sent to the character):
+- **/help** — list all commands
+- **/stats** — see her memory, emotions, and how she feels about you
+- **/reflect** — she thinks about what's happened so far
+- **/memories** — search what she remembers (you'll be asked for a search term)
+- **/recall sword** — search memories for "sword" directly
+- **/quit** — end the conversation (she'll write a summary of your session)
 
 <details>
 <summary>It's not working</summary>

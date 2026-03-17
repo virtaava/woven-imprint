@@ -10,8 +10,13 @@ from ..utils.text import generate_id
 class BeliefReviser:
     """Track certainty of memories and handle contradictions."""
 
-    REINFORCE_DELTA = 0.15
     CONTRADICT_CERTAINTY = 0.0
+
+    @property
+    def REINFORCE_DELTA(self):
+        from ..config import get_config
+
+        return get_config().persona.belief_reinforce_delta
 
     def __init__(
         self, storage: SQLiteStorage, character_id: str, embedder: EmbeddingProvider | None = None

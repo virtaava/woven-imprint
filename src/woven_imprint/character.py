@@ -66,19 +66,33 @@ class Character:
         # Narrative arc
         self.arc = NarrativeArc()
 
-        # Conversation buffer (sliding window with compression)
-        self._context = ContextManager(budget=context_budget)
+        # Conversation buffer — use provided budget or read from config
+        if context_budget is None:
+            from .config import get_config
+
+            ctx_cfg = get_config().context
+            context_budget = ContextBudget(
+                total=ctx_cfg.total_tokens,
+                system_prompt=ctx_cfg.system_prompt_tokens,
+                memories=ctx_cfg.memory_tokens,
+                conversation=ctx_cfg.conversation_tokens,
+                reserve=ctx_cfg.reserve_tokens,
+            )
+        self._context = ContextManager(
+            budget=context_budget, max_turns=get_config().context.max_turns
+        )
 
         # Session tracking
         self._session_id: str | None = None
         self._turn_count: int = 0
 
-        # Config
-        self.enforce_consistency: bool = True
-        self.lightweight: bool = False  # skip emotion/arc tracking when True
-        self.parallel: bool = (
-            False  # set True for parallel subsystem updates (faster with real LLMs)
-        )
+        # Config — read from centralized config, can be overridden per-instance
+        from .config import get_config
+
+        _cfg = get_config()
+        self.enforce_consistency: bool = _cfg.character.enforce_consistency
+        self.lightweight: bool = _cfg.character.lightweight
+        self.parallel: bool = _cfg.character.parallel
 
         # Restore persisted transient state (C3)
         self._restore_state()
@@ -113,10 +127,12 @@ class Character:
         if not self._session_id:
             self.start_session()
 
-        # Input size limit (H6)
-        max_message_len = 50_000  # ~12.5K tokens
-        if len(message) > max_message_len:
-            message = message[:max_message_len]
+        # Input size limit
+        from .config import get_config
+
+        _cfg = get_config()
+        if len(message) > _cfg.memory.max_message_length:
+            message = message[: _cfg.memory.max_message_length]
 
         # 1. Store user message as buffer memory
         self.memory.add(
@@ -178,16 +194,17 @@ class Character:
 
         self._turn_count += 1
 
-        # Periodic maintenance every 10 turns
-        if self._turn_count % 10 == 0:
-            # Save transient state (emotion, arc) — survives mid-session crash
+        # Periodic maintenance
+        if self._turn_count % _cfg.memory.state_save_interval == 0:
             try:
                 self._save_state()
             except Exception as e:
                 logger.debug("Periodic state save failed: %s", e)
 
-            # Auto-consolidation check every 20 turns
-            if self._turn_count % 20 == 0 and self.consolidator.needs_consolidation():
+            if (
+                self._turn_count % _cfg.memory.consolidation_interval == 0
+                and self.consolidator.needs_consolidation()
+            ):
                 try:
                     self.consolidator.consolidate()
                 except Exception as e:
@@ -375,12 +392,14 @@ class Character:
         summary = self.llm.generate(messages, temperature=0.3)
 
         # Store summary as core memory (high importance — must survive across sessions)
+        from .config import get_config
+
         self.memory.add(
             content=f"[Session Summary] {summary}",
             tier="core",
             role="observation",
             session_id=self._session_id,
-            importance=0.85,
+            importance=get_config().memory.session_summary_importance,
         )
 
         # Update session record
@@ -577,8 +596,11 @@ class Character:
         if user_id:
             self._update_relationship(user_msg, response, user_id)
 
-        # Fact extraction is throttled — every 3rd turn
-        if self._turn_count % 3 != 0 and self._turn_count > 0:
+        # Fact extraction is throttled
+        from .config import get_config
+
+        _extract_interval = get_config().memory.fact_extraction_interval
+        if self._turn_count % _extract_interval != 0 and self._turn_count > 0:
             return
 
         messages = [
@@ -624,7 +646,7 @@ class Character:
                             tier="core",
                             role="observation",
                             session_id=self._session_id,
-                            importance=0.75,
+                            importance=get_config().memory.fact_importance,
                             metadata={"source": "extraction", "user_id": user_id},
                         )
         except (ValueError, KeyError) as e:

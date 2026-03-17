@@ -13,13 +13,20 @@ from .embedding.ollama import OllamaEmbedding
 DEFAULT_DB = str(Path.home() / ".woven_imprint" / "characters.db")
 
 
-def _get_engine(db_path: str | None = None, model: str = "llama3.2") -> Engine:
-    db = db_path or DEFAULT_DB
+def _get_engine(db_path: str | None = None, model: str | None = None) -> Engine:
+    from .config import get_config
+
+    cfg = get_config()
+    db = db_path or cfg.storage.db_path
     Path(db).parent.mkdir(parents=True, exist_ok=True)
     return Engine(
         db_path=db,
-        llm=OllamaLLM(model=model, num_ctx=8192),
-        embedding=OllamaEmbedding(model="nomic-embed-text"),
+        llm=OllamaLLM(
+            model=model or cfg.llm.model,
+            num_ctx=cfg.llm.num_ctx,
+            timeout=cfg.llm.timeout,
+        ),
+        embedding=OllamaEmbedding(model=cfg.llm.embedding_model),
     )
 
 

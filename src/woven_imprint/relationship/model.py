@@ -15,8 +15,15 @@ DEFAULT_DIMENSIONS = {
     "tension": 0.0,
 }
 
+
 # Maximum change per interaction for any dimension
-MAX_DELTA = 0.15
+def _max_delta() -> float:
+    from ..config import get_config
+
+    return get_config().relationship.max_delta
+
+
+MAX_DELTA = 0.15  # kept for backward compat; internal code uses _max_delta()
 
 
 def _clamp(value: float, lo: float = -1.0, hi: float = 1.0) -> float:

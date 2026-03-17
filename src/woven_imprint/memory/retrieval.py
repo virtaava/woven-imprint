@@ -20,19 +20,22 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
-# Decay rates per tier — bedrock and core decay much slower than buffer
-_DECAY_RATES = {
-    "bedrock": 0.9999,  # half-life ~290 days — nearly permanent
-    "core": 0.999,  # half-life ~29 days — fades over months
-    "buffer": 0.995,  # half-life ~5.8 days — fades in a week
-}
+def _get_decay_rates() -> dict:
+    from ..config import get_config
 
-# Importance floor per tier — minimum effective importance
-_TIER_IMPORTANCE_BOOST = {
-    "bedrock": 0.35,  # bedrock always gets a strong boost
-    "core": 0.2,  # core gets a solid boost (session summaries, extracted facts)
-    "buffer": 0.0,  # buffer gets no boost (ephemeral by design)
-}
+    cfg = get_config().memory
+    return {"bedrock": cfg.decay_bedrock, "core": cfg.decay_core, "buffer": cfg.decay_buffer}
+
+
+def _get_tier_boosts() -> dict:
+    from ..config import get_config
+
+    cfg = get_config().memory
+    return {
+        "bedrock": cfg.tier_boost_bedrock,
+        "core": cfg.tier_boost_core,
+        "buffer": cfg.tier_boost_buffer,
+    }
 
 
 def _recency_score(accessed_at: str, tier: str = "buffer") -> float:
@@ -43,7 +46,7 @@ def _recency_score(accessed_at: str, tier: str = "buffer") -> float:
     - core: slow decay (consolidated memories persist for months)
     - buffer: fast decay (raw observations fade in days)
     """
-    decay_rate = _DECAY_RATES.get(tier, 0.995)
+    decay_rate = _get_decay_rates().get(tier, 0.995)
     try:
         accessed = datetime.fromisoformat(accessed_at.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
@@ -128,7 +131,7 @@ class MemoryRetriever:
         importance_scores = []
         for m in all_memories:
             base = m.get("importance", 0.5) * m.get("certainty", 1.0)
-            boost = _TIER_IMPORTANCE_BOOST.get(m.get("tier", "buffer"), 0.0)
+            boost = _get_tier_boosts().get(m.get("tier", "buffer"), 0.0)
             importance_scores.append((m["id"], base + boost))
         importance_scores.sort(key=lambda x: x[1], reverse=True)
         importance_ranked = [mid for mid, _ in importance_scores]

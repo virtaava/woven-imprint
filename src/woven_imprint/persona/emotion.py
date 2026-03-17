@@ -38,13 +38,19 @@ class EmotionalState:
     cause: str = ""  # what triggered this mood
     turns_held: int = 0  # how many turns this mood has persisted
 
-    def decay(self, rate: float = 0.15) -> None:
+    def decay(self, rate: float | None = None) -> None:
         """Emotions naturally decay toward neutral over time."""
+        if rate is None:
+            from ..config import get_config
+
+            rate = get_config().persona.emotion_decay_rate
         self.intensity = max(0.0, self.intensity - rate)
         self.turns_held += 1
         if self.intensity < 0.1:
             self.mood = "neutral"
-            self.intensity = 0.3
+            from ..config import get_config
+
+            self.intensity = get_config().persona.emotion_neutral_intensity
             self.cause = ""
             self.turns_held = 0
 

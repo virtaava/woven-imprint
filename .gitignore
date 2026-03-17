@@ -10,3 +10,4 @@ test_live*.py
 test_stellamore.py
 docs/AUDIT_FINDINGS.md
 *.db
+article_draft.md

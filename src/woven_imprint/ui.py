@@ -166,7 +166,7 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
         return stats, rel_text
 
     # Build the UI
-    with gr.Blocks(title="Woven Imprint", theme=gr.themes.Soft()) as app:
+    with gr.Blocks(title="Woven Imprint") as app:
         gr.Markdown("# Woven Imprint\n*Persistent Character Infrastructure*")
 
         with gr.Row():
@@ -178,10 +178,7 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
                     interactive=True,
                 )
                 char_info = gr.Markdown("Select a character to start chatting.")
-                gr.ChatInterface(
-                    fn=chat,
-                    type="messages",
-                )
+                gr.ChatInterface(fn=chat)
 
             with gr.Column(scale=1):
                 # Stats

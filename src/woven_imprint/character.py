@@ -185,12 +185,20 @@ class Character:
 
         self._turn_count += 1
 
-        # Auto-consolidation check every 20 turns
-        if self._turn_count % 20 == 0 and self.consolidator.needs_consolidation():
+        # Periodic maintenance every 10 turns
+        if self._turn_count % 10 == 0:
+            # Save transient state (emotion, arc) — survives mid-session crash
             try:
-                self.consolidator.consolidate()
+                self._save_state()
             except Exception as e:
-                logger.debug("Auto-consolidation failed: %s", e)
+                logger.debug("Periodic state save failed: %s", e)
+
+            # Auto-consolidation check every 20 turns
+            if self._turn_count % 20 == 0 and self.consolidator.needs_consolidation():
+                try:
+                    self.consolidator.consolidate()
+                except Exception as e:
+                    logger.debug("Auto-consolidation failed: %s", e)
 
         return response
 

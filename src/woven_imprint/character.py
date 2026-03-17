@@ -76,7 +76,7 @@ class Character:
         # Config
         self.enforce_consistency: bool = True
         self.lightweight: bool = False  # skip emotion/arc tracking when True
-        self.parallel: bool = True  # run subsystem updates in parallel threads
+        self.parallel: bool = False  # set True for parallel subsystem updates (faster with real LLMs)
 
         # Restore persisted transient state (C3)
         self._restore_state()

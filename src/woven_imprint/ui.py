@@ -28,13 +28,16 @@ def launch(
     from .llm.ollama import OllamaLLM
     from .embedding.ollama import OllamaEmbedding
 
-    db = db_path or str(Path.home() / ".woven_imprint" / "characters.db")
+    from .config import get_config
+
+    cfg = get_config()
+    db = db_path or cfg.storage.db_path
     Path(db).parent.mkdir(parents=True, exist_ok=True)
 
     engine = Engine(
         db_path=db,
-        llm=OllamaLLM(model=model, num_ctx=8192),
-        embedding=OllamaEmbedding(model="nomic-embed-text"),
+        llm=OllamaLLM(model=model or cfg.llm.model, num_ctx=cfg.llm.num_ctx),
+        embedding=OllamaEmbedding(model=cfg.llm.embedding_model),
     )
 
     _active: dict = {"char": None}
@@ -356,7 +359,7 @@ def launch(
                 gr.Markdown("### Configuration")
                 gr.Markdown(f"**Database**: `{db}`")
                 gr.Markdown(f"**LLM Model**: `{model}`")
-                gr.Markdown("**Embedding**: `nomic-embed-text` via Ollama")
+                gr.Markdown(f"**Embedding**: `{cfg.llm.embedding_model}` via Ollama")
 
                 gr.Markdown("### About")
                 from . import __version__

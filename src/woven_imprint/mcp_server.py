@@ -25,14 +25,15 @@ _char_cache: dict = {}  # character_id → Character instance
 def _get_engine() -> Engine:
     global _engine
     if _engine is None:
-        Path(_db_path).parent.mkdir(parents=True, exist_ok=True)
-        import os
+        from .config import get_config
 
-        model = os.environ.get("WOVEN_IMPRINT_MODEL", "llama3.2")
+        cfg = get_config()
+        db = cfg.storage.db_path
+        Path(db).parent.mkdir(parents=True, exist_ok=True)
         _engine = Engine(
-            db_path=_db_path,
-            llm=OllamaLLM(model=model),
-            embedding=OllamaEmbedding(),
+            db_path=db,
+            llm=OllamaLLM(model=cfg.llm.model, num_ctx=cfg.llm.num_ctx),
+            embedding=OllamaEmbedding(model=cfg.llm.embedding_model),
         )
     return _engine
 

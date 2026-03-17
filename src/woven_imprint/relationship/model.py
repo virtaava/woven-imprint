@@ -73,7 +73,7 @@ class RelationshipModel:
             if key not in dims:
                 continue
             # Clamp delta magnitude
-            clamped = max(-MAX_DELTA, min(MAX_DELTA, delta))
+            clamped = max(-_max_delta(), min(_max_delta(), delta))
             if key == "familiarity":
                 # Familiarity is 0-1, only increases (you can't un-know someone)
                 dims[key] = _clamp(dims[key] + abs(clamped), 0.0, 1.0)
@@ -89,7 +89,7 @@ class RelationshipModel:
 
         # Update trajectory based on clamped changes (not raw input)
         clamped_deltas = {
-            k: max(-MAX_DELTA, min(MAX_DELTA, v)) for k, v in deltas.items() if k in dims
+            k: max(-_max_delta(), min(_max_delta(), v)) for k, v in deltas.items() if k in dims
         }
         net = sum(clamped_deltas.get(d, 0) for d in ("trust", "affection", "respect"))
         if net > 0.1:

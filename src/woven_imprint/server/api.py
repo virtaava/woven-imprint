@@ -32,13 +32,16 @@ _config: dict = {}
 def _get_engine() -> Engine:
     global _engine
     if _engine is None:
-        db_path = _config.get("db_path", str(Path.home() / ".woven_imprint" / "characters.db"))
+        from .config import get_config
+
+        cfg = get_config()
+        db_path = _config.get("db_path") or cfg.storage.db_path
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        model = _config.get("model", "llama3.2")
+        model = _config.get("model") or cfg.llm.model
         _engine = Engine(
             db_path=db_path,
-            llm=OllamaLLM(model=model, num_ctx=8192),
-            embedding=OllamaEmbedding(model="nomic-embed-text"),
+            llm=OllamaLLM(model=model, num_ctx=cfg.llm.num_ctx),
+            embedding=OllamaEmbedding(model=cfg.llm.embedding_model),
         )
     return _engine
 

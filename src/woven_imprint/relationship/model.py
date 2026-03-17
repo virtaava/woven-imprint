@@ -94,6 +94,31 @@ class RelationshipModel:
         self.storage.save_relationship(rel)
         return rel
 
+    def set_baseline(
+        self,
+        target_id: str,
+        dimensions: dict[str, float],
+        rel_type: str = "friend",
+        trajectory: str = "stable",
+    ) -> dict:
+        """Set relationship dimensions directly, bypassing per-interaction bounds.
+
+        Used for migration/import when the relationship baseline is known.
+        Values are clamped to valid ranges but not bounded by MAX_DELTA.
+        """
+        rel = self.get_or_create(target_id)
+        dims = rel["dimensions"]
+        for key in ("trust", "affection", "respect"):
+            if key in dimensions:
+                dims[key] = _clamp(float(dimensions[key]), -1.0, 1.0)
+        for key in ("familiarity", "tension"):
+            if key in dimensions:
+                dims[key] = _clamp(float(dimensions[key]), 0.0, 1.0)
+        rel["type"] = rel_type
+        rel["trajectory"] = trajectory
+        self.storage.save_relationship(rel)
+        return rel
+
     def get_all(self) -> list[dict]:
         """Get all relationships for this character."""
         return self.storage.get_relationships(self.character_id)

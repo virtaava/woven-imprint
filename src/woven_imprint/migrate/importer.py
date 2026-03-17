@@ -124,6 +124,35 @@ class CharacterImporter:
             if isinstance(mem, str) and len(mem) > 10:
                 char.memory.add(content=mem, tier="core", importance=0.7)
 
+        # Assess relationship baseline from conversation history
+        messages = parsed.get("messages", [])
+        if messages:
+            rel_baseline = self._assess_relationship_baseline(messages, name)
+            if rel_baseline:
+                user_id = "imported_user"
+                char.relationships.set_baseline(
+                    user_id,
+                    dimensions=rel_baseline.get("dimensions", {}),
+                    rel_type=rel_baseline.get("type", "companion"),
+                    trajectory=rel_baseline.get("trajectory", "stable"),
+                )
+                # Store key relationship moments as memories
+                for moment in rel_baseline.get("key_moments", [])[:5]:
+                    if isinstance(moment, str) and len(moment) > 10:
+                        char.memory.add(content=moment, tier="core", importance=0.7)
+                        char.relationships.add_key_moment(user_id, moment)
+
+            # Assess emotional baseline
+            emotion = self._assess_emotional_baseline(messages, name)
+            if emotion:
+                from ..persona.emotion import EmotionalState
+
+                char.emotion = EmotionalState(
+                    mood=emotion.get("mood", "neutral"),
+                    intensity=float(emotion.get("intensity", 0.3)),
+                    cause=emotion.get("cause", ""),
+                )
+
         return char
 
     def _analyze_tavernai(self, card: dict) -> dict:
@@ -215,6 +244,106 @@ class CharacterImporter:
             return result
         except (ValueError, KeyError):
             return existing or {"name": "Imported Character", "personality": "", "backstory": ""}
+
+    def _assess_relationship_baseline(self, messages: list[dict], char_name: str) -> dict | None:
+        """Assess the existing relationship dynamics from conversation history."""
+        # Sample the conversation — beginning, middle, end
+        n = len(messages)
+        sample_indices = []
+        if n <= 30:
+            sample_indices = list(range(n))
+        else:
+            # Take 10 from start, 10 from middle, 10 from end
+            sample_indices = (
+                list(range(10)) + list(range(n // 2 - 5, n // 2 + 5)) + list(range(n - 10, n))
+            )
+
+        sample = "\n".join(
+            f"{messages[i]['role']}: {messages[i]['content'][:150]}"
+            for i in sample_indices
+            if i < n
+        )
+
+        prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "Analyze the relationship between the user and the AI character "
+                    "across this conversation history. Return JSON with:\n"
+                    "- dimensions: {trust, affection, respect, familiarity, tension} "
+                    "each a float from -1.0 to 1.0 (familiarity/tension 0.0 to 1.0)\n"
+                    "- type: relationship type (friend, mentor, colleague, companion, stranger)\n"
+                    "- key_moments: list of 3-5 important relationship moments (strings)\n"
+                    "- trajectory: warming, cooling, stable, or volatile\n\n"
+                    "Base scores on the FULL arc of the conversation. If they have "
+                    "200 friendly exchanges, familiarity should be high. If the user "
+                    "shared personal struggles, trust and affection should reflect that."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Character: {char_name}\n"
+                    f"Total messages: {n}\n\n"
+                    f"Conversation samples (start, middle, end):\n{sample[:4000]}\n\n"
+                    f"Assess the relationship baseline."
+                ),
+            },
+        ]
+
+        try:
+            result = self.llm.generate_json(prompt)
+            if not isinstance(result, dict):
+                return None
+
+            # Validate and clamp dimensions
+            dims = result.get("dimensions", {})
+            validated = {}
+            for key in ("trust", "affection", "respect"):
+                val = dims.get(key, 0.0)
+                if isinstance(val, (int, float)):
+                    validated[key] = max(-1.0, min(1.0, float(val)))
+            for key in ("familiarity", "tension"):
+                val = dims.get(key, 0.0)
+                if isinstance(val, (int, float)):
+                    validated[key] = max(0.0, min(1.0, float(val)))
+
+            result["dimensions"] = validated
+            return result
+        except (ValueError, KeyError, TypeError):
+            return None
+
+    def _assess_emotional_baseline(self, messages: list[dict], char_name: str) -> dict | None:
+        """Assess the character's emotional state from recent conversation."""
+        # Only look at the last 10 messages for current emotional state
+        recent = messages[-10:]
+        sample = "\n".join(f"{m['role']}: {m['content'][:150]}" for m in recent)
+
+        prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "Based on the recent conversation, what is the character's "
+                    "current emotional state? Return JSON with:\n"
+                    "- mood: one of joyful, content, excited, anxious, angry, sad, "
+                    "fearful, neutral, contemplative, melancholic, determined, amused\n"
+                    "- intensity: 0.0-1.0\n"
+                    "- cause: brief reason (1 sentence)"
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Character: {char_name}\n\nRecent conversation:\n{sample[:2000]}",
+            },
+        ]
+
+        try:
+            result = self.llm.generate_json(prompt)
+            if isinstance(result, dict) and "mood" in result:
+                return result
+            return None
+        except (ValueError, KeyError, TypeError):
+            return None
 
     def _extract_speaking_style(self, examples: str, name: str) -> str:
         """Extract speaking style from example dialogue."""

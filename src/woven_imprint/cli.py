@@ -285,16 +285,16 @@ def cmd_update(args):
     import shutil
     import subprocess
 
-    # Detect if running under pipx
-    is_pipx = shutil.which("pipx") and "pipx" in (shutil.which("woven-imprint") or "")
+    # Detect if running under pipx — check if pipx venv exists for this package
+    pipx_venv = Path.home() / ".local" / "share" / "pipx" / "venvs" / "woven-imprint"
+    is_pipx = shutil.which("pipx") and pipx_venv.exists()
 
     if is_pipx:
         print("Updating via pipx...")
         subprocess.run(["pipx", "upgrade", "woven-imprint"])
 
         # Also upgrade injected extras if present
-        venv_path = shutil.which("woven-imprint") or ""
-        if "pipx" in venv_path:
+        if pipx_venv.exists():
             # Check which extras are installed and upgrade them
             extras = {
                 "gradio": "UI",

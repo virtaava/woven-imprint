@@ -273,6 +273,13 @@ def cmd_migrate(args):
     engine.close()
 
 
+def cmd_ui(args):
+    """Launch the web UI."""
+    from .ui import launch
+
+    launch(db_path=args.db, model=args.model, port=args.port)
+
+
 def cmd_serve(args):
     """Start the OpenAI-compatible API server."""
     from .server.api import run_server
@@ -458,6 +465,10 @@ def main():
         help="Knowledge files to include (PDFs, text, data files from Custom GPT)",
     )
 
+    # ui
+    p_ui = sub.add_parser("ui", help="Launch web interface (requires: pip install woven-imprint[ui])")
+    p_ui.add_argument("--port", type=int, default=7860)
+
     # serve
     p_serve = sub.add_parser("serve", help="Start OpenAI-compatible API server")
     p_serve.add_argument("--port", type=int, default=8650)
@@ -474,6 +485,7 @@ def main():
         "delete": cmd_delete,
         "import": cmd_import,
         "migrate": cmd_migrate,
+        "ui": cmd_ui,
         "serve": cmd_serve,
     }
 

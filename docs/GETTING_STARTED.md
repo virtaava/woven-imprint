@@ -155,7 +155,17 @@ for Python configuration.
 
 ## Step 4: Try It
 
-Run this command:
+### Option 1: Web interface (easiest)
+
+```
+pip install woven-imprint[ui]
+woven-imprint ui
+```
+
+This opens a browser tab where you can create characters, chat, migrate
+existing characters, and see stats — all without touching the terminal again.
+
+### Option 2: Terminal
 
 ```
 woven-imprint demo
@@ -517,5 +527,6 @@ woven-imprint delete <name-or-id>         # Delete
 woven-imprint import <path>               # Import Woven Imprint JSON
 woven-imprint migrate <path>              # Migrate from other systems
 woven-imprint migrate --text "..."        # Migrate from text
+woven-imprint ui                          # Web interface (pip install woven-imprint[ui])
 woven-imprint serve --port 8650           # OpenAI-compatible API
 ```

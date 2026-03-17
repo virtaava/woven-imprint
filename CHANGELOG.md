@@ -5,6 +5,15 @@ All notable changes to Woven Imprint will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-03-17
+
+### Fixed
+- Gradio 6.0 compatibility — removed deprecated `theme` and `type` parameters
+- Documentation: externally-managed-environment fix for Linux/WSL/Ubuntu 24.04+
+- Documentation: pipx inject instructions for optional extras (ui, pdf)
+- Documentation: MCP tool count and missing migrate_from_text in tool table
+- Documentation: architecture diagram accuracy (removed unimplemented Qdrant reference)
+
 ## [0.1.0] - 2026-03-17
 
 ### Added

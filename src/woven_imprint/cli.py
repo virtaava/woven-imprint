@@ -327,6 +327,35 @@ def cmd_update(args):
     print(f"\nCurrent version: {__version__}")
 
 
+def cmd_config(args):
+    """View or initialize the configuration file."""
+    from .config import get_config, save_default_config
+
+    if hasattr(args, "init") and args.init:
+        path = save_default_config()
+        print(f"Config file created: {path}")
+        print("Edit it to customize Woven Imprint behavior.")
+        return
+
+    cfg = get_config()
+    from pathlib import Path
+
+    config_path = Path.home() / ".woven_imprint" / "config.yaml"
+    if config_path.exists():
+        print(f"Config file: {config_path}\n")
+        print(config_path.read_text())
+    else:
+        print(f"No config file found at {config_path}")
+        print("Create one with: woven-imprint config --init")
+        print("\nCurrent settings (defaults + env overrides):")
+        print(f"  Model: {cfg.llm.model}")
+        print(f"  Embedding: {cfg.llm.embedding_model}")
+        print(f"  Ollama: {cfg.llm.ollama_host}")
+        print(f"  Database: {cfg.storage.db_path}")
+        print(f"  Parallel: {cfg.character.parallel}")
+        print(f"  Lightweight: {cfg.character.lightweight}")
+
+
 def cmd_serve(args):
     """Start the OpenAI-compatible API server."""
     from .server.api import run_server
@@ -513,6 +542,10 @@ def main():
         help="Knowledge files to include (PDFs, text, data files from Custom GPT)",
     )
 
+    # config
+    p_config = sub.add_parser("config", help="View or create configuration file")
+    p_config.add_argument("--init", action="store_true", help="Create default config.yaml")
+
     # ui
     p_ui = sub.add_parser(
         "ui", help="Launch web interface (requires: pip install woven-imprint[ui])"
@@ -544,6 +577,7 @@ def main():
         "delete": cmd_delete,
         "import": cmd_import,
         "migrate": cmd_migrate,
+        "config": cmd_config,
         "ui": cmd_ui,
         "update": cmd_update,
         "serve": cmd_serve,

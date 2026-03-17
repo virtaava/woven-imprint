@@ -155,7 +155,9 @@ Full results: [docs/RESULTS.md](docs/RESULTS.md)
 
 ## Documentation
 
-- **[Getting Started](docs/GETTING_STARTED.md)** — installation, creating characters, chatting, memory, relationships, LLM backends, integrations
+**Setup**: [Windows/WSL](docs/setup-windows.md) | [macOS](docs/setup-mac.md) | [Linux](docs/setup-linux.md)
+
+- **[Developer Guide](docs/DEVELOPER_GUIDE.md)** — Python API, LLM backends, MCP, integrations
 - **[Architecture](docs/ARCHITECTURE.md)** — technical design, schemas, module structure
 - **[Evaluation Results](docs/RESULTS.md)** — benchmarks, Pride and Prejudice demo
 - **[MCP Setup](examples/mcp_setup.md)** — Claude Desktop, Cursor, Hermes, OpenClaw

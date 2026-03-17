@@ -102,6 +102,22 @@ bounded change per interaction, trajectory detection, and key moment tracking.
 Memories carry certainty scores. Contradictions are tracked, not overwritten —
 characters can genuinely change their mind while remembering what they used to believe.
 
+### Migrate from Existing Systems
+
+Bring characters from other platforms — persona, memories, and relationship history
+are automatically extracted and baselined:
+
+```bash
+woven-imprint migrate conversations.json           # ChatGPT export
+woven-imprint migrate character_card.png            # SillyTavern / TavernAI
+woven-imprint migrate --text "You are Marcus..."    # Custom GPT instructions
+woven-imprint migrate /path/to/claude/project/      # Claude Code project
+woven-imprint migrate persona.md                    # Any markdown/text file
+```
+
+The system analyzes conversation history to calculate relationship baselines
+(trust, affection, familiarity) so characters don't start from zero.
+
 ## Use Cases
 
 - **Game NPCs** — characters with real memory across play sessions

@@ -59,12 +59,27 @@ Configuration guide for using Woven Imprint characters in:
 - **Hermes Agent** — add to config.yaml
 - **OpenClaw** — add to openclaw.json
 
-No code needed — just config. Characters are available as MCP tools:
-`chat`, `recall`, `get_relationship`, `reflect`, `evolve`, `end_session`.
+No code needed — just config. Characters are available as MCP tools.
+
+## Migrating Existing Characters
+
+Already have a character in ChatGPT, SillyTavern, or a Custom GPT? Bring it over:
+
+```bash
+woven-imprint migrate conversations.json           # ChatGPT data export
+woven-imprint migrate character_card.png            # SillyTavern / TavernAI card
+woven-imprint migrate --text "You are Marcus..."    # Custom GPT instructions
+woven-imprint migrate /path/to/claude/project/      # Claude Code project
+woven-imprint migrate persona.md                    # Any text/markdown
+```
+
+The system extracts persona, memories, relationship baselines, and emotional state
+automatically. See [Getting Started — Migrate](../docs/GETTING_STARTED.md#migrate-from-other-systems) for details.
 
 ## What to Try
 
 1. **Start with `basic_usage.py`** — understand the core API
-2. **Run `multi_character.py`** — see how characters perceive each other differently
-3. **Try the CLI** — `woven-imprint demo` for an interactive chat with live feedback
-4. **Connect your IDE** — follow `mcp_setup.md` to use characters in Claude or Cursor
+2. **Migrate an existing character** — `woven-imprint migrate` with your own data
+3. **Run `multi_character.py`** — see how characters perceive each other differently
+4. **Try the CLI** — `woven-imprint demo` for an interactive chat with live feedback
+5. **Connect your IDE** — follow `mcp_setup.md` to use characters in Claude or Cursor

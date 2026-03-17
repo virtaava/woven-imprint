@@ -481,44 +481,126 @@ marcus = engine.import_character("marcus_backup.json")
 # All memories are re-embedded on import
 ```
 
-### Import persona from a markdown file
+---
 
-If you have a character defined in a markdown or text file, parse it into
-a persona dict and create the character:
+## Migrate from Other Systems
+
+Already have a character in ChatGPT, SillyTavern, Claude, or a text file?
+Bring it into Woven Imprint with one command.
+
+### From ChatGPT
+
+Export your data from ChatGPT (Settings → Data Controls → Export Data),
+then use the `conversations.json` file:
+
+```bash
+woven-imprint migrate conversations.json
+```
+
+The system analyzes your conversation history to extract:
+- Character persona (personality, backstory, speaking style)
+- Key memories from the conversations
+- Relationship baseline (trust, affection, familiarity based on how you interacted)
+- Current emotional state (from the most recent messages)
+
+### From SillyTavern / TavernAI
+
+Character cards (JSON or PNG with embedded data) work directly:
+
+```bash
+woven-imprint migrate character_card.json
+woven-imprint migrate character_card.png
+```
+
+### From Custom GPT Instructions
+
+Copy your GPT's instructions and paste them:
+
+```bash
+woven-imprint migrate --text "You are Coach Rivera, a retired soccer coach..."
+```
+
+Or save them to a file first:
+
+```bash
+woven-imprint migrate my_gpt_instructions.txt
+```
+
+### From a Claude Project
+
+Point to the project directory (reads CLAUDE.md and memory files):
+
+```bash
+woven-imprint migrate /path/to/project/
+```
+
+### From Any Text or Markdown
+
+Any persona description, character sheet, or backstory document:
+
+```bash
+woven-imprint migrate persona.md
+woven-imprint migrate character_sheet.txt
+```
+
+### Override the Name
+
+If auto-detection gets the name wrong:
+
+```bash
+woven-imprint migrate conversations.json --name "Marcus"
+```
+
+### From Python
 
 ```python
-from pathlib import Path
+from woven_imprint import Engine
+from woven_imprint.migrate import CharacterImporter
 
-# Your character file (any format you like)
-text = Path("marcus.md").read_text()
-
-# Parse it however makes sense for your format
 engine = Engine("characters.db")
-marcus = engine.create_character(
-    name="Marcus",
-    birthdate="1995-08-22",
-    persona={
-        "backstory": text,  # or parse out specific sections
-        "personality": "gruff but kind",
-        "speaking_style": "short sentences, working-class dialect",
-    },
-)
+importer = CharacterImporter(engine)
+
+# From any file (auto-detects format)
+character = importer.from_file("conversations.json")
+
+# From text
+character = importer.from_text("You are Marcus, a gruff blacksmith...")
+
+# Check what was imported
+print(character.name)
+print(character.persona.soft)
+print(character.relationships.describe("imported_user"))
+print(character.emotion.mood)
 ```
+
+### Via MCP (Claude Desktop, Cursor)
+
+```
+"Migrate this character: You are a seasoned detective named Alice who
+ speaks in clipped sentences and has a dark sense of humor..."
+```
+
+The `migrate_from_text` tool extracts persona, personality, and memories
+automatically.
 
 ---
 
 ## CLI Reference
 
 ```bash
-woven-imprint demo                    # Interactive demo with pre-built character
-woven-imprint create "Name"           # Create a new character
-woven-imprint chat <name-or-id>       # Chat with existing character
-woven-imprint list                    # List all characters
-woven-imprint stats <name-or-id>      # Memory counts, relationships, emotion
-woven-imprint export <name-or-id>     # Export to JSON
-woven-imprint serve --port 8650       # Start OpenAI-compatible API server
+woven-imprint demo                        # Interactive demo with pre-built character
+woven-imprint create "Name"               # Create a new character
+woven-imprint chat <name-or-id>           # Chat with existing character
+woven-imprint list                        # List all characters
+woven-imprint stats <name-or-id>          # Memory counts, relationships, emotion
+woven-imprint export <name-or-id>         # Export to JSON
+woven-imprint delete <name-or-id>         # Delete a character
+woven-imprint import <path>               # Import from Woven Imprint JSON export
+woven-imprint migrate <path>              # Migrate from ChatGPT, SillyTavern, etc.
+woven-imprint migrate --text "..."        # Migrate from pasted text
+woven-imprint serve --port 8650           # Start OpenAI-compatible API server
 
 # Global options
 --db <path>          # Database path (default: ~/.woven_imprint/characters.db)
---model <name>       # Ollama model (default: qwen3-coder:30b)
+--model <name>       # Ollama model (env: WOVEN_IMPRINT_MODEL, default: llama3.2)
 ```

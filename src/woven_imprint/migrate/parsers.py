@@ -180,9 +180,12 @@ def auto_detect(path: str | Path) -> dict:
                 return parse_tavernai_card(path)
 
         # Generic JSON with instructions
+        title = ""
+        if isinstance(data, dict):
+            title = data.get("name", data.get("title", ""))
         return {
             "source": "json",
-            "title": data.get("name", data.get("title", "")),
+            "title": title,
             "messages": [],
             "instructions": json.dumps(data, indent=2)[:10000],
         }

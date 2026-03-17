@@ -46,7 +46,20 @@ def _get_engine() -> Engine:
 class OpenAIHandler(BaseHTTPRequestHandler):
     """Handle OpenAI-compatible chat completions requests."""
 
+    def _check_auth(self) -> bool:
+        """Check bearer token if API key is configured."""
+        api_key = _config.get("api_key")
+        if not api_key:
+            return True  # no auth configured
+        auth_header = self.headers.get("Authorization", "")
+        if auth_header == f"Bearer {api_key}":
+            return True
+        self._send_error("Invalid or missing API key", 401)
+        return False
+
     def do_GET(self):
+        if not self._check_auth():
+            return
         if self.path == "/v1/models":
             self._send_models()
         elif self.path == "/health":
@@ -65,6 +78,8 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        if not self._check_auth():
+            return
         if self.path == "/v1/chat/completions":
             self._handle_chat()
         else:
@@ -215,10 +230,19 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         pass
 
 
-def run_server(port: int = 8650, db_path: str | None = None, model: str = "qwen3-coder:30b"):
+def run_server(
+    port: int = 8650,
+    db_path: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+):
     """Start the OpenAI-compatible API server."""
     global _config
-    _config = {"db_path": db_path, "model": model}
+    import os
+
+    resolved_model = model or os.environ.get("WOVEN_IMPRINT_MODEL", "llama3.2")
+    resolved_key = api_key or os.environ.get("WOVEN_IMPRINT_API_KEY")
+    _config = {"db_path": db_path, "model": resolved_model, "api_key": resolved_key}
 
     server = HTTPServer(("127.0.0.1", port), OpenAIHandler)
     print(f"Woven Imprint API server running on http://127.0.0.1:{port}")

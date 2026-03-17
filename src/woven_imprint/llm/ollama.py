@@ -28,21 +28,38 @@ class OllamaLLM(LLMProvider):
     def generate(
         self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
     ) -> str:
-        resp = requests.post(
-            f"{self.base_url}/api/chat",
-            json={
-                "model": self.model,
-                "messages": messages,
-                "options": {
-                    "temperature": temperature,
-                    "num_predict": max_tokens,
-                    "num_ctx": self.num_ctx,
+        try:
+            resp = requests.post(
+                f"{self.base_url}/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": messages,
+                    "options": {
+                        "temperature": temperature,
+                        "num_predict": max_tokens,
+                        "num_ctx": self.num_ctx,
+                    },
+                    "stream": False,
                 },
-                "stream": False,
-            },
-            timeout=self.timeout,
-        )
-        resp.raise_for_status()
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+        except requests.ConnectionError:
+            raise ConnectionError(
+                f"Cannot connect to Ollama at {self.base_url}. "
+                f"Is Ollama running? Install from https://ollama.com"
+            ) from None
+        except requests.Timeout:
+            raise TimeoutError(
+                f"Ollama did not respond within {self.timeout}s. "
+                f"The model may be loading — try again in a moment."
+            ) from None
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                raise ValueError(
+                    f"Model '{self.model}' not found. Run: ollama pull {self.model}"
+                ) from None
+            raise
         content = resp.json()["message"]["content"]
         # Strip thinking tags (qwen3-coder, deepseek)
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()

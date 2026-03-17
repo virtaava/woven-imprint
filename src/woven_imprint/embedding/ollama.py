@@ -22,12 +22,28 @@ class OllamaEmbedding(EmbeddingProvider):
         self._dims: int | None = None
 
     def embed(self, text: str) -> list[float]:
-        resp = requests.post(
-            f"{self.base_url}/api/embed",
-            json={"model": self.model, "input": text},
-            timeout=self.timeout,
-        )
-        resp.raise_for_status()
+        try:
+            resp = requests.post(
+                f"{self.base_url}/api/embed",
+                json={"model": self.model, "input": text},
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+        except requests.ConnectionError:
+            raise ConnectionError(
+                f"Cannot connect to Ollama at {self.base_url}. "
+                f"Is Ollama running? Install from https://ollama.com"
+            ) from None
+        except requests.Timeout:
+            raise TimeoutError(
+                f"Ollama embedding did not respond within {self.timeout}s."
+            ) from None
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                raise ValueError(
+                    f"Embedding model '{self.model}' not found. Run: ollama pull {self.model}"
+                ) from None
+            raise
         embeddings = resp.json()["embeddings"]
         vec = embeddings[0]
         if self._dims is None:

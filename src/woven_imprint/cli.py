@@ -326,7 +326,8 @@ def cmd_serve(args):
     """Start the OpenAI-compatible API server."""
     from .server.api import run_server
 
-    run_server(port=args.port, db_path=args.db, model=args.model)
+    api_key = args.api_key if hasattr(args, "api_key") else None
+    run_server(port=args.port, db_path=args.db, model=args.model, api_key=api_key)
 
 
 def _chat_loop(char, engine):
@@ -524,6 +525,7 @@ def main():
     # serve
     p_serve = sub.add_parser("serve", help="Start OpenAI-compatible API server")
     p_serve.add_argument("--port", type=int, default=8650)
+    p_serve.add_argument("--api-key", default=None, help="Require this API key for all requests")
 
     args = parser.parse_args()
 

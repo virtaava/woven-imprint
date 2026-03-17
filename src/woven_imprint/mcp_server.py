@@ -28,7 +28,7 @@ def _get_engine() -> Engine:
         Path(_db_path).parent.mkdir(parents=True, exist_ok=True)
         import os
 
-        model = os.environ.get("WOVEN_IMPRINT_MODEL", "qwen3-coder:30b")
+        model = os.environ.get("WOVEN_IMPRINT_MODEL", "llama3.2")
         _engine = Engine(
             db_path=_db_path,
             llm=OllamaLLM(model=model),

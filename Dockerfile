@@ -7,6 +7,8 @@ COPY src/ src/
 
 RUN pip install --no-cache-dir -e .
 
-# Default: interactive demo (override with docker run args)
+# Default: show help. Use with --network host and Ollama running on the host:
+#   docker run --network host woven-imprint demo
+#   docker run --network host woven-imprint serve --port 8650
 ENTRYPOINT ["woven-imprint"]
-CMD ["demo"]
+CMD ["--help"]

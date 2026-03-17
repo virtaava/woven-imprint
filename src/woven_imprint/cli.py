@@ -252,10 +252,20 @@ def cmd_migrate(args):
 
     name = args.name if hasattr(args, "name") and args.name else None
 
+    knowledge = args.knowledge if hasattr(args, "knowledge") and args.knowledge else None
+
     if args.text:
-        char = importer.from_text(args.text, name=name)
+        if knowledge:
+            char = importer.from_custom_gpt(args.text, knowledge_files=knowledge, name=name)
+        else:
+            char = importer.from_text(args.text, name=name)
     else:
-        char = importer.from_file(args.path, name=name)
+        if knowledge:
+            # File + knowledge files = treat file as instructions
+            instructions = open(args.path).read()
+            char = importer.from_custom_gpt(instructions, knowledge_files=knowledge, name=name)
+        else:
+            char = importer.from_file(args.path, name=name)
 
     print(f"Migrated: {char.name} (id: {char.id})")
     print(f"  Personality: {char.persona.soft.get('personality', '?')[:80]}")
@@ -441,6 +451,12 @@ def main():
     p_migrate.add_argument("path", nargs="?", help="File to import (auto-detects format)")
     p_migrate.add_argument("-n", "--name", help="Override character name")
     p_migrate.add_argument("-t", "--text", help="Import from text string (Custom GPT instructions)")
+    p_migrate.add_argument(
+        "-k",
+        "--knowledge",
+        nargs="+",
+        help="Knowledge files to include (PDFs, text, data files from Custom GPT)",
+    )
 
     # serve
     p_serve = sub.add_parser("serve", help="Start OpenAI-compatible API server")

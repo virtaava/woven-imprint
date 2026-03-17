@@ -52,6 +52,66 @@ class CharacterImporter:
         parsed = auto_detect(path)
         return self._build_character(parsed, name_override=name)
 
+    def from_custom_gpt(
+        self,
+        instructions: str,
+        knowledge_files: list[str | Path] | None = None,
+        name: str | None = None,
+    ) -> Character:
+        """Import from a Custom GPT — instructions text + optional knowledge files.
+
+        Args:
+            instructions: The GPT's instruction/system prompt text.
+            knowledge_files: Paths to uploaded knowledge files (PDF, txt, md, json, csv).
+                These become the character's knowledge base (core memories).
+            name: Override character name.
+        """
+        parsed = parse_custom_gpt(instructions)
+
+        # Process knowledge files into additional context
+        if knowledge_files:
+            knowledge_texts = []
+            for kf_path in knowledge_files:
+                kf_path = Path(kf_path)
+                if not kf_path.exists():
+                    continue
+                try:
+                    if kf_path.suffix.lower() == ".pdf":
+                        # Basic PDF text extraction
+                        knowledge_texts.append(self._read_pdf(kf_path))
+                    elif kf_path.suffix.lower() == ".csv":
+                        text = kf_path.read_text(errors="replace")[:5000]
+                        knowledge_texts.append(f"[Data from {kf_path.name}]\n{text}")
+                    else:
+                        text = kf_path.read_text(errors="replace")[:10000]
+                        knowledge_texts.append(f"[Knowledge: {kf_path.name}]\n{text}")
+                except Exception:
+                    continue
+
+            if knowledge_texts:
+                parsed["knowledge"] = knowledge_texts
+
+        return self._build_character(parsed, name_override=name)
+
+    def _read_pdf(self, path: Path) -> str:
+        """Extract text from a PDF. Falls back to filename if no parser available."""
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                ["pdftotext", str(path), "-"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return f"[Knowledge: {path.name}]\n{result.stdout[:10000]}"
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+        # Fallback: just note the file existed
+        return f"[Knowledge file: {path.name} — PDF content not extracted]"
+
     def from_text(self, text: str, name: str | None = None) -> Character:
         """Import from raw text (Custom GPT instructions, persona description, etc.).
 
@@ -123,6 +183,17 @@ class CharacterImporter:
         for mem in memories[:20]:
             if isinstance(mem, str) and len(mem) > 10:
                 char.memory.add(content=mem, tier="core", importance=0.7)
+
+        # Process knowledge files into core memories
+        knowledge = parsed.get("knowledge", [])
+        for knowledge_text in knowledge:
+            if not knowledge_text or len(knowledge_text) < 20:
+                continue
+            # Extract key facts from the knowledge file
+            extracted = self._extract_knowledge_facts(knowledge_text, name)
+            for fact in extracted[:10]:
+                if isinstance(fact, str) and len(fact) > 10:
+                    char.memory.add(content=fact, tier="core", importance=0.8)
 
         # Assess relationship baseline from conversation history
         messages = parsed.get("messages", [])
@@ -344,6 +415,35 @@ class CharacterImporter:
             return None
         except (ValueError, KeyError, TypeError):
             return None
+
+    def _extract_knowledge_facts(self, knowledge_text: str, char_name: str) -> list[str]:
+        """Extract key facts from a knowledge file for the character's memory."""
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are extracting key facts from a knowledge document that belongs "
+                    f"to a character named {char_name}. Return a JSON array of strings. "
+                    "Each string should be a single fact, piece of knowledge, or reference "
+                    "that the character would know. Focus on the most important and "
+                    "distinctive information. Maximum 10 facts."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Extract key facts from this knowledge document:\n\n{knowledge_text[:4000]}",
+            },
+        ]
+
+        try:
+            result = self.llm.generate_json(messages)
+            if isinstance(result, list):
+                return [str(f) for f in result if f]
+            if isinstance(result, dict):
+                return [str(f) for f in result.get("facts", []) if f]
+            return []
+        except (ValueError, KeyError):
+            return []
 
     def _extract_speaking_style(self, examples: str, name: str) -> str:
         """Extract speaking style from example dialogue."""

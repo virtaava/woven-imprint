@@ -236,14 +236,32 @@ The system will read your conversation history and create a character with:
 
 ### From a Custom GPT
 
-If you built a Custom GPT with instructions:
+Custom GPTs have two parts: instructions and knowledge files. You can import both.
+
+**Instructions only:**
 
 1. Go to your GPT → Configure → copy the Instructions text
-2. Save it to a text file, or paste it directly:
+2. Paste directly or save to a file:
 
 ```
-woven-imprint migrate --text "You are Coach Rivera, a retired soccer coach who mentors young athletes..."
+woven-imprint migrate --text "You are Coach Rivera, a retired soccer coach..."
+woven-imprint migrate my_gpt_instructions.txt
 ```
+
+**Instructions + knowledge files:**
+
+If your GPT has uploaded files (PDFs, text files, spreadsheets):
+
+1. Copy the Instructions and save to a file (e.g., `instructions.txt`)
+2. Download the knowledge files from your GPT
+3. Include them with `--knowledge`:
+
+```
+woven-imprint migrate instructions.txt --knowledge product_manual.pdf faq.txt pricing.csv
+```
+
+The knowledge files are analyzed and key facts are stored as the character's
+memories. The character will reference this knowledge in conversations.
 
 ### From SillyTavern / TavernAI
 

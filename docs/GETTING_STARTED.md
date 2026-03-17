@@ -84,6 +84,34 @@ python3 -m pip install woven-imprint
 On Windows, close and reopen PowerShell after installing Python.
 </details>
 
+<details>
+<summary>It says "externally-managed-environment" (Linux / WSL / Ubuntu 24.04+)</summary>
+
+Modern Ubuntu/Debian prevents installing packages into the system Python.
+Create a virtual environment first:
+
+```
+python3 -m venv ~/woven-imprint-env
+source ~/woven-imprint-env/bin/activate
+pip install woven-imprint
+```
+
+You'll need to run `source ~/woven-imprint-env/bin/activate` each time you
+open a new terminal before using `woven-imprint`. To make it automatic,
+add it to your shell profile:
+
+```
+echo 'source ~/woven-imprint-env/bin/activate' >> ~/.bashrc
+```
+
+Alternatively, use `pipx` which manages the virtual environment for you:
+
+```
+sudo apt install pipx
+pipx install woven-imprint
+```
+</details>
+
 ## Step 3: Install an AI Model
 
 Your characters need an AI brain. The easiest free option is Ollama, which

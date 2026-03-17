@@ -568,16 +568,48 @@ response = client.chat.completions.create(
 ## CLI Reference
 
 ```bash
-woven-imprint demo                        # Interactive demo
-woven-imprint create "Name"               # Create character
-woven-imprint chat <name-or-id>           # Chat
-woven-imprint list                        # List characters
-woven-imprint stats <name-or-id>          # Character info
-woven-imprint export <name-or-id>         # Export to JSON
-woven-imprint delete <name-or-id>         # Delete
-woven-imprint import <path>               # Import Woven Imprint JSON
-woven-imprint migrate <path>              # Migrate from other systems
-woven-imprint migrate --text "..."        # Migrate from text
+# Getting started
+woven-imprint demo                        # Interactive demo with pre-built character
 woven-imprint ui                          # Web interface (pip install woven-imprint[ui])
-woven-imprint serve --port 8650           # OpenAI-compatible API
+
+# Character management
+woven-imprint create "Name"               # Create character (interactive prompts)
+woven-imprint chat <name-or-id>           # Chat with a character
+woven-imprint list                        # List all characters
+woven-imprint stats <name-or-id>          # Memory counts, emotion, relationships
+woven-imprint export <name-or-id>         # Export to JSON file
+woven-imprint import <path>               # Import from Woven Imprint JSON
+woven-imprint delete <name-or-id>         # Delete a character
+
+# Migration from other systems
+woven-imprint migrate <path>              # Auto-detect format (ChatGPT, SillyTavern, etc.)
+woven-imprint migrate --text "..."        # From pasted instructions/persona
+woven-imprint migrate <path> -k f1 f2    # Include knowledge files (PDFs, docs)
+woven-imprint migrate <path> --name "X"   # Override auto-detected name
+
+# Server modes
+woven-imprint serve --port 8650           # OpenAI-compatible API proxy
+woven-imprint ui --port 7860              # Web interface
+
+# Maintenance
+woven-imprint update                      # Update to latest version
+woven-imprint --version                   # Show current version
+
+# Global options (apply to all commands)
+--db <path>                               # Database path (default: ~/.woven_imprint/characters.db)
+--model <name>                            # Ollama model (env: WOVEN_IMPRINT_MODEL, default: llama3.2)
+```
+
+### Chat Commands
+
+When chatting (via `woven-imprint chat` or `woven-imprint demo`), use these
+slash commands — everything without a `/` is sent to the character:
+
+```
+/help       — list all commands
+/stats      — memory counts, emotion, relationships
+/reflect    — character reflects on recent experiences
+/memories   — search memories (prompts for search term)
+/recall X   — search memories for "X" directly
+/quit       — end session and exit
 ```

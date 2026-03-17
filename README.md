@@ -41,6 +41,15 @@ pip install woven-imprint
 Requires Python 3.11+ and an LLM backend ([Ollama](https://ollama.com), OpenAI, or Anthropic).
 See [Getting Started](docs/GETTING_STARTED.md) for platform-specific setup.
 
+**Prefer a graphical interface?**
+
+```bash
+pip install woven-imprint[ui]
+woven-imprint ui
+```
+
+Opens a browser with chat, character management, migration, and settings — no terminal needed.
+
 ## Quick Start
 
 ```python

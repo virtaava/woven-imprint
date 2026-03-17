@@ -76,10 +76,23 @@ woven-imprint migrate persona.md                    # Any text/markdown
 The system extracts persona, memories, relationship baselines, and emotional state
 automatically. See [Getting Started — Migrate](../docs/GETTING_STARTED.md#migrate-from-other-systems) for details.
 
+## Web Interface
+
+Don't want to use the terminal? The web UI covers everything:
+
+```bash
+pip install woven-imprint[ui]
+woven-imprint ui
+```
+
+Opens a browser with 4 tabs: Chat, Characters (create/export/import/delete),
+Migrate (from text or file), and Settings.
+
 ## What to Try
 
-1. **Start with `basic_usage.py`** — understand the core API
-2. **Migrate an existing character** — `woven-imprint migrate` with your own data
-3. **Run `multi_character.py`** — see how characters perceive each other differently
-4. **Try the CLI** — `woven-imprint demo` for an interactive chat with live feedback
-5. **Connect your IDE** — follow `mcp_setup.md` to use characters in Claude or Cursor
+1. **Launch the web UI** — `woven-imprint ui` (easiest way to explore)
+2. **Or start with `basic_usage.py`** — understand the Python API
+3. **Migrate an existing character** — `woven-imprint migrate` with your own data
+4. **Run `multi_character.py`** — see how characters perceive each other differently
+5. **Try the CLI** — `woven-imprint demo` for an interactive terminal chat
+6. **Connect your IDE** — follow `mcp_setup.md` to use characters in Claude or Cursor

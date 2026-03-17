@@ -1,7 +1,7 @@
 from .base import EmbeddingProvider
 from .ollama import OllamaEmbedding
 
-__all__ = ["EmbeddingProvider", "OllamaEmbedding", "OpenAIEmbedding"]
+__all__ = ["EmbeddingProvider", "OllamaEmbedding"]
 
 
 def __getattr__(name: str):

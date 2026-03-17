@@ -32,8 +32,8 @@ def _get_db_only_engine(db_path: str | None = None) -> Engine:
     # Use a dummy engine that only needs storage
     engine = object.__new__(Engine)
     engine.storage = SQLiteStorage(db)
-    engine.llm = None
-    engine.embedder = None
+    engine.llm = None  # type: ignore[assignment]
+    engine.embedder = None  # type: ignore[assignment]
     return engine
 
 

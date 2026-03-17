@@ -200,12 +200,17 @@ woven-imprint ui --browser none       # don't open, just print URL
 
 ## Configuration
 
-| Setting | Default | Env Var | CLI Flag |
-|---------|---------|---------|----------|
-| Database path | `~/.woven_imprint/characters.db` | — | `--db` |
-| Ollama model | `llama3.2` | `WOVEN_IMPRINT_MODEL` | `--model` |
-| MCP model | `llama3.2` | `WOVEN_IMPRINT_MODEL` | — |
-| Lightweight mode | off | — | `character.lightweight = True` |
+All settings are managed through `~/.woven_imprint/config.yaml`:
+
+```bash
+woven-imprint config --init    # create default config with all options documented
+woven-imprint config           # view current settings
+```
+
+Priority: CLI flags > environment variables > config file > built-in defaults.
+
+See **[Configuration Reference](CONFIGURATION.md)** for all 50 settings including
+LLM, memory, context window, relationships, persona, server, and storage options.
 
 ## CLI Reference
 

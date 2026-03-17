@@ -74,7 +74,7 @@ woven-imprint migrate persona.md                    # Any text/markdown
 ```
 
 The system extracts persona, memories, relationship baselines, and emotional state
-automatically. See [Getting Started — Migrate](../docs/GETTING_STARTED.md#migrate-from-other-systems) for details.
+automatically. See the platform setup guides ([Windows](../docs/setup-windows.md#step-6-bring-an-existing-character), [macOS](../docs/setup-mac.md#step-6-bring-an-existing-character), [Linux](../docs/setup-linux.md#step-6-bring-an-existing-character)) for details.
 
 ## Web Interface
 

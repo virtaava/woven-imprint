@@ -243,6 +243,26 @@ def cmd_import(args):
     engine.close()
 
 
+def cmd_migrate(args):
+    """Migrate a character from another AI system."""
+    from .migrate import CharacterImporter
+
+    engine = _get_engine(args.db, args.model)
+    importer = CharacterImporter(engine)
+
+    name = args.name if hasattr(args, "name") and args.name else None
+
+    if args.text:
+        char = importer.from_text(args.text, name=name)
+    else:
+        char = importer.from_file(args.path, name=name)
+
+    print(f"Migrated: {char.name} (id: {char.id})")
+    print(f"  Personality: {char.persona.soft.get('personality', '?')[:80]}")
+    print(f"  Memories: {char.memory.count('core')} core, {char.memory.count('bedrock')} bedrock")
+    engine.close()
+
+
 def cmd_serve(args):
     """Start the OpenAI-compatible API server."""
     from .server.api import run_server
@@ -396,6 +416,15 @@ def main():
     p_import = sub.add_parser("import", help="Import character from JSON")
     p_import.add_argument("path", help="Path to exported JSON file")
 
+    # migrate
+    p_migrate = sub.add_parser(
+        "migrate",
+        help="Migrate character from ChatGPT, SillyTavern, Claude, or text",
+    )
+    p_migrate.add_argument("path", nargs="?", help="File to import (auto-detects format)")
+    p_migrate.add_argument("-n", "--name", help="Override character name")
+    p_migrate.add_argument("-t", "--text", help="Import from text string (Custom GPT instructions)")
+
     # serve
     p_serve = sub.add_parser("serve", help="Start OpenAI-compatible API server")
     p_serve.add_argument("--port", type=int, default=8650)
@@ -411,6 +440,7 @@ def main():
         "export": cmd_export,
         "delete": cmd_delete,
         "import": cmd_import,
+        "migrate": cmd_migrate,
         "serve": cmd_serve,
     }
 

@@ -315,5 +315,32 @@ def delete_character(character_id: str) -> str:
     return json.dumps({"deleted": name})
 
 
+@mcp.tool()
+def migrate_from_text(text: str, name: str = "") -> str:
+    """Create a character from existing persona text, Custom GPT instructions, or description.
+
+    Paste any character definition and the system will extract personality,
+    backstory, speaking style, and key memories automatically.
+
+    Args:
+        text: The persona/instructions text to migrate from.
+        name: Optional character name (extracted from text if not provided).
+    """
+    from .migrate import CharacterImporter
+
+    engine = _get_engine()
+    importer = CharacterImporter(engine)
+    char = importer.from_text(text, name=name or None)
+    _char_cache[char.id] = char
+    return json.dumps(
+        {
+            "character": char.name,
+            "id": char.id,
+            "personality": char.persona.soft.get("personality", ""),
+            "memories_seeded": char.memory.count("core"),
+        }
+    )
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

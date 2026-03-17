@@ -8,6 +8,8 @@
 
 Characters that survive across time.
 
+**Setup**: [Windows/WSL](docs/setup-windows.md) | [macOS](docs/setup-mac.md) | [Linux](docs/setup-linux.md) | [Developer Guide](docs/DEVELOPER_GUIDE.md) | [Architecture](docs/ARCHITECTURE.md) | [Benchmarks](docs/RESULTS.md) | [MCP Setup](examples/mcp_setup.md)
+
 Woven Imprint is infrastructure for building AI characters that persist. Characters
 accumulate memories across sessions, maintain consistent personalities, and develop
 relationships that evolve over weeks and months of interaction.
@@ -153,14 +155,6 @@ Benchmarks are deterministic and fully reproducible (no LLM needed).
 
 Full results: [docs/RESULTS.md](docs/RESULTS.md)
 
-## Documentation
-
-**Setup**: [Windows/WSL](docs/setup-windows.md) | [macOS](docs/setup-mac.md) | [Linux](docs/setup-linux.md)
-
-- **[Developer Guide](docs/DEVELOPER_GUIDE.md)** — Python API, LLM backends, MCP, integrations
-- **[Architecture](docs/ARCHITECTURE.md)** — technical design, schemas, module structure
-- **[Evaluation Results](docs/RESULTS.md)** — benchmarks, Pride and Prejudice demo
-- **[MCP Setup](examples/mcp_setup.md)** — Claude Desktop, Cursor, Hermes, OpenClaw
 
 ## Design Principles
 

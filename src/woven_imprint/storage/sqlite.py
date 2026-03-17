@@ -114,9 +114,12 @@ class SQLiteStorage:
     """SQLite-backed storage for characters, memories, relationships."""
 
     def __init__(self, db_path: str | Path = ":memory:"):
+        import threading
+
         self.db_path = str(db_path)
-        self._conn = sqlite3.connect(self.db_path)
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._lock = threading.Lock()
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.execute("PRAGMA busy_timeout=5000")
@@ -138,7 +141,12 @@ class SQLiteStorage:
             if version > current:
                 self._conn.executescript(_MIGRATIONS[version])
                 self._conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
-                self._conn.commit()
+                self._commit()
+
+    def _commit(self) -> None:
+        """Thread-safe commit."""
+        with self._lock:
+            self._commit()
 
     def close(self) -> None:
         self._conn.close()
@@ -175,7 +183,7 @@ class SQLiteStorage:
                        updated_at=datetime('now')""",
                 (char_id, name, json.dumps(persona), birthdate),
             )
-        self._conn.commit()
+        self._commit()
 
     def load_character(self, char_id: str) -> dict | None:
         row = self._conn.execute("SELECT * FROM characters WHERE id = ?", (char_id,)).fetchone()
@@ -195,7 +203,7 @@ class SQLiteStorage:
         self._conn.execute("DELETE FROM relationships WHERE character_id = ?", (char_id,))
         self._conn.execute("DELETE FROM sessions WHERE character_id = ?", (char_id,))
         self._conn.execute("DELETE FROM characters WHERE id = ?", (char_id,))
-        self._conn.commit()
+        self._commit()
 
     # ── Memories ────────────────────────────────────────────────
 
@@ -228,7 +236,7 @@ class SQLiteStorage:
                 json.dumps(memory.get("metadata", {})),
             ),
         )
-        self._conn.commit()
+        self._commit()
 
     def get_memories(
         self, character_id: str, tier: str | None = None, status: str = "active", limit: int = 1000
@@ -261,7 +269,7 @@ class SQLiteStorage:
                 "UPDATE memories SET status = ? WHERE id = ?",
                 (status, memory_id),
             )
-        self._conn.commit()
+        self._commit()
 
     def update_memory_certainty(self, memory_id: str, delta: float) -> float:
         """Adjust certainty by delta, clamp to [0, 1]. Returns new value."""
@@ -275,7 +283,7 @@ class SQLiteStorage:
             "UPDATE memories SET certainty = ? WHERE id = ?",
             (new_val, memory_id),
         )
-        self._conn.commit()
+        self._commit()
         return new_val
 
     def touch_memory(self, memory_id: str) -> None:
@@ -284,7 +292,7 @@ class SQLiteStorage:
             "UPDATE memories SET accessed_at = datetime('now') WHERE id = ?",
             (memory_id,),
         )
-        self._conn.commit()
+        self._commit()
 
     def touch_memories_batch(self, memory_ids: list[str]) -> None:
         """Update accessed_at for multiple memories in one transaction."""
@@ -294,7 +302,7 @@ class SQLiteStorage:
             "UPDATE memories SET accessed_at = datetime('now') WHERE id = ?",
             [(mid,) for mid in memory_ids],
         )
-        self._conn.commit()
+        self._commit()
 
     def count_memories(self, character_id: str, tier: str | None = None) -> int:
         q = "SELECT COUNT(*) as c FROM memories WHERE character_id = ? AND status = 'active'"
@@ -357,7 +365,7 @@ class SQLiteStorage:
                 json.dumps(rel.get("key_moments", [])),
             ),
         )
-        self._conn.commit()
+        self._commit()
 
     def get_relationship(self, character_id: str, target_id: str) -> dict | None:
         row = self._conn.execute(
@@ -394,7 +402,7 @@ class SQLiteStorage:
                    summary=excluded.summary, ended_at=datetime('now')""",
             (session["id"], session["character_id"], session.get("summary")),
         )
-        self._conn.commit()
+        self._commit()
 
     def get_sessions(self, character_id: str, limit: int = 20) -> list[dict]:
         rows = self._conn.execute(

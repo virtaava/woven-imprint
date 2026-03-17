@@ -167,21 +167,36 @@ class Character:
             importance=0.5,
         )
 
-        # Subsystem updates — non-fatal, skipped in lightweight mode
-        if not self.lightweight:
-            try:
-                self.emotion = self.emotion_engine.assess(
-                    message, response, self.emotion, self.name
-                )
-            except Exception as e:
-                logger.debug("Emotion assessment failed: %s", e)
-            try:
-                self.arc_tracker.analyze_beat(message, response, self.arc, self.name, user_id or "")
-            except Exception as e:
-                logger.debug("Arc tracking failed: %s", e)
+        # Subsystem updates — run in parallel (all independent, all non-fatal)
+        from concurrent.futures import ThreadPoolExecutor
 
-        # Fact extraction + relationship updates (always run, throttled internally)
-        self._extract_memories(message, response, user_id)
+        futures = {}
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            # Emotion + arc (skipped in lightweight mode)
+            if not self.lightweight:
+                futures["emotion"] = pool.submit(
+                    self.emotion_engine.assess, message, response, self.emotion, self.name
+                )
+                futures["arc"] = pool.submit(
+                    self.arc_tracker.analyze_beat,
+                    message,
+                    response,
+                    self.arc,
+                    self.name,
+                    user_id or "",
+                )
+
+            # Fact extraction + relationship (always, throttled internally)
+            futures["extract"] = pool.submit(self._extract_memories, message, response, user_id)
+
+        # Collect results
+        for name, future in futures.items():
+            try:
+                result = future.result(timeout=60)
+                if name == "emotion" and result is not None:
+                    self.emotion = result
+            except Exception as e:
+                logger.debug("Parallel subsystem '%s' failed: %s", name, e)
 
         self._turn_count += 1
 

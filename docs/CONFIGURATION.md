@@ -36,6 +36,11 @@ llm:
   temperature_json: 0.3
   max_tokens: 2048
   timeout: 120
+  max_retries: 3
+  retry_base_delay: 1.0
+  retry_max_delay: 30.0
+  circuit_breaker_threshold: 5
+  circuit_breaker_cooldown: 30.0
 ```
 
 | Setting | Default | Env Var | Description |
@@ -48,6 +53,11 @@ llm:
 | `temperature_json` | `0.3` | — | Temperature for JSON generation (fact extraction, relationship assessment). Lower for more reliable structured output. |
 | `max_tokens` | `2048` | — | Maximum tokens per LLM response. |
 | `timeout` | `120` | — | Seconds to wait for an LLM response before timing out. Increase if using large models on slow hardware. |
+| `max_retries` | `3` | — | Number of retry attempts on transient failures (timeout, 502, 503, 429). Set to 0 to disable retries. |
+| `retry_base_delay` | `1.0` | — | Initial delay between retries in seconds. Doubles each attempt (exponential backoff) with random jitter. |
+| `retry_max_delay` | `30.0` | — | Maximum delay between retries. Caps the exponential growth. |
+| `circuit_breaker_threshold` | `5` | — | Number of consecutive failures before the circuit breaker trips. Once tripped, all calls to that provider are rejected until cooldown expires. |
+| `circuit_breaker_cooldown` | `30.0` | — | Seconds to wait after circuit breaker trips before retrying the provider. |
 
 ---
 

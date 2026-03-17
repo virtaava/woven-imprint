@@ -29,25 +29,21 @@ class OllamaLLM(LLMProvider):
         self.timeout = timeout
         self.num_ctx = num_ctx
 
-    def generate(
-        self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
-    ) -> str:
-        try:
+    def _post(self, endpoint: str, payload: dict) -> requests.Response:
+        """Make a resilient POST to Ollama with retry + backoff."""
+        from .resilience import resilient_call
+
+        def _do_post():
             resp = requests.post(
-                f"{self.base_url}/api/chat",
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "options": {
-                        "temperature": temperature,
-                        "num_predict": max_tokens,
-                        "num_ctx": self.num_ctx,
-                    },
-                    "stream": False,
-                },
+                f"{self.base_url}{endpoint}",
+                json=payload,
                 timeout=self.timeout,
             )
             resp.raise_for_status()
+            return resp
+
+        try:
+            return resilient_call(_do_post, provider_name="ollama")
         except requests.ConnectionError:
             raise ConnectionError(
                 f"Cannot connect to Ollama at {self.base_url}. "
@@ -60,10 +56,26 @@ class OllamaLLM(LLMProvider):
             ) from None
         except requests.HTTPError as e:
             if e.response is not None and e.response.status_code == 404:
-                raise ValueError(
-                    f"Model '{self.model}' not found. Run: ollama pull {self.model}"
-                ) from None
+                model = payload.get("model", self.model)
+                raise ValueError(f"Model '{model}' not found. Run: ollama pull {model}") from None
             raise
+
+    def generate(
+        self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
+    ) -> str:
+        resp = self._post(
+            "/api/chat",
+            {
+                "model": self.model,
+                "messages": messages,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens,
+                    "num_ctx": self.num_ctx,
+                },
+                "stream": False,
+            },
+        )
         content = resp.json()["message"]["content"]
         # Strip thinking tags (qwen3-coder, deepseek)
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()

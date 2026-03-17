@@ -30,6 +30,11 @@ class LLMConfig:
     temperature_json: float = 0.3
     max_tokens: int = 2048
     timeout: int = 120
+    max_retries: int = 3
+    retry_base_delay: float = 1.0
+    retry_max_delay: float = 30.0
+    circuit_breaker_threshold: int = 5
+    circuit_breaker_cooldown: float = 30.0
 
 
 @dataclass
@@ -272,6 +277,11 @@ llm:
   temperature_json: 0.3
   max_tokens: 2048
   timeout: 120
+  max_retries: 3
+  retry_base_delay: 1.0
+  retry_max_delay: 30.0
+  circuit_breaker_threshold: 5
+  circuit_breaker_cooldown: 30.0
 
 memory:
   consolidation_threshold: 100

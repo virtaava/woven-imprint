@@ -25,14 +25,21 @@ class OllamaEmbedding(EmbeddingProvider):
         self.timeout = timeout
         self._dims: int | None = None
 
-    def embed(self, text: str) -> list[float]:
-        try:
+    def _post(self, payload: dict) -> requests.Response:
+        """Resilient POST to Ollama embedding endpoint."""
+        from ..llm.resilience import resilient_call
+
+        def _do_post():
             resp = requests.post(
                 f"{self.base_url}/api/embed",
-                json={"model": self.model, "input": text},
+                json=payload,
                 timeout=self.timeout,
             )
             resp.raise_for_status()
+            return resp
+
+        try:
+            return resilient_call(_do_post, provider_name="ollama_embed")
         except requests.ConnectionError:
             raise ConnectionError(
                 f"Cannot connect to Ollama at {self.base_url}. "
@@ -48,6 +55,9 @@ class OllamaEmbedding(EmbeddingProvider):
                     f"Embedding model '{self.model}' not found. Run: ollama pull {self.model}"
                 ) from None
             raise
+
+    def embed(self, text: str) -> list[float]:
+        resp = self._post({"model": self.model, "input": text})
         embeddings = resp.json()["embeddings"]
         vec = embeddings[0]
         if self._dims is None:
@@ -55,12 +65,7 @@ class OllamaEmbedding(EmbeddingProvider):
         return vec
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        resp = requests.post(
-            f"{self.base_url}/api/embed",
-            json={"model": self.model, "input": texts},
-            timeout=self.timeout,
-        )
-        resp.raise_for_status()
+        resp = self._post({"model": self.model, "input": texts})
         vecs = resp.json()["embeddings"]
         if self._dims is None and vecs:
             self._dims = len(vecs[0])

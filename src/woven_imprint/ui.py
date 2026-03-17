@@ -167,9 +167,14 @@ def launch(
         char = _resolve_char(selection)
         if not char:
             return None, "No character selected."
-        path = tempfile.mktemp(suffix=".json", prefix=f"{char.name.lower().replace(' ', '_')}_")
-        char.export(path)
-        return path, f"Exported **{char.name}** — download below."
+        f = tempfile.NamedTemporaryFile(
+            suffix=".json",
+            prefix=f"{char.name.lower().replace(' ', '_')}_",
+            delete=False,
+        )
+        f.close()
+        char.export(f.name)
+        return f.name, f"Exported **{char.name}** — download below."
 
     def import_character(file):
         if not file:

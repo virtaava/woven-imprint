@@ -35,7 +35,7 @@ from woven_imprint.llm.ollama import OllamaLLM
 from woven_imprint.embedding.ollama import OllamaEmbedding
 
 engine = Engine(
-    llm=OllamaLLM(model="qwen3-coder:30b", num_ctx=8192),
+    llm=OllamaLLM(model="llama3.2", num_ctx=8192),
     embedding=OllamaEmbedding(model="nomic-embed-text"),
 )
 ```
@@ -204,7 +204,7 @@ woven-imprint ui --browser none       # don't open, just print URL
 |---------|---------|---------|----------|
 | Database path | `~/.woven_imprint/characters.db` | — | `--db` |
 | Ollama model | `llama3.2` | `WOVEN_IMPRINT_MODEL` | `--model` |
-| MCP model | `qwen3-coder:30b` | `WOVEN_IMPRINT_MODEL` | — |
+| MCP model | `llama3.2` | `WOVEN_IMPRINT_MODEL` | — |
 | Lightweight mode | off | — | `character.lightweight = True` |
 
 ## CLI Reference

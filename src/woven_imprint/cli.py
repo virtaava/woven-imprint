@@ -13,7 +13,7 @@ from .embedding.ollama import OllamaEmbedding
 DEFAULT_DB = str(Path.home() / ".woven_imprint" / "characters.db")
 
 
-def _get_engine(db_path: str | None = None, model: str = "qwen3-coder:30b") -> Engine:
+def _get_engine(db_path: str | None = None, model: str = "llama3.2") -> Engine:
     db = db_path or DEFAULT_DB
     Path(db).parent.mkdir(parents=True, exist_ok=True)
     return Engine(
@@ -262,7 +262,8 @@ def cmd_migrate(args):
     else:
         if knowledge:
             # File + knowledge files = treat file as instructions
-            instructions = open(args.path).read()
+            with open(args.path, encoding="utf-8") as f:
+                instructions = f.read()
             char = importer.from_custom_gpt(instructions, knowledge_files=knowledge, name=name)
         else:
             char = importer.from_file(args.path, name=name)
@@ -292,7 +293,9 @@ def cmd_update(args):
 
     if is_pipx:
         print("Updating via pipx...")
-        subprocess.run(["pipx", "upgrade", "woven-imprint"])
+        result = subprocess.run(["pipx", "upgrade", "woven-imprint"])
+        if result.returncode != 0:
+            print("Update failed. Try manually: pipx upgrade woven-imprint")
 
         # Also upgrade injected extras if present
         if pipx_venv.exists():
@@ -315,7 +318,9 @@ def cmd_update(args):
                     pass
     else:
         print("Updating via pip...")
-        subprocess.run(["pip", "install", "--upgrade", "woven-imprint"])
+        result = subprocess.run(["pip", "install", "--upgrade", "woven-imprint"])
+        if result.returncode != 0:
+            print("Update failed. Try manually: pip install --upgrade woven-imprint")
 
     from . import __version__
 

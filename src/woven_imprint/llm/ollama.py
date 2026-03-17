@@ -15,7 +15,7 @@ class OllamaLLM(LLMProvider):
 
     def __init__(
         self,
-        model: str = "qwen3-coder:30b",
+        model: str = "llama3.2",
         base_url: str | None = None,
         timeout: int = 120,
         num_ctx: int = 8192,

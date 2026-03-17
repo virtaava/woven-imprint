@@ -34,7 +34,7 @@ def _get_engine() -> Engine:
     if _engine is None:
         db_path = _config.get("db_path", str(Path.home() / ".woven_imprint" / "characters.db"))
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        model = _config.get("model", "qwen3-coder:30b")
+        model = _config.get("model", "llama3.2")
         _engine = Engine(
             db_path=db_path,
             llm=OllamaLLM(model=model, num_ctx=8192),
@@ -263,6 +263,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Woven Imprint API Server")
     parser.add_argument("--port", type=int, default=8650)
     parser.add_argument("--db", default=None)
-    parser.add_argument("--model", default="qwen3-coder:30b")
+    parser.add_argument("--model", default="llama3.2")
     args = parser.parse_args()
     run_server(port=args.port, db_path=args.db, model=args.model)

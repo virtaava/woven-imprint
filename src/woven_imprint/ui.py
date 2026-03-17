@@ -413,4 +413,46 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
             outputs=[migrate_file_result, character_dropdown],
         )
 
-    app.launch(server_port=port, share=False, inbrowser=True)
+    # Open browser — handle WSL specially (use Windows default browser)
+    import platform
+    import shutil
+    import subprocess
+    import threading
+
+    def _open_browser():
+        import time
+
+        time.sleep(1.5)  # wait for server to start
+        url = f"http://127.0.0.1:{port}"
+
+        # WSL: use wslview or cmd.exe to open in Windows browser
+        if (
+            "microsoft" in platform.uname().release.lower()
+            or "wsl" in platform.uname().release.lower()
+        ):
+            if shutil.which("wslview"):
+                subprocess.Popen(["wslview", url])
+                return
+            try:
+                subprocess.Popen(["cmd.exe", "/c", "start", url])
+                return
+            except FileNotFoundError:
+                pass
+
+        # macOS
+        if platform.system() == "Darwin":
+            subprocess.Popen(["open", url])
+            return
+
+        # Linux with xdg-open
+        if shutil.which("xdg-open"):
+            subprocess.Popen(["xdg-open", url])
+            return
+
+        # Fallback: Python webbrowser module
+        import webbrowser
+
+        webbrowser.open(url)
+
+    threading.Thread(target=_open_browser, daemon=True).start()
+    app.launch(server_port=port, share=False, inbrowser=False)

@@ -114,12 +114,9 @@ class SQLiteStorage:
     """SQLite-backed storage for characters, memories, relationships."""
 
     def __init__(self, db_path: str | Path = ":memory:"):
-        import threading
-
         self.db_path = str(db_path)
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._lock = threading.Lock()
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.execute("PRAGMA busy_timeout=5000")
@@ -144,9 +141,8 @@ class SQLiteStorage:
                 self._commit()
 
     def _commit(self) -> None:
-        """Thread-safe commit."""
-        with self._lock:
-            self._commit()
+        """Commit the current transaction."""
+        self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()

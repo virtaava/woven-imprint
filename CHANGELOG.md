@@ -5,6 +5,26 @@ All notable changes to Woven Imprint will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-03-17
+
+### Added
+- Full-featured web UI with 4 tabs: Chat, Characters, Migrate, Settings
+- `woven-imprint update` command — upgrades core + all installed extras
+- `woven-imprint ui` command — launches browser-based interface
+- File migration in UI (upload ChatGPT JSON, SillyTavern cards, etc.)
+- Export/import/delete characters from the UI
+- Memory search and reflect actions in the UI
+- PDF knowledge file extraction via pymupdf
+- Custom GPT knowledge file import (`--knowledge` flag)
+- Auto-open browser on `woven-imprint ui`
+
+### Fixed
+- `woven-imprint update` now also upgrades pipx-injected extras (gradio, openai, etc.)
+- Gradio 6.0 compatibility
+- Proper PNG chunk parsing for TavernAI character cards
+- `/slash` commands in CLI chat to avoid collision with character messages
+- Linux/WSL/Ubuntu 24.04+ install guide (externally-managed-environment)
+
 ## [0.1.1] - 2026-03-17
 
 ### Fixed

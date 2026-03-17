@@ -26,4 +26,3 @@ Key papers that shaped the design:
 - **Li et al. (2025)** — [MoCoRP: Modeling Consistent Relations between Persona and Response](https://arxiv.org/abs/2512.07544)
   Explicit NLI relation extraction between persona and response.
 
-Full research synthesis: [research/synthesis.md](../research/synthesis.md)

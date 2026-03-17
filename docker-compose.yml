@@ -1,0 +1,23 @@
+services:
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  woven-imprint:
+    build: .
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    ports:
+      - "7860:7860"
+    volumes:
+      - woven_data:/root/.woven_imprint
+    command: ["ui", "--port", "7860"]
+
+volumes:
+  ollama_data:
+  woven_data:

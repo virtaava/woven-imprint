@@ -13,11 +13,15 @@ class OllamaEmbedding(EmbeddingProvider):
     def __init__(
         self,
         model: str = "nomic-embed-text",
-        base_url: str = "http://127.0.0.1:11434",
+        base_url: str | None = None,
         timeout: int = 30,
     ):
+        import os
+
         self.model = model
-        self.base_url = base_url.rstrip("/")
+        self.base_url = (
+            base_url or os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+        ).rstrip("/")
         self.timeout = timeout
         self._dims: int | None = None
 

@@ -184,6 +184,14 @@ class Character:
         self._extract_memories(message, response, user_id)
 
         self._turn_count += 1
+
+        # Auto-consolidation check every 20 turns
+        if self._turn_count % 20 == 0 and self.consolidator.needs_consolidation():
+            try:
+                self.consolidator.consolidate()
+            except Exception as e:
+                logger.debug("Auto-consolidation failed: %s", e)
+
         return response
 
     def reflect(self) -> str:
@@ -342,6 +350,13 @@ class Character:
 
         self._session_id = None
         self._turn_count = 0
+
+        # Auto-consolidate at session end if buffer is large
+        if self.consolidator.needs_consolidation():
+            try:
+                self.consolidator.consolidate()
+            except Exception as e:
+                logger.debug("Session-end consolidation failed: %s", e)
 
         # Persist transient state (emotion, arc) so it survives reload
         self._save_state()
@@ -546,14 +561,28 @@ class Character:
             facts = result if isinstance(result, list) else result.get("facts", [])
             for fact in facts[:5]:  # Cap at 5 facts per extraction
                 if isinstance(fact, str) and len(fact) > 10:
-                    self.memory.add(
-                        content=fact,
-                        tier="core",
-                        role="observation",
-                        session_id=self._session_id,
-                        importance=0.6,
-                        metadata={"source": "extraction", "user_id": user_id},
-                    )
+                    # Check for contradictions with existing memories
+                    existing = self.memory.get_all(tier="core", limit=50)
+                    contradictions = self.belief.detect_contradictions(fact, existing)
+                    for old_mem in contradictions:
+                        self.belief.contradict(
+                            old_mem["id"],
+                            fact,
+                            source="extraction",
+                            session_id=self._session_id,
+                        )
+
+                    # Only store as new memory if it didn't contradict something
+                    # (contradict() already creates the replacement)
+                    if not contradictions:
+                        self.memory.add(
+                            content=fact,
+                            tier="core",
+                            role="observation",
+                            session_id=self._session_id,
+                            importance=0.6,
+                            metadata={"source": "extraction", "user_id": user_id},
+                        )
         except (ValueError, KeyError) as e:
             logger.debug("Fact extraction failed: %s", e)
 

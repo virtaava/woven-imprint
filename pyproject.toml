@@ -39,6 +39,8 @@ woven-imprint = "woven_imprint.cli:main"
 
 [project.urls]
 Repository = "https://github.com/virtaava/woven-imprint"
+Documentation = "https://github.com/virtaava/woven-imprint/blob/master/docs/GETTING_STARTED.md"
+"Bug Tracker" = "https://github.com/virtaava/woven-imprint/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

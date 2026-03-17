@@ -2,7 +2,9 @@
 
 ## Benchmark Suite
 
-**13/13 passed** | Average score: 93.0% | Duration: 8ms
+**13/13 passed** | Average score: 94.8%
+
+Benchmarks use deterministic embedders and mock LLMs for full reproducibility — no external services needed.
 
 ### Memory & Core Mechanics
 

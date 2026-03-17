@@ -4,4 +4,4 @@ __pycache__/
 .pytest_cache/
 *.pyc
 eval/results/
-paper/output/
+paper/

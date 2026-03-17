@@ -52,7 +52,7 @@ security:
   redact_sensitive_logs: true
 
 experiment:
-  mode: "simulated"
+  mode: "sandbox"
   time_budget_sec: 300
   max_iterations: 3
   metric_key: "benchmark_score"

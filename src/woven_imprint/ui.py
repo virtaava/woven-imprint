@@ -112,7 +112,9 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
             birthdate=birthdate.strip() or None,
         )
         _active["char"] = char
-        return f"Created **{char.name}**!", gr.update(choices=get_character_list(), value=f"{char.name} ({char.id[:8]})")
+        return f"Created **{char.name}**!", gr.update(
+            choices=get_character_list(), value=f"{char.name} ({char.id[:8]})"
+        )
 
     def migrate_text(text, name):
         if not text.strip():
@@ -191,10 +193,18 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
                 # Create
                 gr.Markdown("### Create Character")
                 create_name = gr.Textbox(label="Name", placeholder="Marcus the Blacksmith")
-                create_personality = gr.Textbox(label="Personality", placeholder="gruff but kind, dry humor")
-                create_backstory = gr.Textbox(label="Backstory", placeholder="A village blacksmith...", lines=2)
-                create_style = gr.Textbox(label="Speaking Style", placeholder="short sentences, working-class")
-                create_birthdate = gr.Textbox(label="Birthdate", placeholder="YYYY-MM-DD (optional)")
+                create_personality = gr.Textbox(
+                    label="Personality", placeholder="gruff but kind, dry humor"
+                )
+                create_backstory = gr.Textbox(
+                    label="Backstory", placeholder="A village blacksmith...", lines=2
+                )
+                create_style = gr.Textbox(
+                    label="Speaking Style", placeholder="short sentences, working-class"
+                )
+                create_birthdate = gr.Textbox(
+                    label="Birthdate", placeholder="YYYY-MM-DD (optional)"
+                )
                 create_btn = gr.Button("Create", variant="primary")
                 create_result = gr.Markdown("")
 
@@ -205,22 +215,34 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
                     placeholder="You are Coach Rivera, a retired soccer coach...",
                     lines=4,
                 )
-                migrate_name_input = gr.Textbox(label="Name (optional)", placeholder="Auto-detected")
+                migrate_name_input = gr.Textbox(
+                    label="Name (optional)", placeholder="Auto-detected"
+                )
                 migrate_btn = gr.Button("Migrate")
                 migrate_result = gr.Markdown("")
 
         # Events
         character_dropdown.change(
-            select_character, inputs=[character_dropdown], outputs=[char_info, stats_display, rel_display]
+            select_character,
+            inputs=[character_dropdown],
+            outputs=[char_info, stats_display, rel_display],
         )
         refresh_btn.click(refresh_stats, outputs=[stats_display, rel_display])
         create_btn.click(
             create_character,
-            inputs=[create_name, create_personality, create_backstory, create_style, create_birthdate],
+            inputs=[
+                create_name,
+                create_personality,
+                create_backstory,
+                create_style,
+                create_birthdate,
+            ],
             outputs=[create_result, character_dropdown],
         )
         migrate_btn.click(
-            migrate_text, inputs=[migrate_text_input, migrate_name_input], outputs=[migrate_result, character_dropdown]
+            migrate_text,
+            inputs=[migrate_text_input, migrate_name_input],
+            outputs=[migrate_result, character_dropdown],
         )
 
     app.launch(server_port=port, share=False)

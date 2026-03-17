@@ -466,7 +466,9 @@ def main():
     )
 
     # ui
-    p_ui = sub.add_parser("ui", help="Launch web interface (requires: pip install woven-imprint[ui])")
+    p_ui = sub.add_parser(
+        "ui", help="Launch web interface (requires: pip install woven-imprint[ui])"
+    )
     p_ui.add_argument("--port", type=int, default=7860)
 
     # serve

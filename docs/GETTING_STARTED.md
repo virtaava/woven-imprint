@@ -350,6 +350,18 @@ If the system guesses the wrong name:
 woven-imprint migrate conversations.json --name "Marcus"
 ```
 
+## Updating
+
+To update Woven Imprint to the latest version:
+
+```
+woven-imprint update
+```
+
+This auto-detects whether you installed with pip or pipx and runs the right
+upgrade command. If you have extras installed (UI, OpenAI, PDF), those are
+updated too.
+
 ## What's Next?
 
 - **Keep chatting** — your character remembers everything across sessions

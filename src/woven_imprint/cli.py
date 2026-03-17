@@ -281,14 +281,37 @@ def cmd_ui(args):
 
 
 def cmd_update(args):
-    """Update Woven Imprint to the latest version."""
+    """Update Woven Imprint and all extras to the latest version."""
     import shutil
     import subprocess
 
     # Detect if running under pipx
-    if shutil.which("pipx") and "pipx" in (shutil.which("woven-imprint") or ""):
+    is_pipx = shutil.which("pipx") and "pipx" in (shutil.which("woven-imprint") or "")
+
+    if is_pipx:
         print("Updating via pipx...")
         subprocess.run(["pipx", "upgrade", "woven-imprint"])
+
+        # Also upgrade injected extras if present
+        venv_path = shutil.which("woven-imprint") or ""
+        if "pipx" in venv_path:
+            # Check which extras are installed and upgrade them
+            extras = {
+                "gradio": "UI",
+                "openai": "OpenAI",
+                "anthropic": "Anthropic",
+                "pymupdf": "PDF",
+            }
+            for pkg, label in extras.items():
+                try:
+                    __import__(pkg if pkg != "pymupdf" else "fitz")
+                    print(f"Upgrading {label} extra ({pkg})...")
+                    subprocess.run(
+                        ["pipx", "inject", "woven-imprint", "--force", pkg],
+                        capture_output=True,
+                    )
+                except ImportError:
+                    pass
     else:
         print("Updating via pip...")
         subprocess.run(["pip", "install", "--upgrade", "woven-imprint"])

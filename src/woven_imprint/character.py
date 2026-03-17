@@ -204,11 +204,13 @@ class Character:
             )
             futures["arc"] = pool.submit(
                 self.arc_tracker.analyze_beat,
-                message, response, self.arc, self.name, user_id or "",
+                message,
+                response,
+                self.arc,
+                self.name,
+                user_id or "",
             )
-            futures["extract"] = pool.submit(
-                self._extract_memories, message, response, user_id
-            )
+            futures["extract"] = pool.submit(self._extract_memories, message, response, user_id)
 
         for name, future in futures.items():
             try:
@@ -228,9 +230,7 @@ class Character:
             except Exception as e:
                 logger.debug("Emotion assessment failed: %s", e)
             try:
-                self.arc_tracker.analyze_beat(
-                    message, response, self.arc, self.name, user_id or ""
-                )
+                self.arc_tracker.analyze_beat(message, response, self.arc, self.name, user_id or "")
             except Exception as e:
                 logger.debug("Arc tracking failed: %s", e)
 

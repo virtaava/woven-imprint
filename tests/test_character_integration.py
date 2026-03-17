@@ -99,6 +99,15 @@ def _setup():
     llm = FakeLLM()
     embedder = FakeEmbedder()
     engine = Engine(db_path=":memory:", llm=llm, embedding=embedder)
+    # Disable parallel mode in tests (threading + in-memory SQLite + fake LLMs = flaky)
+    _orig_create = engine.create_character
+
+    def _create_sequential(*args, **kwargs):
+        char = _orig_create(*args, **kwargs)
+        char.parallel = False
+        return char
+
+    engine.create_character = _create_sequential
     return engine, llm, embedder
 
 

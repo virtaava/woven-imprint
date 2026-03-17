@@ -75,7 +75,8 @@ class Character:
 
         # Config
         self.enforce_consistency: bool = True
-        self.lightweight: bool = False  # C6: skip emotion/arc/extraction when True
+        self.lightweight: bool = False  # skip emotion/arc tracking when True
+        self.parallel: bool = True  # run subsystem updates in parallel threads
 
         # Restore persisted transient state (C3)
         self._restore_state()
@@ -167,36 +168,11 @@ class Character:
             importance=0.5,
         )
 
-        # Subsystem updates — run in parallel (all independent, all non-fatal)
-        from concurrent.futures import ThreadPoolExecutor
-
-        futures = {}
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            # Emotion + arc (skipped in lightweight mode)
-            if not self.lightweight:
-                futures["emotion"] = pool.submit(
-                    self.emotion_engine.assess, message, response, self.emotion, self.name
-                )
-                futures["arc"] = pool.submit(
-                    self.arc_tracker.analyze_beat,
-                    message,
-                    response,
-                    self.arc,
-                    self.name,
-                    user_id or "",
-                )
-
-            # Fact extraction + relationship (always, throttled internally)
-            futures["extract"] = pool.submit(self._extract_memories, message, response, user_id)
-
-        # Collect results
-        for name, future in futures.items():
-            try:
-                result = future.result(timeout=60)
-                if name == "emotion" and result is not None:
-                    self.emotion = result
-            except Exception as e:
-                logger.debug("Parallel subsystem '%s' failed: %s", name, e)
+        # Subsystem updates — all independent, all non-fatal
+        if self.parallel and not self.lightweight:
+            self._run_subsystems_parallel(message, response, user_id)
+        else:
+            self._run_subsystems_sequential(message, response, user_id)
 
         self._turn_count += 1
 
@@ -216,6 +192,49 @@ class Character:
                     logger.debug("Auto-consolidation failed: %s", e)
 
         return response
+
+    def _run_subsystems_parallel(self, message: str, response: str, user_id: str | None) -> None:
+        """Run emotion, arc, and extraction in parallel threads."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        futures = {}
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures["emotion"] = pool.submit(
+                self.emotion_engine.assess, message, response, self.emotion, self.name
+            )
+            futures["arc"] = pool.submit(
+                self.arc_tracker.analyze_beat,
+                message, response, self.arc, self.name, user_id or "",
+            )
+            futures["extract"] = pool.submit(
+                self._extract_memories, message, response, user_id
+            )
+
+        for name, future in futures.items():
+            try:
+                result = future.result(timeout=60)
+                if name == "emotion" and result is not None:
+                    self.emotion = result
+            except Exception as e:
+                logger.debug("Parallel subsystem '%s' failed: %s", name, e)
+
+    def _run_subsystems_sequential(self, message: str, response: str, user_id: str | None) -> None:
+        """Run subsystem updates sequentially (for testing or lightweight mode)."""
+        if not self.lightweight:
+            try:
+                self.emotion = self.emotion_engine.assess(
+                    message, response, self.emotion, self.name
+                )
+            except Exception as e:
+                logger.debug("Emotion assessment failed: %s", e)
+            try:
+                self.arc_tracker.analyze_beat(
+                    message, response, self.arc, self.name, user_id or ""
+                )
+            except Exception as e:
+                logger.debug("Arc tracking failed: %s", e)
+
+        self._extract_memories(message, response, user_id)
 
     def reflect(self) -> str:
         """Generate higher-level reflections from accumulated memories.

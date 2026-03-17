@@ -6,3 +6,7 @@ __pycache__/
 eval/results/
 paper/
 research/
+test_live*.py
+test_stellamore.py
+docs/AUDIT_FINDINGS.md
+*.db

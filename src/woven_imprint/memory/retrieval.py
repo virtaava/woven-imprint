@@ -29,9 +29,9 @@ _DECAY_RATES = {
 
 # Importance floor per tier — minimum effective importance
 _TIER_IMPORTANCE_BOOST = {
-    "bedrock": 0.3,  # bedrock always gets a boost
-    "core": 0.15,  # core gets a moderate boost
-    "buffer": 0.0,  # buffer gets no boost
+    "bedrock": 0.35,  # bedrock always gets a strong boost
+    "core": 0.2,  # core gets a solid boost (session summaries, extracted facts)
+    "buffer": 0.0,  # buffer gets no boost (ephemeral by design)
 }
 
 

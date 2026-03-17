@@ -330,13 +330,13 @@ class Character:
 
         summary = self.llm.generate(messages, temperature=0.3)
 
-        # Store summary as core memory
+        # Store summary as core memory (high importance — must survive across sessions)
         self.memory.add(
             content=f"[Session Summary] {summary}",
             tier="core",
             role="observation",
             session_id=self._session_id,
-            importance=0.7,
+            importance=0.85,
         )
 
         # Update session record
@@ -580,7 +580,7 @@ class Character:
                             tier="core",
                             role="observation",
                             session_id=self._session_id,
-                            importance=0.6,
+                            importance=0.75,
                             metadata={"source": "extraction", "user_id": user_id},
                         )
         except (ValueError, KeyError) as e:

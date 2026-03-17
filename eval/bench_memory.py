@@ -133,52 +133,75 @@ def bench_cross_session_persistence(engine: Engine) -> BenchmarkResult:
         content="User prefers morning meetings before 10am",
         tier="core",
         session_id=char._session_id,
-        importance=0.6,
+        importance=0.75,
+    )
+    char.memory.add(
+        content="User works as a veterinarian at the downtown clinic",
+        tier="core",
+        session_id=char._session_id,
+        importance=0.8,
+    )
+    char.memory.add(
+        content="User birthday is September 14th and they love chocolate cake",
+        tier="core",
+        session_id=char._session_id,
+        importance=0.7,
     )
     char._session_id = None  # End session without LLM summary
 
     # Session 2: recall facts
     char.start_session()
-    results_tokyo = char.recall("moving to Tokyo", limit=3)
-    results_emma = char.recall("daughter school", limit=3)
-    results_meeting = char.recall("meeting preference", limit=3)
+    results_tokyo = char.recall("moving to Tokyo", limit=5)
+    results_emma = char.recall("daughter Emma school", limit=5)
+    results_morning = char.recall("morning meetings 10am", limit=5)
+    results_vet = char.recall("veterinarian downtown clinic", limit=5)
+    results_bday = char.recall("birthday September chocolate cake", limit=5)
 
     found_tokyo = any("Tokyo" in r["content"] for r in results_tokyo)
     found_emma = any("Emma" in r["content"] for r in results_emma)
-    found_meeting = any("morning" in r["content"].lower() for r in results_meeting)
+    found_morning = any("morning" in r["content"].lower() for r in results_morning)
+    found_vet = any("veterinarian" in r["content"].lower() for r in results_vet)
+    found_bday = any("chocolate" in r["content"].lower() for r in results_bday)
 
-    score = sum([found_tokyo, found_emma, found_meeting]) / 3.0
+    checks = [found_tokyo, found_emma, found_morning, found_vet, found_bday]
+    score = sum(checks) / len(checks)
     return BenchmarkResult(
         name="cross_session_persistence",
-        passed=score >= 0.66,
+        passed=score >= 0.8,
         score=score,
-        details={"tokyo": found_tokyo, "emma": found_emma, "meeting": found_meeting},
+        details={
+            "tokyo": found_tokyo,
+            "emma": found_emma,
+            "morning": found_morning,
+            "vet": found_vet,
+            "birthday": found_bday,
+        },
     )
 
 
 @timed
 def bench_memory_tier_separation(engine: Engine) -> BenchmarkResult:
     """Verify that bedrock > core > buffer in retrieval importance."""
-    char = engine.create_character("TierTest", persona={"backstory": "A detective in London"})
+    char = engine.create_character("TierTest", persona={"backstory": "A detective"})
 
-    # Bedrock: high importance, core: medium, buffer: low
+    # All mention "investigation" but with different importance + tier
     char.memory.add(
-        content="My fundamental identity as a detective in London defines who I am",
+        content="I am a detective and investigation is my core identity and purpose in life",
         tier="bedrock",
         importance=0.95,
     )
     char.memory.add(
-        content="Currently working on a detective case in London investigating fraud",
+        content="The recent investigation into the harbor smuggling ring is progressing well",
         tier="core",
-        importance=0.7,
+        importance=0.75,
     )
     char.memory.add(
-        content="Someone mentioned rain in London today at lunch briefly",
+        content="Someone at the cafe mentioned an investigation on the news this morning",
         tier="buffer",
         importance=0.2,
     )
 
-    results = char.recall("detective London identity", limit=3)
+    results = char.recall("investigation", limit=3)
     if len(results) < 3:
         return BenchmarkResult(
             name="memory_tier_separation",
@@ -187,21 +210,27 @@ def bench_memory_tier_separation(engine: Engine) -> BenchmarkResult:
             details={"error": f"Only {len(results)} results returned"},
         )
 
-    # Bedrock should score highest due to importance weighting in RRF
-    # We check that bedrock appears in top 2 (importance + semantic boost it)
     tiers = [r["tier"] for r in results]
-    bedrock_in_top2 = "bedrock" in tiers[:2]
-    all_tiers_present = set(tiers) == {"bedrock", "core", "buffer"}
-    score = (1.0 if bedrock_in_top2 else 0.0) * 0.6 + (1.0 if all_tiers_present else 0.0) * 0.4
+
+    # Bedrock should rank first (highest importance + tier boost)
+    bedrock_first = tiers[0] == "bedrock"
+    # Buffer should rank last (lowest importance, no tier boost)
+    buffer_last = tiers[-1] == "buffer"
+    # All three tiers should be present
+    all_present = set(tiers) == {"bedrock", "core", "buffer"}
+
+    checks = [bedrock_first, buffer_last, all_present]
+    score = sum(checks) / len(checks)
 
     return BenchmarkResult(
         name="memory_tier_separation",
-        passed=bedrock_in_top2,
+        passed=score >= 0.66,
         score=score,
         details={
             "tier_order": tiers,
-            "bedrock_in_top2": bedrock_in_top2,
-            "all_tiers_present": all_tiers_present,
+            "bedrock_first": bedrock_first,
+            "buffer_last": buffer_last,
+            "all_present": all_present,
         },
     )
 
@@ -245,6 +274,51 @@ def bench_belief_revision(engine: Engine) -> BenchmarkResult:
         passed=score >= 0.75,
         score=score,
         details=checks,
+    )
+
+
+@timed
+def bench_consolidation_correctness(engine: Engine) -> BenchmarkResult:
+    """Verify consolidation reduces buffer count and creates core entries."""
+    char = engine.create_character("ConsolidTest", persona={"personality": "test"})
+
+    # Fill buffer past threshold
+    [0.5, 0.5, 0.5] + [0.0] * 97  # 100-dim vector, all similar
+    for i in range(15):
+        char.memory.add(
+            content=f"Had a conversation about topic alpha number {i}",
+            tier="buffer",
+            importance=0.5,
+        )
+
+    buffer_before = char.memory.count(tier="buffer")
+    core_before = char.memory.count(tier="core")
+
+    stats = char.consolidate()
+
+    buffer_after = char.memory.count(tier="buffer")
+    core_after = char.memory.count(tier="core")
+
+    checks = {
+        "buffer_reduced": buffer_after < buffer_before,
+        "core_increased": core_after > core_before,
+        "stats_created": stats.get("created", 0) >= 1,
+        "stats_archived": stats.get("archived", 0) >= 1,
+    }
+    score = sum(checks.values()) / len(checks)
+
+    return BenchmarkResult(
+        name="consolidation_correctness",
+        passed=score >= 0.75,
+        score=score,
+        details={
+            "buffer_before": buffer_before,
+            "buffer_after": buffer_after,
+            "core_before": core_before,
+            "core_after": core_after,
+            "stats": stats,
+            **checks,
+        },
     )
 
 
@@ -347,6 +421,7 @@ def run_memory_suite() -> SuiteResult:
         bench_recall_precision,
         bench_cross_session_persistence,
         bench_memory_tier_separation,
+        bench_consolidation_correctness,
         bench_belief_revision,
         bench_relationship_bounded_change,
         bench_familiarity_monotonic,

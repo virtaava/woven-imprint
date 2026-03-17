@@ -1,6 +1,6 @@
 """Woven Imprint — Persistent Character Infrastructure."""
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 from .engine import Engine
 from .character import Character

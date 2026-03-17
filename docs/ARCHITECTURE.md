@@ -9,9 +9,9 @@ and consistency verification.
 ```
 Application ─→ Woven Imprint Engine ─→ LLM Provider
                     │
-                    ├── Memory Store (SQLite/Qdrant)
+                    ├── Memory Store (SQLite)
                     ├── Persona Model
-                    ├── Relationship Graph
+                    ├── Relationship Model
                     └── Consistency Checker
 ```
 
@@ -112,7 +112,7 @@ Relationship:
 ```
 
 Updates are LLM-assessed from conversation content, not formula-driven.
-Change magnitude bounded to ±0.15 per interaction. Trajectory smoothing over 5-interaction window.
+Change magnitude bounded to ±0.15 per interaction. Trajectory (warming/cooling/stable/volatile) computed from current interaction deltas.
 
 ### Belief Revision
 

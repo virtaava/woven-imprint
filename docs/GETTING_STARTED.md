@@ -486,7 +486,7 @@ print(char.relationships.describe("imported_user"))
 
 ### MCP Server (Claude Desktop, Cursor, Hermes, OpenClaw)
 
-See [MCP Setup](../examples/mcp_setup.md) for config. 12 tools available:
+See [MCP Setup](../examples/mcp_setup.md) for config. 13 tools available:
 `list_characters`, `create_character`, `chat`, `recall`, `get_relationship`,
 `reflect`, `evolve`, `new_session`, `end_session`, `consolidate`, `get_stats`,
 `delete_character`, `migrate_from_text`.

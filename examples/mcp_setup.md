@@ -68,6 +68,7 @@ Once connected, these tools are available:
 | `consolidate` | Compress buffer memories into core memories |
 | `get_stats` | Memory counts, emotion, arc phase, relationships |
 | `delete_character` | Permanently delete a character |
+| `migrate_from_text` | Create a character from pasted instructions or persona text |
 
 ## Usage in Claude
 

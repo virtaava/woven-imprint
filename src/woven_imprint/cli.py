@@ -280,6 +280,24 @@ def cmd_ui(args):
     launch(db_path=args.db, model=args.model, port=args.port)
 
 
+def cmd_update(args):
+    """Update Woven Imprint to the latest version."""
+    import shutil
+    import subprocess
+
+    # Detect if running under pipx
+    if shutil.which("pipx") and "pipx" in (shutil.which("woven-imprint") or ""):
+        print("Updating via pipx...")
+        subprocess.run(["pipx", "upgrade", "woven-imprint"])
+    else:
+        print("Updating via pip...")
+        subprocess.run(["pip", "install", "--upgrade", "woven-imprint"])
+
+    from . import __version__
+
+    print(f"\nCurrent version: {__version__}")
+
+
 def cmd_serve(args):
     """Start the OpenAI-compatible API server."""
     from .server.api import run_server
@@ -471,6 +489,9 @@ def main():
     )
     p_ui.add_argument("--port", type=int, default=7860)
 
+    # update
+    sub.add_parser("update", help="Update Woven Imprint to the latest version")
+
     # serve
     p_serve = sub.add_parser("serve", help="Start OpenAI-compatible API server")
     p_serve.add_argument("--port", type=int, default=8650)
@@ -488,6 +509,7 @@ def main():
         "import": cmd_import,
         "migrate": cmd_migrate,
         "ui": cmd_ui,
+        "update": cmd_update,
         "serve": cmd_serve,
     }
 

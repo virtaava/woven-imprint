@@ -1,7 +1,7 @@
-"""Simple web UI for trying Woven Imprint — powered by Gradio.
+"""Web UI for Woven Imprint — powered by Gradio.
 
 Launch with: woven-imprint ui
-Opens a browser tab with character selection, chat, and stats.
+Auto-opens a browser tab with chat, character management, and settings.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
         print("  pip install woven-imprint[ui]")
         return
 
+    import tempfile
     from pathlib import Path
 
     from .engine import Engine
@@ -31,30 +32,30 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
         embedding=OllamaEmbedding(model="nomic-embed-text"),
     )
 
-    # Track active character per session
     _active: dict = {"char": None}
 
-    def get_character_list():
+    # ── Helpers ──────────────────────────────────────────
+
+    def char_choices():
         chars = engine.list_characters()
         if not chars:
-            return ["No characters — create one below"]
+            return []
         return [f"{c['name']} ({c['id'][:8]})" for c in chars]
 
-    def select_character(selection):
-        if not selection or "No characters" in selection:
-            _active["char"] = None
-            return "No character selected.", "", ""
-
+    def _resolve_char(selection):
+        if not selection:
+            return None
         char_id = selection.split("(")[-1].rstrip(")")
         chars = engine.list_characters()
         match = next((c for c in chars if c["id"].startswith(char_id)), None)
         if not match:
-            return "Character not found.", "", ""
+            return None
+        return engine.load_character(match["id"])
 
-        char = engine.load_character(match["id"])
-        _active["char"] = char
+    def _format_stats(char):
+        if not char:
+            return "", "", ""
 
-        # Build info
         info = f"**{char.name}**"
         if char.persona.age:
             info += f" (age {char.persona.age})"
@@ -62,42 +63,73 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
         if char.persona.backstory:
             info += f"\n\n*{char.persona.backstory[:200]}*"
 
-        # Stats
         stats = (
-            f"Buffer: {char.memory.count('buffer')} | "
-            f"Core: {char.memory.count('core')} | "
-            f"Bedrock: {char.memory.count('bedrock')}\n"
-            f"Emotion: {char.emotion.mood} ({char.emotion.intensity:.1f})"
+            f"**Memory** — buffer: {char.memory.count('buffer')} | "
+            f"core: {char.memory.count('core')} | "
+            f"bedrock: {char.memory.count('bedrock')}\n\n"
+            f"**Emotion** — {char.emotion.mood} ({char.emotion.intensity:.1f})\n\n"
+            f"**Arc** — {char.arc.current_phase.value} (tension {char.arc.tension:.1f})"
         )
 
-        # Relationships
         rels = char.relationships.get_all()
         rel_text = ""
         for r in rels:
             d = r["dimensions"]
             rel_text += (
-                f"**{r['target_id'][:15]}** ({r.get('type', '?')}): "
-                f"trust {d.get('trust', 0):.2f}, "
-                f"affection {d.get('affection', 0):.2f}, "
-                f"familiarity {d.get('familiarity', 0):.2f}\n"
+                f"**{r['target_id'][:15]}** ({r.get('type', '?')}, {r.get('trajectory', '?')})\n"
+                f"trust {d.get('trust', 0):.2f} | "
+                f"affection {d.get('affection', 0):.2f} | "
+                f"respect {d.get('respect', 0):.2f} | "
+                f"familiarity {d.get('familiarity', 0):.2f} | "
+                f"tension {d.get('tension', 0):.2f}\n\n"
             )
         if not rel_text:
-            rel_text = "No relationships yet."
+            rel_text = "No relationships yet. Chat with a character to build one."
 
         return info, stats, rel_text
 
-    def chat(message, history):
+    # ── Chat Tab Functions ───────────────────────────────
+
+    def select_character(selection):
+        char = _resolve_char(selection)
+        _active["char"] = char
+        return _format_stats(char)
+
+    def chat_fn(message, history):
         char = _active.get("char")
         if not char:
-            return "Select a character first."
+            return "Select a character first from the dropdown above."
+        return char.chat(message, user_id="ui_user")
 
-        response = char.chat(message, user_id="ui_user")
-        return response
+    def do_reflect():
+        char = _active.get("char")
+        if not char:
+            return "No character selected."
+        return char.reflect()
+
+    def do_recall(query):
+        char = _active.get("char")
+        if not char:
+            return "No character selected."
+        if not query.strip():
+            return "Enter a search term."
+        memories = char.recall(query.strip(), limit=10)
+        if not memories:
+            return "No memories found."
+        lines = []
+        for m in memories:
+            lines.append(f"**[{m['tier']}]** {m['content'][:200]}")
+        return "\n\n".join(lines)
+
+    def do_refresh():
+        char = _active.get("char")
+        return _format_stats(char)
+
+    # ── Characters Tab Functions ─────────────────────────
 
     def create_character(name, personality, backstory, speaking_style, birthdate):
         if not name.strip():
             return "Name is required.", gr.update()
-
         persona = {}
         if personality.strip():
             persona["personality"] = personality.strip()
@@ -113,118 +145,235 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
         )
         _active["char"] = char
         return f"Created **{char.name}**!", gr.update(
-            choices=get_character_list(), value=f"{char.name} ({char.id[:8]})"
+            choices=char_choices(), value=f"{char.name} ({char.id[:8]})"
         )
 
-    def migrate_text(text, name):
-        if not text.strip():
-            return "Paste the character instructions/persona text.", gr.update()
+    def delete_character(selection):
+        char = _resolve_char(selection)
+        if not char:
+            return "No character selected.", gr.update()
+        name = char.name
+        engine.delete_character(char.id)
+        if _active.get("char") and _active["char"].id == char.id:
+            _active["char"] = None
+        return f"Deleted **{name}**.", gr.update(choices=char_choices(), value=None)
 
+    def export_character(selection):
+        char = _resolve_char(selection)
+        if not char:
+            return None, "No character selected."
+        path = tempfile.mktemp(suffix=".json", prefix=f"{char.name.lower().replace(' ', '_')}_")
+        char.export(path)
+        return path, f"Exported **{char.name}** — download below."
+
+    def import_character(file):
+        if not file:
+            return "Upload a JSON file.", gr.update()
+        char = engine.import_character(file.name)
+        _active["char"] = char
+        return f"Imported **{char.name}**!", gr.update(
+            choices=char_choices(), value=f"{char.name} ({char.id[:8]})"
+        )
+
+    # ── Migrate Tab Functions ────────────────────────────
+
+    def migrate_from_text(text, name):
+        if not text.strip():
+            return "Paste instructions or persona text.", gr.update()
         from .migrate import CharacterImporter
 
         importer = CharacterImporter(engine)
         char = importer.from_text(text.strip(), name=name.strip() or None)
         _active["char"] = char
 
-        result = f"Migrated **{char.name}**\n"
+        result = f"Migrated **{char.name}**\n\n"
         result += f"- Personality: {char.persona.soft.get('personality', '?')[:80]}\n"
-        result += f"- Memories: {char.memory.count('core')} core\n"
-
+        result += f"- Memories: {char.memory.count('core')} core, {char.memory.count('bedrock')} bedrock\n"
         rel = char.relationships.get("imported_user")
         if rel:
             d = rel["dimensions"]
-            result += f"- Relationship: trust={d.get('trust', 0):.2f}, familiarity={d.get('familiarity', 0):.2f}"
-
-        return result, gr.update(choices=get_character_list(), value=f"{char.name} ({char.id[:8]})")
-
-    def refresh_stats():
-        char = _active.get("char")
-        if not char:
-            return "", ""
-
-        stats = (
-            f"Buffer: {char.memory.count('buffer')} | "
-            f"Core: {char.memory.count('core')} | "
-            f"Bedrock: {char.memory.count('bedrock')}\n"
-            f"Emotion: {char.emotion.mood} ({char.emotion.intensity:.1f})\n"
-            f"Arc: {char.arc.current_phase.value} (tension {char.arc.tension:.1f})"
-        )
-
-        rels = char.relationships.get_all()
-        rel_text = ""
-        for r in rels:
-            d = r["dimensions"]
-            rel_text += (
-                f"**{r['target_id'][:15]}** ({r.get('type', '?')}): "
-                f"trust {d.get('trust', 0):.2f}, "
-                f"affection {d.get('affection', 0):.2f}, "
-                f"familiarity {d.get('familiarity', 0):.2f}\n"
+            result += (
+                f"- Relationship: trust={d.get('trust', 0):.2f}, "
+                f"familiarity={d.get('familiarity', 0):.2f}"
             )
-        if not rel_text:
-            rel_text = "No relationships yet."
+        return result, gr.update(choices=char_choices(), value=f"{char.name} ({char.id[:8]})")
 
-        return stats, rel_text
+    def migrate_from_file(file, name):
+        if not file:
+            return "Upload a file (ChatGPT JSON, SillyTavern card, markdown, etc.).", gr.update()
+        from .migrate import CharacterImporter
 
-    # Build the UI
+        importer = CharacterImporter(engine)
+        char = importer.from_file(file.name, name=name.strip() or None)
+        _active["char"] = char
+
+        result = f"Migrated **{char.name}** from `{Path(file.name).name}`\n\n"
+        result += f"- Personality: {char.persona.soft.get('personality', '?')[:80]}\n"
+        result += f"- Memories: {char.memory.count('core')} core, {char.memory.count('bedrock')} bedrock\n"
+        rel = char.relationships.get("imported_user")
+        if rel:
+            d = rel["dimensions"]
+            result += (
+                f"- Relationship: trust={d.get('trust', 0):.2f}, "
+                f"familiarity={d.get('familiarity', 0):.2f}"
+            )
+        return result, gr.update(choices=char_choices(), value=f"{char.name} ({char.id[:8]})")
+
+    # ── Build UI ─────────────────────────────────────────
+
     with gr.Blocks(title="Woven Imprint") as app:
         gr.Markdown("# Woven Imprint\n*Persistent Character Infrastructure*")
 
+        # Shared character selector at the top
         with gr.Row():
-            with gr.Column(scale=2):
-                # Chat
-                character_dropdown = gr.Dropdown(
-                    choices=get_character_list(),
-                    label="Character",
-                    interactive=True,
-                )
-                char_info = gr.Markdown("Select a character to start chatting.")
-                gr.ChatInterface(fn=chat)
+            character_dropdown = gr.Dropdown(
+                choices=char_choices(),
+                label="Active Character",
+                interactive=True,
+                scale=3,
+            )
+            char_info = gr.Markdown("Select or create a character to begin.")
 
-            with gr.Column(scale=1):
-                # Stats
-                gr.Markdown("### Stats")
-                stats_display = gr.Markdown("")
-                rel_display = gr.Markdown("")
-                refresh_btn = gr.Button("Refresh Stats")
+        with gr.Tabs():
+            # ── Tab 1: Chat ──────────────────────────
+            with gr.Tab("Chat"):
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        gr.ChatInterface(fn=chat_fn)
 
-                # Create
-                gr.Markdown("### Create Character")
-                create_name = gr.Textbox(label="Name", placeholder="Marcus the Blacksmith")
-                create_personality = gr.Textbox(
-                    label="Personality", placeholder="gruff but kind, dry humor"
-                )
-                create_backstory = gr.Textbox(
-                    label="Backstory", placeholder="A village blacksmith...", lines=2
-                )
-                create_style = gr.Textbox(
-                    label="Speaking Style", placeholder="short sentences, working-class"
-                )
-                create_birthdate = gr.Textbox(
-                    label="Birthdate", placeholder="YYYY-MM-DD (optional)"
-                )
-                create_btn = gr.Button("Create", variant="primary")
-                create_result = gr.Markdown("")
+                    with gr.Column(scale=1):
+                        gr.Markdown("### Character State")
+                        stats_display = gr.Markdown("")
+                        rel_display = gr.Markdown("")
+                        refresh_btn = gr.Button("Refresh Stats")
 
-                # Migrate
-                gr.Markdown("### Migrate Character")
-                migrate_text_input = gr.Textbox(
-                    label="Paste instructions or persona",
-                    placeholder="You are Coach Rivera, a retired soccer coach...",
-                    lines=4,
-                )
-                migrate_name_input = gr.Textbox(
-                    label="Name (optional)", placeholder="Auto-detected"
-                )
-                migrate_btn = gr.Button("Migrate")
-                migrate_result = gr.Markdown("")
+                        gr.Markdown("### Actions")
+                        reflect_btn = gr.Button("Reflect")
+                        reflect_output = gr.Markdown("")
 
-        # Events
+                        recall_input = gr.Textbox(
+                            label="Search Memories",
+                            placeholder="sword, harbor case, etc.",
+                        )
+                        recall_btn = gr.Button("Search")
+                        recall_output = gr.Markdown("")
+
+            # ── Tab 2: Characters ────────────────────
+            with gr.Tab("Characters"):
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("### Create New Character")
+                        create_name = gr.Textbox(label="Name", placeholder="Marcus the Blacksmith")
+                        create_personality = gr.Textbox(
+                            label="Personality", placeholder="gruff but kind, dry humor"
+                        )
+                        create_backstory = gr.Textbox(
+                            label="Backstory",
+                            placeholder="A village blacksmith who lost his wife...",
+                            lines=3,
+                        )
+                        create_style = gr.Textbox(
+                            label="Speaking Style",
+                            placeholder="short sentences, working-class dialect",
+                        )
+                        create_birthdate = gr.Textbox(
+                            label="Birthdate", placeholder="YYYY-MM-DD (optional)"
+                        )
+                        create_btn = gr.Button("Create Character", variant="primary")
+                        create_result = gr.Markdown("")
+
+                    with gr.Column():
+                        gr.Markdown("### Manage")
+                        export_btn = gr.Button("Export Selected Character")
+                        export_file = gr.File(label="Download", interactive=False)
+                        export_result = gr.Markdown("")
+
+                        gr.Markdown("---")
+                        import_file = gr.File(
+                            label="Import Character (Woven Imprint JSON)",
+                            file_types=[".json"],
+                        )
+                        import_btn = gr.Button("Import")
+                        import_result = gr.Markdown("")
+
+                        gr.Markdown("---")
+                        delete_btn = gr.Button("Delete Selected Character", variant="stop")
+                        delete_result = gr.Markdown("")
+
+            # ── Tab 3: Migrate ───────────────────────
+            with gr.Tab("Migrate"):
+                gr.Markdown(
+                    "### Bring characters from other systems\n"
+                    "Import from ChatGPT, SillyTavern, Custom GPTs, Claude projects, "
+                    "or any text/markdown persona file."
+                )
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("#### From Text")
+                        gr.Markdown(
+                            "Paste Custom GPT instructions, persona description, or character sheet."
+                        )
+                        migrate_text_input = gr.Textbox(
+                            label="Instructions / Persona",
+                            placeholder="You are Coach Rivera, a retired soccer coach...",
+                            lines=6,
+                        )
+                        migrate_text_name = gr.Textbox(
+                            label="Name (optional)", placeholder="Auto-detected from text"
+                        )
+                        migrate_text_btn = gr.Button("Migrate from Text", variant="primary")
+                        migrate_text_result = gr.Markdown("")
+
+                    with gr.Column():
+                        gr.Markdown("#### From File")
+                        gr.Markdown(
+                            "Upload a ChatGPT export (conversations.json), "
+                            "SillyTavern card (.json/.png), Claude project, "
+                            "or any .md/.txt persona file."
+                        )
+                        migrate_file_input = gr.File(
+                            label="Upload File",
+                            file_types=[".json", ".png", ".md", ".txt", ".csv"],
+                        )
+                        migrate_file_name = gr.Textbox(
+                            label="Name (optional)", placeholder="Auto-detected from file"
+                        )
+                        migrate_file_btn = gr.Button("Migrate from File", variant="primary")
+                        migrate_file_result = gr.Markdown("")
+
+            # ── Tab 4: Settings ──────────────────────
+            with gr.Tab("Settings"):
+                gr.Markdown("### Configuration")
+                gr.Markdown(f"**Database**: `{db}`")
+                gr.Markdown(f"**LLM Model**: `{model}`")
+                gr.Markdown("**Embedding**: `nomic-embed-text` via Ollama")
+
+                gr.Markdown("### About")
+                from . import __version__
+
+                gr.Markdown(
+                    f"**Woven Imprint** v{__version__}\n\n"
+                    f"Persistent Character Infrastructure\n\n"
+                    f"[GitHub](https://github.com/virtaava/woven-imprint) | "
+                    f"[Documentation](https://github.com/virtaava/woven-imprint/blob/master/docs/GETTING_STARTED.md) | "
+                    f"[PyPI](https://pypi.org/project/woven-imprint/)"
+                )
+
+        # ── Events ───────────────────────────────────────
+
+        # Character selection → update info + stats
         character_dropdown.change(
             select_character,
             inputs=[character_dropdown],
             outputs=[char_info, stats_display, rel_display],
         )
-        refresh_btn.click(refresh_stats, outputs=[stats_display, rel_display])
+
+        # Chat tab
+        refresh_btn.click(do_refresh, outputs=[char_info, stats_display, rel_display])
+        reflect_btn.click(do_reflect, outputs=[reflect_output])
+        recall_btn.click(do_recall, inputs=[recall_input], outputs=[recall_output])
+
+        # Characters tab
         create_btn.click(
             create_character,
             inputs=[
@@ -236,10 +385,32 @@ def launch(db_path: str | None = None, model: str = "llama3.2", port: int = 7860
             ],
             outputs=[create_result, character_dropdown],
         )
-        migrate_btn.click(
-            migrate_text,
-            inputs=[migrate_text_input, migrate_name_input],
-            outputs=[migrate_result, character_dropdown],
+        export_btn.click(
+            export_character,
+            inputs=[character_dropdown],
+            outputs=[export_file, export_result],
+        )
+        import_btn.click(
+            import_character,
+            inputs=[import_file],
+            outputs=[import_result, character_dropdown],
+        )
+        delete_btn.click(
+            delete_character,
+            inputs=[character_dropdown],
+            outputs=[delete_result, character_dropdown],
         )
 
-    app.launch(server_port=port, share=False)
+        # Migrate tab
+        migrate_text_btn.click(
+            migrate_from_text,
+            inputs=[migrate_text_input, migrate_text_name],
+            outputs=[migrate_text_result, character_dropdown],
+        )
+        migrate_file_btn.click(
+            migrate_from_file,
+            inputs=[migrate_file_input, migrate_file_name],
+            outputs=[migrate_file_result, character_dropdown],
+        )
+
+    app.launch(server_port=port, share=False, inbrowser=True)

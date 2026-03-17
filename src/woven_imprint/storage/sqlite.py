@@ -83,6 +83,7 @@ END;
 CREATE INDEX IF NOT EXISTS idx_memories_character ON memories(character_id, tier, status);
 CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
 CREATE INDEX IF NOT EXISTS idx_relationships_character ON relationships(character_id);
+CREATE INDEX IF NOT EXISTS idx_relationships_pair ON relationships(character_id, target_id);
 
 -- Schema version tracking
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -152,15 +153,28 @@ class SQLiteStorage:
         birthdate: str | None = None,
         state: dict | None = None,
     ) -> None:
-        self._conn.execute(
-            """INSERT INTO characters (id, name, persona, birthdate, state)
-               VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(id) DO UPDATE SET
-                   name=excluded.name, persona=excluded.persona,
-                   birthdate=excluded.birthdate, state=excluded.state,
-                   updated_at=datetime('now')""",
-            (char_id, name, json.dumps(persona), birthdate, json.dumps(state or {})),
-        )
+        state_json = json.dumps(state) if state is not None else None
+        if state_json is not None:
+            self._conn.execute(
+                """INSERT INTO characters (id, name, persona, birthdate, state)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       name=excluded.name, persona=excluded.persona,
+                       birthdate=excluded.birthdate, state=excluded.state,
+                       updated_at=datetime('now')""",
+                (char_id, name, json.dumps(persona), birthdate, state_json),
+            )
+        else:
+            # Don't overwrite existing state when state param is not provided
+            self._conn.execute(
+                """INSERT INTO characters (id, name, persona, birthdate, state)
+                   VALUES (?, ?, ?, ?, '{}')
+                   ON CONFLICT(id) DO UPDATE SET
+                       name=excluded.name, persona=excluded.persona,
+                       birthdate=excluded.birthdate,
+                       updated_at=datetime('now')""",
+                (char_id, name, json.dumps(persona), birthdate),
+            )
         self._conn.commit()
 
     def load_character(self, char_id: str) -> dict | None:

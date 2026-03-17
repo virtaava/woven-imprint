@@ -56,7 +56,7 @@ class Character:
         self.relationships = RelationshipModel(storage, char_id)
         self.consolidator = ConsolidationEngine(storage, llm, embedder, char_id)
         self.consistency = ConsistencyChecker(llm, persona)
-        self.growth = GrowthEngine(storage, llm, char_id, persona)
+        self.growth = GrowthEngine(storage, llm, char_id, persona, embedder=embedder)
         self.emotion_engine = EmotionEngine(llm)
         self.arc_tracker = ArcTracker(llm)
 
@@ -140,19 +140,25 @@ class Character:
         # 4. Build the full prompt within context budget
         messages = self._build_context(message, memories, rel_context)
 
-        # 6. Generate response (with optional consistency enforcement)
-        response = self.llm.generate(messages, temperature=0.7)
+        # 6. Generate response
+        try:
+            response = self.llm.generate(messages, temperature=0.7)
+        except Exception as e:
+            logger.error("LLM generation failed: %s", e)
+            raise
 
+        # 7. Consistency check (non-fatal — use response as-is if check fails)
         if self.enforce_consistency:
-            response, report = self.consistency.enforce(response, messages)
-            if report.soft_flags:
-                pass  # Flags captured in the consistency report, not blocking
+            try:
+                response, _report = self.consistency.enforce(response, messages)
+            except Exception as e:
+                logger.debug("Consistency check failed: %s", e)
 
-        # 7. Add both turns to conversation buffer
+        # 8. Add both turns to conversation buffer
         self._context.add_turn("user", message)
         self._context.add_turn("assistant", response)
 
-        # 8. Store character response as buffer memory
+        # 9. Store character response as buffer memory
         self.memory.add(
             content=f"[{self.name}] {response}",
             tier="buffer",
@@ -161,10 +167,18 @@ class Character:
             importance=0.5,
         )
 
-        # Subsystem updates — skipped in lightweight mode (C6)
+        # Subsystem updates — non-fatal, skipped in lightweight mode
         if not self.lightweight:
-            self.emotion = self.emotion_engine.assess(message, response, self.emotion, self.name)
-            self.arc_tracker.analyze_beat(message, response, self.arc, self.name, user_id or "")
+            try:
+                self.emotion = self.emotion_engine.assess(
+                    message, response, self.emotion, self.name
+                )
+            except Exception as e:
+                logger.debug("Emotion assessment failed: %s", e)
+            try:
+                self.arc_tracker.analyze_beat(message, response, self.arc, self.name, user_id or "")
+            except Exception as e:
+                logger.debug("Arc tracking failed: %s", e)
 
         # Fact extraction + relationship updates (always run, throttled internally)
         self._extract_memories(message, response, user_id)

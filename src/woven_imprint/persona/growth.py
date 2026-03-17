@@ -34,11 +34,13 @@ class GrowthEngine:
         llm: LLMProvider,
         character_id: str,
         persona: PersonaModel,
+        embedder=None,
     ):
         self.storage = storage
         self.llm = llm
         self.character_id = character_id
         self.persona = persona
+        self.embedder = embedder
 
     def detect_growth(self, min_memories: int = 20) -> list[GrowthEvent]:
         """Analyze recent experiences for potential character growth.
@@ -138,15 +140,17 @@ class GrowthEngine:
             # Record growth as a core memory
             from ..utils.text import generate_id
 
+            content = (
+                f"[Growth] My {event.trait} has shifted: "
+                f"'{event.old_value}' → '{event.new_value}'. "
+                f"Reason: {event.reason}"
+            )
             growth_memory = {
                 "id": generate_id("mem-"),
                 "character_id": self.character_id,
                 "tier": "core",
-                "content": (
-                    f"[Growth] My {event.trait} has shifted: "
-                    f"'{event.old_value}' → '{event.new_value}'. "
-                    f"Reason: {event.reason}"
-                ),
+                "content": content,
+                "embedding": self.embedder.embed(content) if self.embedder else None,
                 "importance": 0.8,
                 "certainty": event.confidence,
                 "status": "active",

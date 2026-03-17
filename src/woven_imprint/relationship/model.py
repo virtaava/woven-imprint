@@ -80,13 +80,16 @@ class RelationshipModel:
         if new_type:
             rel["type"] = new_type
 
-        # Update trajectory based on recent changes
-        net = sum(deltas.get(d, 0) for d in ("trust", "affection", "respect"))
+        # Update trajectory based on clamped changes (not raw input)
+        clamped_deltas = {
+            k: max(-MAX_DELTA, min(MAX_DELTA, v)) for k, v in deltas.items() if k in dims
+        }
+        net = sum(clamped_deltas.get(d, 0) for d in ("trust", "affection", "respect"))
         if net > 0.1:
             rel["trajectory"] = "warming"
         elif net < -0.1:
             rel["trajectory"] = "cooling"
-        elif abs(deltas.get("tension", 0)) > 0.1:
+        elif abs(clamped_deltas.get("tension", 0)) > 0.1:
             rel["trajectory"] = "volatile"
         else:
             rel["trajectory"] = "stable"

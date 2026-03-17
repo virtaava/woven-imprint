@@ -122,7 +122,7 @@ class EmotionEngine:
 
         try:
             result = self.llm.generate_json(messages)
-            mood = result.get("mood", "neutral")
+            mood = str(result.get("mood", "neutral")).lower().strip()
             if mood not in EMOTION_LABELS:
                 mood = "neutral"
             intensity = max(0.0, min(1.0, float(result.get("intensity", 0.3))))

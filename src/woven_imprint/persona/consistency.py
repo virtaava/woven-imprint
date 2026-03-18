@@ -72,6 +72,8 @@ class ConsistencyChecker:
             soft_traits.append(f"Speaking style: {self.persona.soft['speaking_style']}")
         soft_text = "\n".join(f"- {t}" for t in soft_traits) if soft_traits else "None specified"
 
+        context_section = f"CONVERSATION CONTEXT:\n{context}\n\n" if context else ""
+
         messages = [
             {
                 "role": "system",
@@ -94,7 +96,7 @@ class ConsistencyChecker:
                     f"CHARACTER HARD FACTS:\n{facts_text}\n\n"
                     f"CHARACTER SOFT TRAITS:\n{soft_text}\n\n"
                     f"RESPONSE TO CHECK:\n{response}\n\n"
-                    f"{'CONVERSATION CONTEXT:\n' + context + '\n\n' if context else ''}"
+                    f"{context_section}"
                     f"Check for contradictions. Return JSON."
                 ),
             },

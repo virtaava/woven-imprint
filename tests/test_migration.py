@@ -5,8 +5,6 @@ import os
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from woven_imprint.migrate.parsers import (
     parse_chatgpt_export,
     parse_claude_project,

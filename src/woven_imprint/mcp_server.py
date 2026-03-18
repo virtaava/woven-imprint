@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 
 from .engine import Engine
-from .llm.ollama import OllamaLLM
-from .embedding.ollama import OllamaEmbedding
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -26,14 +24,15 @@ def _get_engine() -> Engine:
     global _engine
     if _engine is None:
         from .config import get_config
+        from .providers import create_llm, create_embedding
 
         cfg = get_config()
         db = cfg.storage.db_path
         Path(db).parent.mkdir(parents=True, exist_ok=True)
         _engine = Engine(
             db_path=db,
-            llm=OllamaLLM(model=cfg.llm.model, num_ctx=cfg.llm.num_ctx),
-            embedding=OllamaEmbedding(model=cfg.llm.embedding_model),
+            llm=create_llm(cfg),
+            embedding=create_embedding(cfg),
         )
     return _engine
 

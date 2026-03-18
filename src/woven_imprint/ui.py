@@ -25,19 +25,19 @@ def launch(
     from pathlib import Path
 
     from .engine import Engine
-    from .llm.ollama import OllamaLLM
-    from .embedding.ollama import OllamaEmbedding
-
     from .config import get_config
+    from .providers import create_llm, create_embedding
 
     cfg = get_config()
+    if model:
+        cfg.llm.model = model
     db = db_path or cfg.storage.db_path
     Path(db).parent.mkdir(parents=True, exist_ok=True)
 
     engine = Engine(
         db_path=db,
-        llm=OllamaLLM(model=model or cfg.llm.model, num_ctx=cfg.llm.num_ctx),
-        embedding=OllamaEmbedding(model=cfg.llm.embedding_model),
+        llm=create_llm(cfg),
+        embedding=create_embedding(cfg),
     )
 
     _active: dict = {"char": None}

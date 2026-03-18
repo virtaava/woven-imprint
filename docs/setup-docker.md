@@ -80,6 +80,20 @@ These survive `docker compose down`. To delete everything:
 docker compose down -v
 ```
 
+## Using OpenAI Instead of Ollama
+
+If you don't want to run Ollama, set environment variables in your `docker-compose.yml`
+or pass them to `docker run`:
+
+```bash
+docker run -p 7860:7860 \
+  -e WOVEN_IMPRINT_LLM_PROVIDER=openai \
+  -e WOVEN_IMPRINT_EMBEDDING_PROVIDER=openai \
+  -e WOVEN_IMPRINT_API_KEY_LLM=sk-your-key-here \
+  -e WOVEN_IMPRINT_MODEL=gpt-4o-mini \
+  woven-imprint ui --port 7860
+```
+
 ## What's Next?
 
 - The web UI at http://localhost:7860 has everything: chat, create, migrate, stats

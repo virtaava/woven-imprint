@@ -66,14 +66,22 @@ Use OpenAI's API instead:
 **pipx**:
 ```
 pipx inject woven-imprint openai
-export OPENAI_API_KEY=sk-your-key-here
+export WOVEN_IMPRINT_LLM_PROVIDER=openai
+export WOVEN_IMPRINT_EMBEDDING_PROVIDER=openai
+export WOVEN_IMPRINT_API_KEY_LLM=sk-your-key-here
+export WOVEN_IMPRINT_MODEL=gpt-4o-mini
 ```
 
 **venv**:
 ```
 pip install woven-imprint[openai]
-export OPENAI_API_KEY=sk-your-key-here
+export WOVEN_IMPRINT_LLM_PROVIDER=openai
+export WOVEN_IMPRINT_EMBEDDING_PROVIDER=openai
+export WOVEN_IMPRINT_API_KEY_LLM=sk-your-key-here
+export WOVEN_IMPRINT_MODEL=gpt-4o-mini
 ```
+
+Or set it permanently in `~/.woven_imprint/config.yaml` — see [Configuration](CONFIGURATION.md#openai-backend-no-local-ollama-needed).
 
 ## Step 4: Try It
 

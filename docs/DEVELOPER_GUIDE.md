@@ -23,6 +23,37 @@ pip install -e ".[dev]"
 
 ## LLM Backends
 
+### Config-driven provider selection (recommended)
+
+Since v0.4.0, all entry points (CLI, UI, MCP server, API server) use the configured provider
+automatically. Set the provider in `~/.woven_imprint/config.yaml` or via environment variables:
+
+```yaml
+# config.yaml
+llm:
+  llm_provider: openai          # ollama (default), openai, anthropic
+  embedding_provider: openai    # ollama (default), openai
+  model: gpt-4o-mini
+  embedding_model: text-embedding-3-small
+  api_key: sk-...
+```
+
+```bash
+# Or via environment variables
+export WOVEN_IMPRINT_LLM_PROVIDER=openai
+export WOVEN_IMPRINT_API_KEY_LLM=sk-...
+```
+
+The factory functions `create_llm()` and `create_embedding()` dispatch based on config:
+
+```python
+from woven_imprint.providers import create_llm, create_embedding
+
+llm = create_llm()        # uses configured provider
+embedding = create_embedding()
+engine = Engine(llm=llm, embedding=embedding)
+```
+
 ### Ollama (default)
 
 ```bash
@@ -209,8 +240,8 @@ woven-imprint config           # view current settings
 
 Priority: CLI flags > environment variables > config file > built-in defaults.
 
-See **[Configuration Reference](CONFIGURATION.md)** for all 50 settings including
-LLM, memory, context window, relationships, persona, server, and storage options.
+See **[Configuration Reference](CONFIGURATION.md)** for all 60+ settings including
+LLM providers, memory, context window, relationships, persona, server, storage, and migration options.
 
 ## CLI Reference
 

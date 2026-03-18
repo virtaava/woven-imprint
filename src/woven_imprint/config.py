@@ -25,6 +25,10 @@ class LLMConfig:
     model: str = "llama3.2"
     embedding_model: str = "nomic-embed-text"
     ollama_host: str = "http://127.0.0.1:11434"
+    llm_provider: str = "ollama"  # ollama, openai, anthropic
+    embedding_provider: str = "ollama"  # ollama, openai
+    api_key: str | None = None
+    base_url: str | None = None
     num_ctx: int = 8192
     temperature: float = 0.7
     temperature_json: float = 0.3
@@ -44,6 +48,8 @@ class MemoryConfig:
     state_save_interval: int = 10  # turns between state saves
     fact_extraction_interval: int = 3  # extract facts every N turns
     max_message_length: int = 50_000
+    max_facts_per_extraction: int = 5
+    fact_density_scaling: bool = True
     fact_importance: float = 0.75
     session_summary_importance: float = 0.85
     clustering_similarity: float = 0.75
@@ -85,6 +91,9 @@ class CharacterConfig:
     parallel: bool = False
     lightweight: bool = False
     enforce_consistency: bool = True
+    consistency_max_retries: int = 2
+    consistency_temperature: float = 0.5
+    consistency_fail_open_score: float = 0.8
 
 
 @dataclass
@@ -94,6 +103,13 @@ class ServerConfig:
     cors_origin: str = "http://localhost"
     ui_port: int = 7860
     ui_browser: str = "auto"
+
+
+@dataclass
+class MigrationConfig:
+    max_messages: int = 0  # 0 = unlimited (was hardcoded 500)
+    max_message_length: int = 0  # 0 = unlimited (was hardcoded 2000)
+    chunk_size: int = 50
 
 
 @dataclass
@@ -118,6 +134,7 @@ class WovenConfig:
     character: CharacterConfig = field(default_factory=CharacterConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
+    migration: MigrationConfig = field(default_factory=MigrationConfig)
 
 
 # Global singleton
@@ -192,6 +209,10 @@ def _apply_env(cfg: WovenConfig) -> None:
         "WOVEN_IMPRINT_MODEL": ("llm", "model"),
         "WOVEN_IMPRINT_EMBEDDING_MODEL": ("llm", "embedding_model"),
         "OLLAMA_HOST": ("llm", "ollama_host"),
+        "WOVEN_IMPRINT_LLM_PROVIDER": ("llm", "llm_provider"),
+        "WOVEN_IMPRINT_EMBEDDING_PROVIDER": ("llm", "embedding_provider"),
+        "WOVEN_IMPRINT_API_KEY_LLM": ("llm", "api_key"),
+        "WOVEN_IMPRINT_BASE_URL": ("llm", "base_url"),
         "WOVEN_IMPRINT_NUM_CTX": ("llm", "num_ctx"),
         "WOVEN_IMPRINT_DB": ("storage", "db_path"),
         "WOVEN_IMPRINT_API_KEY": ("server", "api_key"),
@@ -199,6 +220,8 @@ def _apply_env(cfg: WovenConfig) -> None:
         "WOVEN_IMPRINT_UI_PORT": ("server", "ui_port"),
         "WOVEN_IMPRINT_PARALLEL": ("character", "parallel"),
         "WOVEN_IMPRINT_LIGHTWEIGHT": ("character", "lightweight"),
+        "WOVEN_IMPRINT_ENFORCE_CONSISTENCY": ("character", "enforce_consistency"),
+        "WOVEN_IMPRINT_MAX_FACTS": ("memory", "max_facts_per_extraction"),
     }
 
     for env_var, (section, key) in env_map.items():
@@ -272,6 +295,10 @@ llm:
   model: llama3.2
   embedding_model: nomic-embed-text
   ollama_host: http://127.0.0.1:11434
+  llm_provider: ollama          # ollama, openai, anthropic
+  embedding_provider: ollama    # ollama, openai
+  # api_key: null               # API key for openai/anthropic providers
+  # base_url: null              # Custom base URL for provider
   num_ctx: 8192
   temperature: 0.7
   temperature_json: 0.3
@@ -289,6 +316,8 @@ memory:
   state_save_interval: 10
   fact_extraction_interval: 3
   max_message_length: 50000
+  max_facts_per_extraction: 5
+  fact_density_scaling: true
   fact_importance: 0.75
   session_summary_importance: 0.85
   clustering_similarity: 0.75
@@ -322,6 +351,9 @@ character:
   parallel: false
   lightweight: false
   enforce_consistency: true
+  consistency_max_retries: 2
+  consistency_temperature: 0.5
+  consistency_fail_open_score: 0.8
 
 server:
   api_port: 8650
@@ -333,6 +365,11 @@ server:
 storage:
   db_path: ~/.woven_imprint/characters.db
   busy_timeout: 5000
+
+migration:
+  max_messages: 0             # 0 = unlimited
+  max_message_length: 0       # 0 = unlimited
+  chunk_size: 50
 """
     p.write_text(content)
     return p

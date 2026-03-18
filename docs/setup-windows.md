@@ -73,8 +73,25 @@ You can use OpenAI's API instead (requires an API key, costs money per use):
 
 1. Get an API key from [platform.openai.com](https://platform.openai.com)
 2. Run: `pip install woven-imprint[openai]`
-3. Set your key in PowerShell: `$env:OPENAI_API_KEY = "sk-your-key-here"`
-4. Or in WSL: `export OPENAI_API_KEY=sk-your-key-here`
+3. Configure the provider:
+
+**PowerShell**:
+```
+$env:WOVEN_IMPRINT_LLM_PROVIDER = "openai"
+$env:WOVEN_IMPRINT_EMBEDDING_PROVIDER = "openai"
+$env:WOVEN_IMPRINT_API_KEY_LLM = "sk-your-key-here"
+$env:WOVEN_IMPRINT_MODEL = "gpt-4o-mini"
+```
+
+**WSL**:
+```
+export WOVEN_IMPRINT_LLM_PROVIDER=openai
+export WOVEN_IMPRINT_EMBEDDING_PROVIDER=openai
+export WOVEN_IMPRINT_API_KEY_LLM=sk-your-key-here
+export WOVEN_IMPRINT_MODEL=gpt-4o-mini
+```
+
+Or set it permanently in `~/.woven_imprint/config.yaml` — see [Configuration](CONFIGURATION.md#openai-backend-no-local-ollama-needed).
 
 ## Step 4: Try It
 

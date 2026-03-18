@@ -49,13 +49,18 @@ class Character:
         self.embedder = embedder
         self.persona = persona
 
+        # Load config early — needed by sub-systems
+        from .config import get_config
+
+        _cfg = get_config()
+
         # Sub-systems
         self.memory = MemoryStore(storage, embedder, char_id)
         self.retriever = MemoryRetriever(storage, embedder, char_id)
         self.belief = BeliefReviser(storage, char_id, embedder=embedder)
         self.relationships = RelationshipModel(storage, char_id)
         self.consolidator = ConsolidationEngine(storage, llm, embedder, char_id)
-        self.consistency = ConsistencyChecker(llm, persona)
+        self.consistency = ConsistencyChecker(llm, persona, config=_cfg.character)
         self.growth = GrowthEngine(storage, llm, char_id, persona, embedder=embedder)
         self.emotion_engine = EmotionEngine(llm)
         self.arc_tracker = ArcTracker(llm)
@@ -68,9 +73,7 @@ class Character:
 
         # Conversation buffer — use provided budget or read from config
         if context_budget is None:
-            from .config import get_config
-
-            ctx_cfg = get_config().context
+            ctx_cfg = _cfg.context
             context_budget = ContextBudget(
                 total=ctx_cfg.total_tokens,
                 system_prompt=ctx_cfg.system_prompt_tokens,
@@ -79,7 +82,7 @@ class Character:
                 reserve=ctx_cfg.reserve_tokens,
             )
         self._context = ContextManager(
-            budget=context_budget, max_turns=get_config().context.max_turns
+            budget=context_budget, max_turns=_cfg.context.max_turns
         )
 
         # Session tracking
@@ -87,9 +90,6 @@ class Character:
         self._turn_count: int = 0
 
         # Config — read from centralized config, can be overridden per-instance
-        from .config import get_config
-
-        _cfg = get_config()
         self.enforce_consistency: bool = _cfg.character.enforce_consistency
         self.lightweight: bool = _cfg.character.lightweight
         self.parallel: bool = _cfg.character.parallel
@@ -599,17 +599,43 @@ class Character:
         # Fact extraction is throttled
         from .config import get_config
 
-        _extract_interval = get_config().memory.fact_extraction_interval
+        mem_cfg = get_config().memory
+        _extract_interval = mem_cfg.fact_extraction_interval
         if self._turn_count % _extract_interval != 0 and self._turn_count > 0:
             return
+
+        # Dynamic fact cap based on exchange density
+        max_facts = mem_cfg.max_facts_per_extraction
+        exchange_len = len(user_msg) + len(response)
+        if mem_cfg.fact_density_scaling:
+            if exchange_len > 2000:
+                max_facts = min(max_facts * 2, 15)
+            elif exchange_len < 200:
+                max_facts = max(max_facts // 2, 2)
+
+        # Build context from recent conversation to avoid re-extraction
+        context_hint = ""
+        recent_msgs = self._context.get_messages()[-4:]  # last 2 pairs
+        if recent_msgs:
+            context_parts = []
+            for m in recent_msgs:
+                role = m.get("role", "unknown")
+                content = m.get("content", "")[:200]
+                context_parts.append(f"{role}: {content}")
+            context_hint = (
+                "\n\nRECENT CONTEXT (do not re-extract these):\n"
+                + "\n".join(context_parts)
+            )
 
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "Extract specific facts, opinions, or commitments from this exchange "
-                    "that are worth remembering long-term. Return a JSON array of strings. "
-                    "Each string should be a single fact. Return [] if nothing notable."
+                    "Extract specific NEW facts, opinions, preferences, biographical details, "
+                    "or commitments from this exchange that are worth remembering long-term. "
+                    "Return a JSON array of strings. Each string should be a single fact. "
+                    "Focus on NEW information not already present in the recent context. "
+                    "Return [] if nothing notable."
                 ),
             },
             {
@@ -618,6 +644,7 @@ class Character:
                     f"User said: {user_msg}\n"
                     f"{self.name} responded: {response}\n\n"
                     f"What facts should {self.name} remember?"
+                    f"{context_hint}"
                 ),
             },
         ]
@@ -625,7 +652,7 @@ class Character:
         try:
             result = self.llm.generate_json(messages)
             facts = result if isinstance(result, list) else result.get("facts", [])
-            for fact in facts[:5]:  # Cap at 5 facts per extraction
+            for fact in facts[:max_facts]:
                 if isinstance(fact, str) and len(fact) > 10:
                     # Check for contradictions with existing memories
                     existing = self.memory.get_all(tier="core", limit=50)
@@ -646,7 +673,7 @@ class Character:
                             tier="core",
                             role="observation",
                             session_id=self._session_id,
-                            importance=get_config().memory.fact_importance,
+                            importance=mem_cfg.fact_importance,
                             metadata={"source": "extraction", "user_id": user_id},
                         )
         except (ValueError, KeyError) as e:

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from ..engine import Engine
 from ..character import Character
-from .parsers import auto_detect, parse_custom_gpt
+from .parsers import auto_detect, parse_custom_gpt, parse_chatgpt_export
 
 
 class CharacterImporter:
@@ -35,6 +35,10 @@ class CharacterImporter:
     def __init__(self, engine: Engine):
         self.engine = engine
         self.llm = engine.llm
+        # Load migration config
+        from ..config import get_config
+
+        self._migration_cfg = get_config().migration
 
     def from_file(self, path: str | Path, name: str | None = None) -> Character:
         """Import from any supported file format (auto-detected).
@@ -160,9 +164,11 @@ class CharacterImporter:
             path: Path to conversations.json.
             name: Character name (defaults to "Assistant" or extracted).
         """
-        from .parsers import parse_chatgpt_export
-
-        parsed = parse_chatgpt_export(path)
+        parsed = parse_chatgpt_export(
+            path,
+            max_messages=self._migration_cfg.max_messages,
+            max_message_length=self._migration_cfg.max_message_length,
+        )
         return self._build_character(parsed, name_override=name)
 
     def _build_character(self, parsed: dict, name_override: str | None = None) -> Character:
@@ -179,7 +185,12 @@ class CharacterImporter:
                 parsed.get("messages", []),
             )
         elif parsed.get("messages"):
-            analysis = self._analyze_conversations(parsed["messages"])
+            messages = parsed["messages"]
+            chunk_size = self._migration_cfg.chunk_size
+            if len(messages) > chunk_size:
+                analysis = self._analyze_conversations_chunked(messages, chunk_size)
+            else:
+                analysis = self._analyze_conversations(messages)
         else:
             raise ValueError("No usable data found in the import source")
 
@@ -303,6 +314,105 @@ class CharacterImporter:
 
         return self._llm_extract(context)
 
+    def _analyze_conversations_chunked(
+        self, messages: list[dict], chunk_size: int = 50
+    ) -> dict:
+        """Analyze large conversation histories in chunks, then synthesize.
+
+        Processes messages in chunks to avoid context window limits,
+        then merges partial analyses into a unified character profile.
+        """
+        chunk_analyses = []
+
+        for i in range(0, len(messages), chunk_size):
+            chunk = messages[i : i + chunk_size]
+            chunk_num = i // chunk_size + 1
+            total_chunks = (len(messages) + chunk_size - 1) // chunk_size
+
+            assistant_msgs = [m for m in chunk if m.get("role") == "assistant"]
+            sample = "\n".join(m["content"][:200] for m in assistant_msgs[:30])
+
+            context = (
+                f"The following are messages from an AI assistant "
+                f"(chunk {chunk_num}/{total_chunks}, messages {i+1}-{i+len(chunk)}).\n"
+                f"Based on these messages, determine the assistant's character:\n\n"
+                f"{sample}"
+            )
+
+            analysis = self._llm_extract(context)
+            chunk_analyses.append(analysis)
+
+        if len(chunk_analyses) == 1:
+            return chunk_analyses[0]
+
+        return self._synthesize_analyses(chunk_analyses)
+
+    def _synthesize_analyses(self, analyses: list[dict]) -> dict:
+        """Merge multiple chunk analyses into a unified character profile."""
+        # Build a summary of all partial analyses
+        parts = []
+        for i, a in enumerate(analyses, 1):
+            parts.append(
+                f"Analysis {i}:\n"
+                f"  Name: {a.get('name', '?')}\n"
+                f"  Personality: {a.get('personality', '?')}\n"
+                f"  Backstory: {a.get('backstory', '?')}\n"
+                f"  Speaking style: {a.get('speaking_style', '?')}\n"
+                f"  Key memories: {', '.join(str(m) for m in a.get('key_memories', [])[:5])}"
+            )
+
+        synthesis_prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "You are merging multiple partial character analyses into one unified "
+                    "character profile. Return JSON with:\n"
+                    "- name: character name (string)\n"
+                    "- personality: personality traits (string, comma-separated)\n"
+                    "- backstory: character backstory (string, 2-4 sentences)\n"
+                    "- speaking_style: how they talk (string)\n"
+                    "- occupation: what they do (string, optional)\n"
+                    "- key_memories: important facts to remember (list of strings, max 15)\n\n"
+                    "Combine insights from all analyses. Prefer consistent patterns "
+                    "that appear across multiple chunks."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Merge these {len(analyses)} partial character analyses into "
+                    f"one unified profile:\n\n" + "\n\n".join(parts)
+                ),
+            },
+        ]
+
+        try:
+            result = self.llm.generate_json(synthesis_prompt)
+            if isinstance(result, dict):
+                # Merge key_memories from all analyses
+                all_memories = []
+                for a in analyses:
+                    all_memories.extend(a.get("key_memories", []))
+                # Add synthesized memories, then unique originals
+                merged_memories = result.get("key_memories", [])
+                seen = set(str(m).lower() for m in merged_memories)
+                for m in all_memories:
+                    if str(m).lower() not in seen and len(merged_memories) < 20:
+                        merged_memories.append(m)
+                        seen.add(str(m).lower())
+                result["key_memories"] = merged_memories
+                return result
+        except (ValueError, KeyError):
+            pass
+
+        # Fallback: use the first analysis with merged memories
+        merged = analyses[0].copy()
+        all_memories = []
+        for a in analyses:
+            all_memories.extend(a.get("key_memories", []))
+        merged["key_memories"] = all_memories[:20]
+        return merged
+
     def _llm_extract(self, context: str, existing: dict | None = None) -> dict:
         """Use LLM to extract structured character data."""
         messages = [
@@ -346,15 +456,20 @@ class CharacterImporter:
 
     def _assess_relationship_baseline(self, messages: list[dict], char_name: str) -> dict | None:
         """Assess the existing relationship dynamics from conversation history."""
-        # Sample the conversation — beginning, middle, end
+        # Scale sample size with message count
         n = len(messages)
+        sample_size = min(60, max(30, n // 10))
+
         sample_indices = []
-        if n <= 30:
+        if n <= sample_size:
             sample_indices = list(range(n))
         else:
-            # Take 10 from start, 10 from middle, 10 from end
+            # Take from start, middle, end — scaled by sample_size
+            third = sample_size // 3
             sample_indices = (
-                list(range(10)) + list(range(n // 2 - 5, n // 2 + 5)) + list(range(n - 10, n))
+                list(range(third))
+                + list(range(n // 2 - third // 2, n // 2 + third // 2))
+                + list(range(n - third, n))
             )
 
         sample = "\n".join(

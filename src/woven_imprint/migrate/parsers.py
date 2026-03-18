@@ -6,11 +6,20 @@ import json
 from pathlib import Path
 
 
-def parse_chatgpt_export(path: str | Path) -> dict:
+def parse_chatgpt_export(
+    path: str | Path,
+    max_messages: int = 0,
+    max_message_length: int = 0,
+) -> dict:
     """Parse a ChatGPT data export (conversations.json).
 
     OpenAI export format: list of conversations, each with a
     mapping of message nodes.
+
+    Args:
+        path: Path to conversations.json.
+        max_messages: Maximum messages to extract (0 = unlimited).
+        max_message_length: Maximum length per message (0 = unlimited).
     """
     with open(path) as f:
         data = json.load(f)
@@ -33,12 +42,17 @@ def parse_chatgpt_export(path: str | Path) -> dict:
             if not text.strip():
                 continue
             role = msg.get("author", {}).get("role", "unknown")
-            all_messages.append({"role": role, "content": text[:2000]})
+            if max_message_length > 0:
+                text = text[:max_message_length]
+            all_messages.append({"role": role, "content": text})
+
+    if max_messages > 0:
+        all_messages = all_messages[:max_messages]
 
     return {
         "source": "chatgpt",
         "title": title,
-        "messages": all_messages[:500],  # cap to avoid huge context
+        "messages": all_messages,
         "instructions": "",
     }
 
@@ -123,7 +137,7 @@ def parse_tavernai_card(path: str | Path) -> dict:
 
 
 def parse_claude_project(path: str | Path) -> dict:
-    """Parse Claude Code project files (CLAUDE.md + memory files)."""
+    """Parse Claude Code project files — all markdown files + .claude/ directory."""
     path = Path(path)
 
     instructions = ""
@@ -132,13 +146,28 @@ def parse_claude_project(path: str | Path) -> dict:
     # Read CLAUDE.md
     claude_md = path / "CLAUDE.md" if path.is_dir() else path
     if claude_md.exists():
-        instructions = claude_md.read_text()[:10000]
+        instructions = claude_md.read_text()
 
-    # Read memory files
     if path.is_dir():
-        for md_file in path.glob("memory/*.md"):
-            content = md_file.read_text()[:3000]
-            memories.append({"file": md_file.name, "content": content})
+        # Recursively scan all markdown files (not just memory/*.md)
+        for md_file in path.rglob("*.md"):
+            if md_file.name == "CLAUDE.md":
+                continue  # Already read above
+            content = md_file.read_text()
+            memories.append({
+                "file": str(md_file.relative_to(path)),
+                "content": content,
+            })
+
+        # Also scan .claude/ directory if present
+        claude_dir = path / ".claude"
+        if claude_dir.is_dir():
+            for md_file in claude_dir.rglob("*.md"):
+                content = md_file.read_text()
+                memories.append({
+                    "file": f".claude/{md_file.relative_to(claude_dir)}",
+                    "content": content,
+                })
 
     return {
         "source": "claude_project",

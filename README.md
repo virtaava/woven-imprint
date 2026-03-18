@@ -41,6 +41,7 @@ pip install woven-imprint
 ```
 
 Requires Python 3.11+ and an LLM backend ([Ollama](https://ollama.com), OpenAI, or Anthropic).
+Configure your provider in `~/.woven_imprint/config.yaml` or via env vars — see [Configuration](docs/CONFIGURATION.md).
 See [Getting Started](docs/GETTING_STARTED.md) for platform-specific setup.
 
 **Prefer a graphical interface?**
@@ -159,7 +160,7 @@ Full results: [docs/RESULTS.md](docs/RESULTS.md)
 ## Design Principles
 
 - **Local-first** — SQLite default, runs on consumer hardware, no cloud dependency
-- **Model-agnostic** — works with any LLM (Ollama, vLLM, OpenAI, Anthropic)
+- **Model-agnostic** — config-driven provider selection (Ollama, OpenAI, Anthropic, vLLM, llama.cpp)
 - **Infrastructure, not app** — provides the persistence layer via clean Python API
 - **Characters survive across time** — the core differentiator
 

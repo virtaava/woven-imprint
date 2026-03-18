@@ -2,12 +2,21 @@
 
 ## Prerequisites
 
-All Python examples need Woven Imprint installed and an LLM backend running:
+All Python examples need Woven Imprint installed and an LLM backend configured.
 
+**With Ollama (default)**:
 ```bash
 pip install woven-imprint
 ollama pull llama3.2            # or any chat model
 ollama pull nomic-embed-text    # for memory embeddings
+```
+
+**With OpenAI** (no Ollama needed):
+```bash
+pip install woven-imprint[openai]
+export WOVEN_IMPRINT_LLM_PROVIDER=openai
+export WOVEN_IMPRINT_EMBEDDING_PROVIDER=openai
+export WOVEN_IMPRINT_API_KEY_LLM=sk-your-key-here
 ```
 
 ## Examples

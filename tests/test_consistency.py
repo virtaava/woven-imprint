@@ -2,6 +2,7 @@
 
 from woven_imprint.persona.model import PersonaModel
 from woven_imprint.persona.consistency import ConsistencyChecker
+from woven_imprint.config import CharacterConfig
 
 
 class FakeLLM:
@@ -140,3 +141,77 @@ class TestConsistencyChecker:
         checker = ConsistencyChecker(FailingLLM(), persona)
         report = checker.check("test")
         assert report.consistent is True  # Safe default on failure
+
+    def test_context_passed_to_check_via_enforce(self):
+        """Verify that enforce() builds context from messages and passes to check()."""
+        persona = PersonaModel(
+            {
+                "name": "Alice",
+                "hard": {"name": "Alice"},
+                "backstory": "A detective",
+            }
+        )
+
+        received_contexts = []
+
+        class ContextCaptureLLM:
+            def generate(self, messages, **kwargs):
+                return "I'm Alice."
+
+            def generate_json(self, messages, **kwargs):
+                # Capture the user message content to verify context presence
+                for m in messages:
+                    if m["role"] == "user":
+                        received_contexts.append(m["content"])
+                return {"hard_violations": [], "soft_flags": [], "score": 0.95}
+
+        checker = ConsistencyChecker(ContextCaptureLLM(), persona)
+        messages = [
+            {"role": "user", "content": "Tell me about yourself"},
+            {"role": "assistant", "content": "I'm a detective"},
+            {"role": "user", "content": "What's your name?"},
+        ]
+        response, report = checker.enforce("I'm Alice", messages)
+        assert report.consistent is True
+        # Verify context was included in the check call
+        assert any("CONVERSATION CONTEXT" in ctx for ctx in received_contexts)
+
+    def test_configurable_fail_open_score(self):
+        """Verify custom fail_open_score is used when LLM returns non-dict."""
+        persona = PersonaModel({"name": "Alice", "hard": {"name": "Alice"}})
+
+        class NonDictLLM:
+            def generate(self, messages, **kwargs):
+                return "response"
+
+            def generate_json(self, messages, **kwargs):
+                return "not a dict"
+
+        config = CharacterConfig(consistency_fail_open_score=0.6)
+        checker = ConsistencyChecker(NonDictLLM(), persona, config=config)
+        report = checker.check("test")
+        assert report.consistent is True
+        assert report.score == 0.6
+
+    def test_json_retry_on_non_dict(self):
+        """Verify retry at low temperature when first generate_json returns non-dict."""
+        persona = PersonaModel({"name": "Alice", "hard": {"name": "Alice"}})
+
+        call_count = 0
+
+        class RetryLLM:
+            def generate(self, messages, **kwargs):
+                return "response"
+
+            def generate_json(self, messages, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    return "not a dict"
+                # Second call (retry) returns valid dict
+                return {"hard_violations": [], "soft_flags": [], "score": 0.95}
+
+        checker = ConsistencyChecker(RetryLLM(), persona)
+        report = checker.check("test")
+        assert call_count == 2  # Verified retry happened
+        assert report.score == 0.95

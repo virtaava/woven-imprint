@@ -89,8 +89,11 @@ Post-generation NLI-inspired checking:
 2. Extract claims from response (factual statements, opinions, emotional states)
 3. Check claims against hard constraints → reject if contradiction
 4. Check claims against soft constraints → flag if contradiction, check for growth justification
-5. If rejection: regenerate with explicit constraint reminder
-6. Max 2 regeneration attempts, then return best-scoring response
+5. Conversation context (last 3 message pairs) is included for growth justification
+6. If rejection: regenerate with explicit constraint reminder at configurable temperature
+7. Max retries configurable (default 2), then return best-scoring response
+8. On JSON parse failure: retry once at temperature=0.1 before fail-open
+9. Fail-open score configurable (default 0.8) — returned when the check itself fails
 
 ### Relationship Model
 
@@ -219,6 +222,8 @@ woven_imprint/
 ├── __init__.py           # Public API: Engine, Character
 ├── engine.py             # Engine class — entry point
 ├── character.py          # Character class — chat, reflect, export
+├── providers.py          # Factory: create_llm(), create_embedding()
+├── config.py             # Centralized configuration (60+ settings)
 ├── memory/
 │   ├── __init__.py
 │   ├── store.py          # MemoryStore — CRUD operations
@@ -246,6 +251,10 @@ woven_imprint/
 │   ├── base.py           # Abstract embedding interface
 │   ├── openai_embedding.py  # OpenAI embeddings
 │   └── ollama.py         # Ollama embeddings (nomic-embed-text)
+├── migrate/
+│   ├── __init__.py
+│   ├── parsers.py        # Format-specific parsers (ChatGPT, TavernAI, Claude, etc.)
+│   └── importer.py       # CharacterImporter — chunked analysis, profile synthesis
 ├── server/
 │   ├── __init__.py
 │   └── api.py            # OpenAI-compatible HTTP proxy

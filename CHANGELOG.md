@@ -5,6 +5,39 @@ All notable changes to Woven Imprint will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-18
+
+### Added
+- **Provider agnosticism**: All entry points use factory functions instead of hardcoded Ollama. Configure `llm_provider` (ollama/openai/anthropic) and `embedding_provider` (ollama/openai) in config or via `WOVEN_IMPRINT_LLM_PROVIDER` / `WOVEN_IMPRINT_EMBEDDING_PROVIDER` env vars.
+- New `providers.py` module with `create_llm()` and `create_embedding()` factory functions.
+- `WOVEN_IMPRINT_API_KEY_LLM` and `WOVEN_IMPRINT_BASE_URL` env vars for provider API keys and custom endpoints.
+- `WOVEN_IMPRINT_ENFORCE_CONSISTENCY` env var (was missing from env_map).
+- Consistency checker now accepts `CharacterConfig` for configurable retries, temperature, and fail-open score.
+- JSON parse retry: consistency checker retries once at temperature=0.1 when `generate_json()` returns non-dict.
+- Conversation context passed to consistency `check()` via `enforce()` — last 3 message pairs included for growth justification.
+- Dynamic fact extraction cap: scales by exchange length (>2000 chars = 2x cap up to 15; <200 chars = half cap, min 2). Configurable via `max_facts_per_extraction` and `fact_density_scaling`.
+- Enriched extraction prompt: includes "preferences, biographical details" in categories; adds recent conversation context with "do not re-extract" instruction.
+- `WOVEN_IMPRINT_MAX_FACTS` env var for fact extraction cap.
+- `MigrationConfig` dataclass: `max_messages`, `max_message_length`, `chunk_size` — all configurable.
+- Chunked conversation analysis for large exports: `_analyze_conversations_chunked()` processes in chunks, `_synthesize_analyses()` merges via LLM.
+- Scaled relationship sample size in migration: `min(60, max(30, n//10))` instead of fixed 30.
+- `tests/test_providers.py`: 9 tests for factory functions.
+- `tests/test_migration.py`: 9 tests for parsers and chunked analysis.
+
+### Changed
+- ChatGPT export parser: default is now unlimited messages (was hardcoded 500) and unlimited message length (was hardcoded 2000). Use `MigrationConfig` to set limits.
+- Claude project parser: `rglob("*.md")` for all markdown files (was only `memory/*.md`), also scans `.claude/` directory, no character limits on file content.
+- CLI, UI, MCP server, API server, and Engine all use `create_llm()`/`create_embedding()` factories — no direct Ollama imports in entry points.
+- `CharacterConfig` gains `consistency_max_retries`, `consistency_temperature`, `consistency_fail_open_score`.
+- `MemoryConfig` gains `max_facts_per_extraction`, `fact_density_scaling`.
+- Config default template includes all new settings.
+- 167 tests (was 146+), 1 skipped (optional anthropic dependency).
+
+### Fixed
+- `enforce_consistency` missing from environment variable map — now configurable via `WOVEN_IMPRINT_ENFORCE_CONSISTENCY`.
+- `enforce()` never passed conversation context to `check()` despite `check()` having a `context` parameter.
+- Fact extraction used hardcoded `facts[:5]` regardless of exchange density.
+
 ## [0.3.1] - 2026-03-17
 
 ### Added

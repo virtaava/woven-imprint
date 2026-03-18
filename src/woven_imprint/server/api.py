@@ -21,8 +21,6 @@ from pathlib import Path
 from typing import Any
 
 from ..engine import Engine
-from ..llm.ollama import OllamaLLM
-from ..embedding.ollama import OllamaEmbedding
 
 
 _engine: Engine | None = None
@@ -34,14 +32,17 @@ def _get_engine() -> Engine:
     if _engine is None:
         from ..config import get_config
 
+        from ..providers import create_llm, create_embedding
+
         cfg = get_config()
         db_path = _config.get("db_path") or cfg.storage.db_path
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         model = _config.get("model") or cfg.llm.model
+        cfg.llm.model = model
         _engine = Engine(
             db_path=db_path,
-            llm=OllamaLLM(model=model, num_ctx=cfg.llm.num_ctx),
-            embedding=OllamaEmbedding(model=cfg.llm.embedding_model),
+            llm=create_llm(cfg),
+            embedding=create_embedding(cfg),
         )
     return _engine
 

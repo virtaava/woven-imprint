@@ -6,8 +6,6 @@ import argparse
 from pathlib import Path
 
 from .engine import Engine
-from .llm.ollama import OllamaLLM
-from .embedding.ollama import OllamaEmbedding
 
 
 DEFAULT_DB = str(Path.home() / ".woven_imprint" / "characters.db")
@@ -15,18 +13,17 @@ DEFAULT_DB = str(Path.home() / ".woven_imprint" / "characters.db")
 
 def _get_engine(db_path: str | None = None, model: str | None = None) -> Engine:
     from .config import get_config
+    from .providers import create_llm, create_embedding
 
     cfg = get_config()
+    if model:
+        cfg.llm.model = model
     db = db_path or cfg.storage.db_path
     Path(db).parent.mkdir(parents=True, exist_ok=True)
     return Engine(
         db_path=db,
-        llm=OllamaLLM(
-            model=model or cfg.llm.model,
-            num_ctx=cfg.llm.num_ctx,
-            timeout=cfg.llm.timeout,
-        ),
-        embedding=OllamaEmbedding(model=cfg.llm.embedding_model),
+        llm=create_llm(cfg),
+        embedding=create_embedding(cfg),
     )
 
 

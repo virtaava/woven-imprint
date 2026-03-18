@@ -27,3 +27,16 @@ Or use the web interface:
 pip install woven-imprint[ui]
 woven-imprint ui
 ```
+
+### No Ollama? Use OpenAI instead
+
+```bash
+pip install woven-imprint[openai]
+export WOVEN_IMPRINT_LLM_PROVIDER=openai
+export WOVEN_IMPRINT_EMBEDDING_PROVIDER=openai
+export WOVEN_IMPRINT_API_KEY_LLM=sk-your-key-here
+export WOVEN_IMPRINT_MODEL=gpt-4o-mini
+woven-imprint demo
+```
+
+See [Configuration](CONFIGURATION.md) for all provider options (Ollama, OpenAI, Anthropic, vLLM).

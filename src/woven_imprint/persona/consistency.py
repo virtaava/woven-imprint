@@ -30,9 +30,23 @@ class ConsistencyChecker:
     3. Check claims against soft constraints → flag but allow with growth context
     """
 
-    def __init__(self, llm: LLMProvider, persona: PersonaModel):
+    def __init__(
+        self,
+        llm: LLMProvider,
+        persona: PersonaModel,
+        config=None,
+    ):
         self.llm = llm
         self.persona = persona
+        # Configurable values from CharacterConfig
+        if config is not None:
+            self._max_retries = config.consistency_max_retries
+            self._retry_temp = config.consistency_temperature
+            self._fail_open_score = config.consistency_fail_open_score
+        else:
+            self._max_retries = 2
+            self._retry_temp = 0.5
+            self._fail_open_score = 0.8
 
     def check(self, response: str, context: str = "") -> ConsistencyReport:
         """Check a response for persona consistency.
@@ -80,7 +94,7 @@ class ConsistencyChecker:
                     f"CHARACTER HARD FACTS:\n{facts_text}\n\n"
                     f"CHARACTER SOFT TRAITS:\n{soft_text}\n\n"
                     f"RESPONSE TO CHECK:\n{response}\n\n"
-                    f"{'CONTEXT: ' + context if context else ''}\n"
+                    f"{'CONVERSATION CONTEXT:\n' + context + '\n\n' if context else ''}"
                     f"Check for contradictions. Return JSON."
                 ),
             },
@@ -89,7 +103,12 @@ class ConsistencyChecker:
         try:
             result = self.llm.generate_json(messages)
             if not isinstance(result, dict):
-                return ConsistencyReport(consistent=True, score=0.8)
+                # Retry once at low temperature before falling through
+                result = self.llm.generate_json(messages, temperature=0.1)
+                if not isinstance(result, dict):
+                    return ConsistencyReport(
+                        consistent=True, score=self._fail_open_score
+                    )
             hard = result.get("hard_violations", [])
             soft = result.get("soft_flags", [])
             score = float(result.get("score", 1.0))
@@ -102,22 +121,37 @@ class ConsistencyChecker:
             )
         except (ValueError, KeyError, TypeError):
             # If consistency check fails, assume consistent (don't block generation)
-            return ConsistencyReport(consistent=True, score=0.8)
+            return ConsistencyReport(consistent=True, score=self._fail_open_score)
 
     def enforce(
-        self, response: str, messages: list[dict[str, str]], max_retries: int = 2
+        self,
+        response: str,
+        messages: list[dict[str, str]],
+        max_retries: int | None = None,
     ) -> tuple[str, ConsistencyReport]:
         """Check response and regenerate if hard violations found.
 
         Args:
             response: Initial response to check.
             messages: Original message list for regeneration.
-            max_retries: Max regeneration attempts.
+            max_retries: Max regeneration attempts (uses config default if None).
 
         Returns:
             Tuple of (best_response, final_report).
         """
-        report = self.check(response)
+        if max_retries is None:
+            max_retries = self._max_retries
+
+        # Build conversation context from the last 3 non-system message pairs
+        context_parts = []
+        non_system = [m for m in messages if m.get("role") != "system"]
+        for m in non_system[-6:]:  # last 3 pairs (user+assistant)
+            role = m.get("role", "unknown")
+            content = m.get("content", "")[:300]
+            context_parts.append(f"{role}: {content}")
+        context = "\n".join(context_parts)
+
+        report = self.check(response, context=context)
         if report.consistent:
             return response, report
 
@@ -140,8 +174,10 @@ class ConsistencyChecker:
             ]
 
             try:
-                new_response = self.llm.generate(retry_messages, temperature=0.5)
-                new_report = self.check(new_response)
+                new_response = self.llm.generate(
+                    retry_messages, temperature=self._retry_temp
+                )
+                new_report = self.check(new_response, context=context)
 
                 if new_report.consistent:
                     return new_response, new_report

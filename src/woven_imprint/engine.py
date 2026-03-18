@@ -7,9 +7,7 @@ from pathlib import Path
 
 from .character import Character
 from .embedding.base import EmbeddingProvider
-from .embedding.ollama import OllamaEmbedding
 from .llm.base import LLMProvider
-from .llm.ollama import OllamaLLM
 from .persona.model import PersonaModel
 from .storage.sqlite import SQLiteStorage
 from .utils.text import generate_id
@@ -31,8 +29,14 @@ class Engine:
         embedding: EmbeddingProvider | None = None,
     ):
         self.storage = SQLiteStorage(db_path)
-        self.llm = llm or OllamaLLM()
-        self.embedder = embedding or OllamaEmbedding()
+        if llm is None or embedding is None:
+            from .providers import create_llm, create_embedding
+
+            self.llm = llm or create_llm()
+            self.embedder = embedding or create_embedding()
+        else:
+            self.llm = llm
+            self.embedder = embedding
 
     def create_character(
         self,

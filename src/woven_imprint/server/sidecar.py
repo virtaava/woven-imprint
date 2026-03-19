@@ -253,7 +253,29 @@ class SidecarHandler(BaseHTTPRequestHandler):
             return
 
         memories = char.recall(query, limit=limit)
-        self._send_json({"memories": memories})
+
+        # Build formatted context string for prompt injection
+        user_id = qs.get("user_id", [None])[0]
+        context_parts: list[str] = []
+
+        if user_id:
+            rel = char.relationships.get(user_id)
+            if rel:
+                try:
+                    desc = char.relationships.describe(user_id)
+                    if desc:
+                        context_parts.append(f"[Relationship with {user_id}: {desc}]")
+                except Exception:
+                    pass
+
+        if memories:
+            context_parts.append("[Relevant memories:]")
+            for m in memories[:limit]:
+                content = m.get("content", "")[:200]
+                context_parts.append(f"- {content}")
+
+        context = "\n".join(context_parts)
+        self._send_json({"memories": memories, "context": context})
 
     def _handle_get_relationship(self, char_id: str, target_id: str):
         engine = _get_engine()

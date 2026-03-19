@@ -156,6 +156,17 @@ relationship bounds, persona consistency, adversarial persona resistance, and co
 
 Full results: [docs/RESULTS.md](docs/RESULTS.md)
 
+## Visual Demo: LIGHT World Simulation
+
+We ran woven-imprint on characters from the [LIGHT dataset](https://parl.ai/projects/light/) (Facebook Research, MIT License) — a public dataset of 1,324 fantasy characters across 661 locations. No hand-crafted scenarios; all character data is verifiable from the source.
+
+![Woven Imprint Showcase](docs/assets/showcase.gif)
+
+Characters interact through `character.chat()`, and woven-imprint handles everything behind the scenes: memory accumulation, relationship updates, persona consistency. The visualization shows agents clustering by affinity (force-directed layout), edge colors shifting from gray (neutral) to green (trust) or red (tension), and speech bubbles with LLM-generated dialogue.
+
+Three LIGHT rooms simulated over 15 turns each: a palace dungeon (prisoners vs. royalty), a castle bazaar (knights, farmers, vendors), and a great hall (kings, servants, visitors). A separate 282-character world simulation across 107 rooms produced 175 emergent relationships.
+
+Full breakdown: [docs/LIGHT_SIMULATION_RESULTS.md](docs/LIGHT_SIMULATION_RESULTS.md)
 
 ## Design Principles
 

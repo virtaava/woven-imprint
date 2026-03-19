@@ -314,9 +314,7 @@ class CharacterImporter:
 
         return self._llm_extract(context)
 
-    def _analyze_conversations_chunked(
-        self, messages: list[dict], chunk_size: int = 50
-    ) -> dict:
+    def _analyze_conversations_chunked(self, messages: list[dict], chunk_size: int = 50) -> dict:
         """Analyze large conversation histories in chunks, then synthesize.
 
         Processes messages in chunks to avoid context window limits,
@@ -334,7 +332,7 @@ class CharacterImporter:
 
             context = (
                 f"The following are messages from an AI assistant "
-                f"(chunk {chunk_num}/{total_chunks}, messages {i+1}-{i+len(chunk)}).\n"
+                f"(chunk {chunk_num}/{total_chunks}, messages {i + 1}-{i + len(chunk)}).\n"
                 f"Based on these messages, determine the assistant's character:\n\n"
                 f"{sample}"
             )

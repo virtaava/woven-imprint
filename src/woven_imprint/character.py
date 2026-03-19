@@ -81,9 +81,7 @@ class Character:
                 conversation=ctx_cfg.conversation_tokens,
                 reserve=ctx_cfg.reserve_tokens,
             )
-        self._context = ContextManager(
-            budget=context_budget, max_turns=_cfg.context.max_turns
-        )
+        self._context = ContextManager(budget=context_budget, max_turns=_cfg.context.max_turns)
 
         # Session tracking
         self._session_id: str | None = None
@@ -622,9 +620,8 @@ class Character:
                 role = m.get("role", "unknown")
                 content = m.get("content", "")[:200]
                 context_parts.append(f"{role}: {content}")
-            context_hint = (
-                "\n\nRECENT CONTEXT (do not re-extract these):\n"
-                + "\n".join(context_parts)
+            context_hint = "\n\nRECENT CONTEXT (do not re-extract these):\n" + "\n".join(
+                context_parts
             )
 
         messages = [

@@ -50,8 +50,7 @@ def create_llm(cfg: WovenConfig | None = None) -> LLMProvider:
         )
     else:
         raise ValueError(
-            f"Unknown LLM provider: {provider!r}. "
-            f"Supported: ollama, openai, anthropic"
+            f"Unknown LLM provider: {provider!r}. Supported: ollama, openai, anthropic"
         )
 
 
@@ -88,7 +87,4 @@ def create_embedding(cfg: WovenConfig | None = None) -> EmbeddingProvider:
             base_url=cfg.llm.base_url,
         )
     else:
-        raise ValueError(
-            f"Unknown embedding provider: {provider!r}. "
-            f"Supported: ollama, openai"
-        )
+        raise ValueError(f"Unknown embedding provider: {provider!r}. Supported: ollama, openai")

@@ -108,9 +108,7 @@ class ConsistencyChecker:
                 # Retry once at low temperature before falling through
                 result = self.llm.generate_json(messages, temperature=0.1)
                 if not isinstance(result, dict):
-                    return ConsistencyReport(
-                        consistent=True, score=self._fail_open_score
-                    )
+                    return ConsistencyReport(consistent=True, score=self._fail_open_score)
             hard = result.get("hard_violations", [])
             soft = result.get("soft_flags", [])
             score = float(result.get("score", 1.0))
@@ -176,9 +174,7 @@ class ConsistencyChecker:
             ]
 
             try:
-                new_response = self.llm.generate(
-                    retry_messages, temperature=self._retry_temp
-                )
+                new_response = self.llm.generate(retry_messages, temperature=self._retry_temp)
                 new_report = self.check(new_response, context=context)
 
                 if new_report.consistent:

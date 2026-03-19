@@ -154,20 +154,24 @@ def parse_claude_project(path: str | Path) -> dict:
             if md_file.name == "CLAUDE.md":
                 continue  # Already read above
             content = md_file.read_text()
-            memories.append({
-                "file": str(md_file.relative_to(path)),
-                "content": content,
-            })
+            memories.append(
+                {
+                    "file": str(md_file.relative_to(path)),
+                    "content": content,
+                }
+            )
 
         # Also scan .claude/ directory if present
         claude_dir = path / ".claude"
         if claude_dir.is_dir():
             for md_file in claude_dir.rglob("*.md"):
                 content = md_file.read_text()
-                memories.append({
-                    "file": f".claude/{md_file.relative_to(claude_dir)}",
-                    "content": content,
-                })
+                memories.append(
+                    {
+                        "file": f".claude/{md_file.relative_to(claude_dir)}",
+                        "content": content,
+                    }
+                )
 
     return {
         "source": "claude_project",

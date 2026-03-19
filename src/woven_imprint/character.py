@@ -210,6 +210,81 @@ class Character:
 
         return response
 
+    def ingest(self, role: str, content: str, user_id: str | None = None) -> None:
+        """Record an externally-generated message without calling the LLM.
+
+        Use this to replay dialogue that happened outside woven-imprint
+        (e.g. in SillyTavern where a different LLM generated the response).
+        The message is stored in memory and triggers the same post-processing
+        (fact extraction, relationship assessment) as :meth:`chat`, but no
+        LLM generation call is made.
+
+        Args:
+            role: ``"user"`` or ``"assistant"`` — who said it.
+            content: The message text.
+            user_id: Optional user identifier for relationship tracking.
+        """
+        if role not in ("user", "assistant"):
+            raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
+
+        if not self._session_id:
+            self.start_session()
+
+        # Input size limit (same as chat)
+        from .config import get_config
+
+        _cfg = get_config()
+        if len(content) > _cfg.memory.max_message_length:
+            content = content[: _cfg.memory.max_message_length]
+
+        # Store in conversation buffer
+        self._context.add_turn(role, content)
+
+        # Store as buffer memory
+        prefix = "[User]" if role == "user" else f"[{self.name}]"
+        mem_role = "user" if role == "user" else "character"
+        self.memory.add(
+            content=f"{prefix} {content}",
+            tier="buffer",
+            role=mem_role,
+            session_id=self._session_id,
+            importance=0.5,
+        )
+
+        # Subsystem updates — fact extraction + relationship assessment
+        # We need a user_msg / response pair for _extract_memories.
+        # Accumulate and run extraction when we have both sides.
+        # For simplicity, run extraction on every ingest using the content
+        # as the relevant side and an empty string for the other.
+        if role == "user":
+            user_msg, response = content, ""
+        else:
+            user_msg, response = "", content
+
+        # Run extraction (non-fatal, same as chat)
+        try:
+            self._extract_memories(user_msg, response, user_id)
+        except Exception as e:
+            logger.debug("Ingest extraction failed: %s", e)
+
+        self._turn_count += 1
+
+        # Periodic maintenance (same as chat)
+        if self._turn_count % _cfg.memory.state_save_interval == 0:
+            try:
+                self._save_state()
+            except Exception as e:
+                logger.debug("Periodic state save failed: %s", e)
+
+            if (
+                self._turn_count % _cfg.memory.consolidation_interval == 0
+                and self.consolidator.needs_consolidation()
+            ):
+                try:
+                    self.consolidator.consolidate()
+                except Exception as e:
+                    logger.debug("Auto-consolidation failed: %s", e)
+
     def _run_subsystems_parallel(self, message: str, response: str, user_id: str | None) -> None:
         """Run emotion, arc, and extraction in parallel threads."""
         import concurrent.futures

@@ -99,6 +99,7 @@ class CharacterConfig:
 @dataclass
 class ServerConfig:
     api_port: int = 8650
+    sidecar_port: int = 8765
     api_key: str | None = None
     cors_origin: str = "http://localhost"
     ui_port: int = 7860
@@ -217,6 +218,7 @@ def _apply_env(cfg: WovenConfig) -> None:
         "WOVEN_IMPRINT_DB": ("storage", "db_path"),
         "WOVEN_IMPRINT_API_KEY": ("server", "api_key"),
         "WOVEN_IMPRINT_API_PORT": ("server", "api_port"),
+        "WOVEN_IMPRINT_SIDECAR_PORT": ("server", "sidecar_port"),
         "WOVEN_IMPRINT_UI_PORT": ("server", "ui_port"),
         "WOVEN_IMPRINT_PARALLEL": ("character", "parallel"),
         "WOVEN_IMPRINT_LIGHTWEIGHT": ("character", "lightweight"),
@@ -357,6 +359,7 @@ character:
 
 server:
   api_port: 8650
+  sidecar_port: 8765
   api_key: null
   cors_origin: http://localhost
   ui_port: 7860

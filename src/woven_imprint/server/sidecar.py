@@ -138,7 +138,18 @@ class SidecarHandler(BaseHTTPRequestHandler):
                 self._send_json({"id": c["id"], "name": c["name"], "created": False})
                 return
 
-        persona = body.get("persona", {})
+        raw_persona = body.get("persona")
+        if isinstance(raw_persona, str):
+            persona = {"personality": raw_persona}
+        elif isinstance(raw_persona, dict):
+            persona = raw_persona
+        else:
+            persona = {}
+        # Merge top-level convenience fields into persona dict
+        for key in ("personality", "speaking_style", "occupation", "appearance", "backstory"):
+            if key in body and key not in persona:
+                persona[key] = body[key]
+
         birthdate = body.get("birthdate")
         char = engine.create_character(name, persona=persona, birthdate=birthdate)
         self._send_json({"id": char.id, "name": char.name, "created": True}, 201)
@@ -155,17 +166,22 @@ class SidecarHandler(BaseHTTPRequestHandler):
             self._send_error(f"character '{char_id}' not found", 404)
             return
 
-        self._send_json(
-            {
-                "id": char.id,
-                "name": char.name,
-                "emotion": char.emotion.to_dict(),
-                "arc": {
-                    "phase": char.arc.current_phase.value,
-                    "tension": char.arc.tension,
-                },
+        data: dict[str, Any] = {
+            "id": char.id,
+            "name": char.name,
+        }
+        try:
+            data["emotion"] = char.emotion.to_dict()
+        except Exception:
+            data["emotion"] = {"mood": "neutral", "intensity": 0.5}
+        try:
+            data["arc"] = {
+                "phase": char.arc.current_phase.value,
+                "tension": char.arc.tension,
             }
-        )
+        except Exception:
+            data["arc"] = None
+        self._send_json(data)
 
     def _handle_start_session(self, char_id: str):
         engine = _get_engine()

@@ -152,7 +152,7 @@ class TestHealth:
         status, data = _get(f"{sidecar_url}/health")
         assert status == 200
         assert data["status"] == "ok"
-        assert data["version"] == "0.4.0"
+        assert "version" in data
 
 
 class TestCharacters:

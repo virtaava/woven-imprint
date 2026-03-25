@@ -9,7 +9,6 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -311,7 +310,6 @@ def create_app(
 
     @app.post("/api/config/provider", dependencies=[Depends(_check_auth)])
     async def set_provider_config(body: ProviderConfigRequest):
-        from woven_imprint.config import reload_config
         from woven_imprint.providers import create_llm
 
         cfg = get_config()
@@ -365,7 +363,6 @@ def create_app(
 def _import_seed_db(engine: Engine, seed_path: Path) -> None:
     """Import Meridian character data from pre-built seed database."""
     import sqlite3
-    import json
 
     seed_conn = sqlite3.connect(str(seed_path))
     seed_conn.row_factory = sqlite3.Row

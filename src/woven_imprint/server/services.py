@@ -5,8 +5,6 @@ Both the existing stdlib servers and the new FastAPI demo server
 call these same functions — no logic duplication.
 """
 from __future__ import annotations
-from typing import Any
-from woven_imprint.engine import Engine
 
 def create_character_service(engine, name, persona, birthdate):
     """Create a character, deduplicating by name (case-insensitive).

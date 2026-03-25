@@ -2,7 +2,6 @@
 
 import os
 import tempfile
-import pytest
 
 # Import from shared helpers
 import sys
@@ -21,7 +20,6 @@ from woven_imprint.server.services import (
 
 def _make_engine_with_path(db_path):
     """Create engine with specific db path (for restart testing)."""
-    from helpers import FakeLLM, FakeEmbedder
     llm = FakeLLM()
     embedder = FakeEmbedder()
     engine = Engine(db_path=db_path, llm=llm, embedding=embedder)

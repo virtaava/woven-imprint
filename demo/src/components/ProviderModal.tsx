@@ -179,7 +179,12 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
                 type="password"
                 value={apiKey}
                 onChange={(e) => { setApiKey(e.target.value); setTestPassed(false); setTestResult(null) }}
-                placeholder={currentConfig?.api_key_configured ? 'Key configured (leave empty to keep)' : 'sk-...'}
+                placeholder={currentConfig?.api_key_configured ? 'Key configured (leave empty to keep)' :
+                  selected?.preset === 'nvidia' ? 'nvapi-...' :
+                  selected?.id === 'anthropic' ? 'sk-ant-...' :
+                  selected?.preset === 'deepseek' ? 'sk-...' :
+                  'sk-...'
+                }
               />
             </div>
           )}

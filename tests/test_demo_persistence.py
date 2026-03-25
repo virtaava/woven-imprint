@@ -82,6 +82,40 @@ class TestCrossSessionPersistence:
         finally:
             os.unlink(db_path)
 
+    def test_cross_session_memory_recall(self):
+        """Learn a fact in session A, restart the engine, recall it in session B.
+
+        This is the full end-to-end test: create → chat → end session → close
+        engine → new engine → new session → recall the fact from session A.
+        """
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            # Session A: learn a personal fact
+            engine_a = _make_engine_with_path(db_path)
+            r = create_character_service(engine_a, "CrossTest", None, None)
+            char_id = r["id"]
+            start_session_service(engine_a, char_id)
+            record_message_service(engine_a, char_id, "user", "My dog's name is Biscuit", None)
+            record_message_service(
+                engine_a, char_id, "assistant", "That's a great name for a dog!", None
+            )
+            end_session_service(engine_a, char_id)
+            engine_a.close()
+
+            # Session B: completely new engine, new session — recall the fact
+            engine_b = _make_engine_with_path(db_path)
+            start_session_service(engine_b, char_id)
+            result = recall_memories_service(engine_b, char_id, "dog name", 10, None)
+            contents = [m.get("content", "") for m in result["memories"]]
+            assert any("biscuit" in c.lower() for c in contents), (
+                f"Expected 'Biscuit' in recalled memories from session B, got: {contents}"
+            )
+            end_session_service(engine_b, char_id)
+            engine_b.close()
+        finally:
+            os.unlink(db_path)
+
 
 @pytest.mark.skipif(
     not __import__("importlib").util.find_spec("fastapi"),

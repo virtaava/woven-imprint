@@ -40,8 +40,12 @@ export default function App() {
   const [providerConfig, setProviderConfig] = useState<ProviderConfig | null>(null)
   const [showProviderModal, setShowProviderModal] = useState(false)
   const [showCharacterDrawer, setShowCharacterDrawer] = useState(false)
-  const [sessionId, setSessionId] = useState<string | null>(null)
-  const [characterId, setCharacterId] = useState<string | null>(null)
+  const [sessionId, setSessionId] = useState<string | null>(() =>
+    localStorage.getItem('woven-session-id')
+  )
+  const [characterId, setCharacterId] = useState<string | null>(() =>
+    localStorage.getItem('woven-character-id')
+  )
   const [characters, setCharacters] = useState<CharacterSummary[]>([])
   const [searchResults, setSearchResults] = useState<Memory[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
@@ -50,10 +54,18 @@ export default function App() {
     return saved !== null ? saved === 'true' : true  // default visible
   })
 
-  // Persist X-Ray visibility to localStorage
+  // Persist UI state to localStorage
   useEffect(() => {
     localStorage.setItem('woven-xray-visible', String(xrayVisible))
   }, [xrayVisible])
+  useEffect(() => {
+    if (characterId) localStorage.setItem('woven-character-id', characterId)
+    else localStorage.removeItem('woven-character-id')
+  }, [characterId])
+  useEffect(() => {
+    if (sessionId) localStorage.setItem('woven-session-id', sessionId)
+    else localStorage.removeItem('woven-session-id')
+  }, [sessionId])
 
   // Load provider config on mount — always verify connection works
   useEffect(() => {
@@ -102,32 +114,40 @@ export default function App() {
       if (Array.isArray(charList)) {
         setCharacters(charList.map((c: any) => ({ id: c.id || c.character_id, name: c.name })))
       }
-      if (Array.isArray(charList) && charList.length > 0) {
-        const char = charList[0]
-        const id = char.id || char.character_id
-        setCharacterId(id)
+      if (!Array.isArray(charList) || charList.length === 0) return
 
+      // Resume stored character if still available, otherwise pick the first
+      const storedId = localStorage.getItem('woven-character-id')
+      const storedSession = localStorage.getItem('woven-session-id')
+      const match = storedId && charList.find((c: any) => (c.id || c.character_id) === storedId)
+      const char = match || charList[0]
+      const id = char.id || char.character_id
+      setCharacterId(id)
+
+      // If resuming a stored session, skip starting a new one — the server
+      // will auto-start on the first chat if needed. Only start a fresh
+      // session when there's no stored session for this character.
+      if (match && storedSession) {
+        setSessionId(storedSession)
+      } else {
         const session = await startSession(id)
         setSessionId(session.session_id || session.id || 'active')
+      }
 
-        const state = await fetchCharacterState(id)
-        setCharacterState(state)
+      const state = await fetchCharacterState(id)
+      setCharacterState(state)
 
-        // Try to load initial memories
-        try {
-          const mems = await recallMemories(id, 'recent', 10)
-          setMemories(Array.isArray(mems) ? mems : mems.memories || [])
-        } catch {
-          // No memories yet
-        }
-
-        // Try to load relationship
-        try {
-          const rel = await fetchRelationship(id, 'user')
-          setRelationship(rel)
-        } catch {
-          // No relationship yet
-        }
+      try {
+        const mems = await recallMemories(id, 'recent', 10)
+        setMemories(Array.isArray(mems) ? mems : mems.memories || [])
+      } catch {
+        // No memories yet
+      }
+      try {
+        const rel = await fetchRelationship(id, 'user')
+        setRelationship(rel)
+      } catch {
+        // No relationship yet
       }
     } catch {
       // Characters not available yet
@@ -321,9 +341,13 @@ export default function App() {
         onToggleXray={() => setXrayVisible(v => !v)}
       />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
         {/* Chat panel */}
-        <div className={`flex flex-col transition-all duration-300 ${xrayVisible ? 'w-[70%]' : 'w-full'}`}>
+        <div
+          className={`flex min-h-0 flex-col transition-all duration-300 ${
+            xrayVisible ? 'w-full lg:w-[70%]' : 'w-full'
+          }`}
+        >
           <ChatPanel
             messages={messages}
             loading={loading}
@@ -336,7 +360,7 @@ export default function App() {
 
         {/* X-Ray panel */}
         {xrayVisible && (
-          <div className="w-[30%] transition-all duration-300">
+          <div className="min-h-0 w-full border-t border-border/60 transition-all duration-300 lg:w-[30%] lg:border-l lg:border-t-0">
             <XRayPanel
               character={characterState}
               memories={memories}

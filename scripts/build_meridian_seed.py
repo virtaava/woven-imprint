@@ -42,7 +42,7 @@ def build_seed(output_path: str, model: str | None = None) -> None:
     from woven_imprint.data.meridian_persona import MERIDIAN_PERSONA, MERIDIAN_BIRTHDATE
     from woven_imprint.engine import Engine
     from woven_imprint.providers import create_llm, create_embedding
-    from woven_imprint.config import WovenConfig, LLMConfig
+    from woven_imprint.config import get_config
 
     # Read documentation files
     docs_dir = Path(__file__).parent.parent / "docs"
@@ -51,6 +51,9 @@ def build_seed(output_path: str, model: str | None = None) -> None:
         "CONFIGURATION.md",
         "DEVELOPER_GUIDE.md",
         "GETTING_STARTED.md",
+        "RESULTS.md",
+        "EVALUATION.md",
+        "RESEARCH.md",
     ]
 
     all_chunks = []
@@ -74,15 +77,15 @@ def build_seed(output_path: str, model: str | None = None) -> None:
     if output.exists():
         output.unlink()
 
-    # Create LLM with optional model override
-    llm_kwargs = {}
+    # Use existing config, optionally override model
+    cfg = get_config()
     if model:
-        llm_kwargs["model"] = model
+        cfg.llm.model = model
 
     engine = Engine(
         db_path=str(output),
-        llm=create_llm(**llm_kwargs) if not llm_kwargs else create_llm(),
-        embedding=create_embedding(),
+        llm=create_llm(cfg=cfg),
+        embedding=create_embedding(cfg=cfg),
     )
     char = engine.create_character(
         name="Meridian",

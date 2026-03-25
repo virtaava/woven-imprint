@@ -17,6 +17,7 @@ import {
   deleteCharacter,
   exportCharacter,
   importCharacter,
+  importCharacterFile,
   migrateCharacter,
 } from '@/lib/api'
 import type { CharacterSummary } from '@/lib/types'
@@ -120,13 +121,34 @@ export function CharacterDrawer({
     }
   }
 
+  const [importing, setImporting] = useState(false)
+
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    setImporting(true)
     try {
-      const text = await file.text()
-      const data = JSON.parse(text)
-      const result = await importCharacter(data)
+      let result
+      // JSON files that look like woven-imprint exports: use JSON import
+      if (file.name.endsWith('.json')) {
+        try {
+          const text = await file.text()
+          const data = JSON.parse(text)
+          // If it has character-export structure, use direct import
+          if (data.name && (data.persona || data.memories)) {
+            result = await importCharacter(data)
+          } else {
+            // Probably a ChatGPT export or other format — use file import
+            result = await importCharacterFile(file)
+          }
+        } catch {
+          // JSON parse failed — send as file
+          result = await importCharacterFile(file)
+        }
+      } else {
+        // PNG (SillyTavern cards), markdown, text — always use file import
+        result = await importCharacterFile(file)
+      }
       await onRefreshCharacters()
       const newId = result.id || result.character_id
       if (newId) onSelectCharacter(newId)
@@ -134,6 +156,7 @@ export function CharacterDrawer({
     } catch (err: any) {
       showStatus('error', err.message || 'Failed to import character')
     } finally {
+      setImporting(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
@@ -341,28 +364,29 @@ export function CharacterDrawer({
           <TabsContent value="import" className="flex-1 overflow-hidden mt-2">
             <ScrollArea className="h-[45vh]">
               <div className="flex flex-col gap-4 pr-3">
-                {/* JSON Import */}
+                {/* File Import */}
                 <div className="flex flex-col gap-2">
                   <h3 className="flex items-center gap-2 text-sm font-medium">
                     <Upload className="size-3.5 text-amber-400" />
-                    Import from JSON
+                    Import from File
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Upload a previously exported character JSON file.
+                    Supported formats: woven-imprint JSON exports, SillyTavern PNG character cards, ChatGPT conversation exports, markdown/text persona files.
                   </p>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".json"
+                    accept=".json,.png,.md,.txt,.yaml,.yml"
                     className="hidden"
                     onChange={handleImportFile}
                   />
                   <Button
                     variant="outline"
                     onClick={() => fileInputRef.current?.click()}
+                    disabled={importing}
                   >
-                    <Upload className="size-3.5" />
-                    Choose JSON File
+                    {importing ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                    {importing ? 'Importing...' : 'Choose File'}
                   </Button>
                 </div>
 

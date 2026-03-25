@@ -186,6 +186,45 @@ def create_app(
             except Exception as exc:
                 raise HTTPException(400, str(exc))
 
+    @app.post("/api/characters/import-file", dependencies=[Depends(_check_auth)])
+    async def import_character_file(request: Request):
+        """Import character from an uploaded file.
+
+        Supports: JSON exports, SillyTavern PNG cards, ChatGPT exports,
+        markdown/text persona files. Uses CharacterImporter.from_file().
+        """
+        from fastapi import UploadFile, File, Form
+        import tempfile
+
+        # Parse multipart form data
+        form = await request.form()
+        file = form.get("file")
+        name = form.get("name", "")
+
+        if not file or not hasattr(file, "read"):
+            raise HTTPException(400, "No file uploaded")
+
+        # Save to temp file preserving extension
+        original_name = getattr(file, "filename", "upload.bin") or "upload.bin"
+        suffix = Path(original_name).suffix or ".bin"
+        content = await file.read()
+
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        async with _mutation_lock:
+            try:
+                result = migrate_character_service(
+                    _engine, name=str(name) if name else None, file_path=tmp_path
+                )
+                return result
+            except Exception as exc:
+                raise HTTPException(400, str(exc))
+            finally:
+                import os
+                os.unlink(tmp_path)
+
     @app.post("/api/characters/migrate", dependencies=[Depends(_check_auth)])
     async def migrate_character(request: Request):
         body = await request.json()

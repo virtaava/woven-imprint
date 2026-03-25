@@ -109,6 +109,18 @@ export async function importCharacter(data: object) {
   return res.json()
 }
 
+export async function importCharacterFile(file: File, name?: string) {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (name) formData.append('name', name)
+  const res = await fetch(`${API_BASE}/api/characters/import-file`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${getToken()}` },  // No Content-Type — browser sets multipart boundary
+    body: formData,
+  })
+  return res.json()
+}
+
 export async function migrateCharacter(name: string, text: string) {
   const res = await fetch(`${API_BASE}/api/characters/migrate`, {
     method: 'POST',

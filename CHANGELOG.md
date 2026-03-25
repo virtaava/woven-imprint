@@ -5,6 +5,38 @@ All notable changes to Woven Imprint will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-25
+
+### Added
+- React demo UI replacing Gradio (`woven-imprint demo`)
+  - Chat with any character, markdown rendering, suggested prompts
+  - X-Ray sidebar: live memory feed, relationship radar chart, emotion indicator
+  - Collapsible X-Ray panel (toggle + localStorage persistence)
+  - Character management: create, delete, export (JSON), import (JSON/PNG/markdown), migrate from text
+  - Character selector in top bar for switching between characters
+  - Reflect button for character self-reflection
+  - Provider configuration with live model discovery
+  - Provider presets: Ollama, OpenAI, Anthropic, DeepSeek, NVIDIA NIM, Custom (any OpenAI-compatible API)
+  - Connection test required before saving provider
+- FastAPI demo server with security hardening
+  - Bearer token auth on all API routes
+  - CORS locked to localhost (relaxed with --host 0.0.0.0)
+  - Provider secrets never exposed to frontend
+  - Graceful shutdown with session flushing
+- Service-layer extraction from sidecar/API handlers
+- `--host` flag for remote access (Tailscale, network)
+- `--port` flag (default 7860)
+- `--no-browser` flag
+- Persistence regression tests
+- Meridian seed database build script
+
+### Removed
+- Gradio web UI (`woven-imprint ui` command removed)
+- `[ui]` optional dependency (replaced by `[demo]`)
+
+### Changed
+- `woven-imprint demo` now launches the React demo (previously a terminal REPL)
+
 ## [0.4.0] - 2026-03-18
 
 ### Added

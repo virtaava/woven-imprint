@@ -85,31 +85,28 @@ Or set it permanently in `~/.woven_imprint/config.yaml` — see [Configuration](
 
 ## Step 4: Try It
 
-### Web interface (recommended)
+### React demo UI (recommended)
 
 **pipx**:
 ```
-pipx inject woven-imprint gradio
-woven-imprint ui
+woven-imprint demo
 ```
 
 **venv**:
 ```
-pip install woven-imprint[ui]
-woven-imprint ui
-```
-
-Opens your default browser. Specify a different one:
-```
-woven-imprint ui --browser firefox
-woven-imprint ui --browser chromium-browser
-woven-imprint ui --browser none    # just print URL, don't open
-```
-
-### Terminal
-
-```
+pip install woven-imprint[demo]
 woven-imprint demo
+```
+
+Opens your default browser. To skip opening and just print the URL:
+```
+woven-imprint demo --no-browser
+```
+
+### Terminal REPL
+
+```
+woven-imprint chat alice
 ```
 
 Commands during chat (everything without / goes to the character):

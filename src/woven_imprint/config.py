@@ -104,6 +104,8 @@ class ServerConfig:
     cors_origin: str = "http://localhost"
     ui_port: int = 7860
     ui_browser: str = "auto"
+    demo_port: int = 7860
+    demo_browser: bool = True
 
 
 @dataclass
@@ -220,6 +222,7 @@ def _apply_env(cfg: WovenConfig) -> None:
         "WOVEN_IMPRINT_API_PORT": ("server", "api_port"),
         "WOVEN_IMPRINT_SIDECAR_PORT": ("server", "sidecar_port"),
         "WOVEN_IMPRINT_UI_PORT": ("server", "ui_port"),
+        "WOVEN_IMPRINT_DEMO_PORT": ("server", "demo_port"),
         "WOVEN_IMPRINT_PARALLEL": ("character", "parallel"),
         "WOVEN_IMPRINT_LIGHTWEIGHT": ("character", "lightweight"),
         "WOVEN_IMPRINT_ENFORCE_CONSISTENCY": ("character", "enforce_consistency"),
@@ -364,6 +367,8 @@ server:
   cors_origin: http://localhost
   ui_port: 7860
   ui_browser: auto
+  demo_port: 7860
+  demo_browser: true
 
 storage:
   db_path: ~/.woven_imprint/characters.db

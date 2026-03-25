@@ -44,14 +44,20 @@ Requires Python 3.11+ and an LLM backend ([Ollama](https://ollama.com), OpenAI, 
 Configure your provider in `~/.woven_imprint/config.yaml` or via env vars — see [Configuration](docs/CONFIGURATION.md).
 See [Getting Started](docs/GETTING_STARTED.md) for platform-specific setup.
 
-**Prefer a graphical interface?**
+### Demo UI
 
 ```bash
-pip install woven-imprint[ui]
-woven-imprint ui
+pip install woven-imprint[demo]
+woven-imprint demo
 ```
 
-Opens a browser with chat, character management, migration, and settings — no terminal needed.
+Opens a browser with:
+- **Chat** with Meridian (our demo wizard) or your own characters
+- **X-Ray panel** showing memory, emotions, and relationships updating in real time
+- **Character management** — create, import (JSON/PNG/SillyTavern cards), export, migrate
+- **Provider support** — Ollama, OpenAI, Anthropic, DeepSeek, NVIDIA NIM, or any OpenAI-compatible API with live model discovery
+
+Use `--host 0.0.0.0` for remote access over Tailscale/LAN.
 
 ## Quick Start
 

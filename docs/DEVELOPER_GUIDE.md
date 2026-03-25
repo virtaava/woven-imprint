@@ -10,7 +10,7 @@ pip install woven-imprint[openai]    # + OpenAI/Azure/vLLM backend
 pip install woven-imprint[anthropic] # + Anthropic Claude backend
 pip install woven-imprint[mcp]       # + MCP server for IDE integration
 pip install woven-imprint[pdf]       # + PDF knowledge file extraction
-pip install woven-imprint[ui]        # + Gradio web interface
+pip install woven-imprint[demo]      # + React demo UI
 pip install woven-imprint[all]       # everything
 ```
 
@@ -221,13 +221,30 @@ response = client.chat.completions.create(
 )
 ```
 
-### Web UI
+### React Demo UI
 
 ```bash
-woven-imprint ui                      # auto-detect browser
-woven-imprint ui --browser chrome     # specific browser
-woven-imprint ui --browser none       # don't open, just print URL
+woven-imprint demo                          # localhost:7860, auto-open browser
+woven-imprint demo --port 8080              # custom port
+woven-imprint demo --host 0.0.0.0           # expose on all interfaces (Tailscale, LAN)
+woven-imprint demo --no-browser             # don't open browser
 ```
+
+The demo server runs on `localhost:7860` by default. Configure in `~/.woven_imprint/config.yaml`:
+
+```yaml
+server:
+  demo_port: 7860
+  demo_browser: true
+```
+
+Features:
+- **Chat** with any character, with markdown rendering
+- **Character management** — create, delete, export, import (JSON/PNG/markdown), migrate from text
+- **X-Ray panel** — real-time memory feed, relationship radar chart, emotion indicator (collapsible)
+- **Provider configuration** — Ollama, OpenAI, Anthropic, DeepSeek, NVIDIA NIM, or any OpenAI-compatible API
+- **Live model discovery** — queries the actual provider API for available models
+- **Reflect** — trigger character self-reflection
 
 ## Configuration
 
@@ -247,8 +264,8 @@ LLM providers, memory, context window, relationships, persona, server, storage, 
 
 ```bash
 # Getting started
-woven-imprint demo                        # Interactive demo
-woven-imprint ui                          # Web interface
+woven-imprint demo                        # React demo UI
+woven-imprint chat alice                  # Chat with character
 
 # Character management
 woven-imprint create "Name"               # Create character
@@ -266,8 +283,8 @@ woven-imprint migrate <path> -k f1 f2    # With knowledge files
 
 # Server
 woven-imprint serve --port 8650           # OpenAI-compatible API
-woven-imprint ui --port 7860              # Web interface
-woven-imprint ui --browser chrome         # Specify browser
+woven-imprint demo --port 7860            # React demo UI (default)
+woven-imprint demo --host 0.0.0.0         # Network access
 
 # Maintenance
 woven-imprint update                      # Update to latest version

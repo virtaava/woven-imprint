@@ -31,7 +31,7 @@ docker compose exec ollama ollama pull llama3.2
 docker compose exec ollama ollama pull nomic-embed-text
 ```
 
-4. Open your browser to **http://localhost:7860** — the web UI is ready.
+4. Open your browser to **http://localhost:7860** — the demo UI is ready.
 
 To stop: `Ctrl+C` or `docker compose down`
 
@@ -44,13 +44,13 @@ If you already have Ollama installed and running on your machine:
 **Linux** (host networking works):
 ```
 docker build -t woven-imprint .
-docker run --network host woven-imprint ui
+docker run --network host woven-imprint demo
 ```
 
 **Mac / Windows** (use host.docker.internal):
 ```
 docker build -t woven-imprint .
-docker run -p 7860:7860 -e OLLAMA_HOST=http://host.docker.internal:11434 woven-imprint ui --port 7860
+docker run -p 7860:7860 -e OLLAMA_HOST=http://host.docker.internal:11434 woven-imprint demo --port 7860
 ```
 
 ## Available Commands
@@ -91,10 +91,10 @@ docker run -p 7860:7860 \
   -e WOVEN_IMPRINT_EMBEDDING_PROVIDER=openai \
   -e WOVEN_IMPRINT_API_KEY_LLM=sk-your-key-here \
   -e WOVEN_IMPRINT_MODEL=gpt-4o-mini \
-  woven-imprint ui --port 7860
+  woven-imprint demo --port 7860
 ```
 
 ## What's Next?
 
-- The web UI at http://localhost:7860 has everything: chat, create, migrate, stats
+- The demo UI at http://localhost:7860 has everything: chat, create, migrate, stats
 - See [Getting Started](GETTING_STARTED.md) for more ways to use Woven Imprint

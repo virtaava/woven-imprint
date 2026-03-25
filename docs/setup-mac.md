@@ -62,21 +62,21 @@ Or set it permanently in `~/.woven_imprint/config.yaml` — see [Configuration](
 
 ## Step 4: Try It
 
-### Web interface (recommended)
+### React demo UI (recommended)
 
 ```
-pip3 install woven-imprint[ui]
-woven-imprint ui
+pip3 install woven-imprint[demo]
+woven-imprint demo
 ```
 
 Opens your default browser with chat, character management, migration, and settings.
 
-You can specify a browser: `woven-imprint ui --browser firefox`
+To skip opening and just print the URL: `woven-imprint demo --no-browser`
 
-### Terminal
+### Terminal REPL
 
 ```
-woven-imprint demo
+woven-imprint chat alice
 ```
 
 Commands during chat (everything without / goes to the character):

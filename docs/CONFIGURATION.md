@@ -212,15 +212,16 @@ character:
 
 ## Server Settings
 
-Controls the OpenAI-compatible API server and web UI.
+Controls the OpenAI-compatible API server and React demo UI.
 
 ```yaml
 server:
   api_port: 8650
   api_key: null
   cors_origin: http://localhost
-  ui_port: 7860
-  ui_browser: auto
+  demo_port: 7860
+  demo_host: 127.0.0.1
+  demo_browser: true
 ```
 
 | Setting | Default | Env Var | Description |
@@ -228,8 +229,9 @@ server:
 | `api_port` | `8650` | `WOVEN_IMPRINT_API_PORT` | Port for the OpenAI-compatible API proxy (`woven-imprint serve`). |
 | `api_key` | `null` | `WOVEN_IMPRINT_API_KEY` | Bearer token required for API requests. `null` = no authentication (local dev only). Set this before exposing the API to a network. |
 | `cors_origin` | `http://localhost` | — | Allowed CORS origin for the API server. Change to `*` only if you understand the security implications. |
-| `ui_port` | `7860` | `WOVEN_IMPRINT_UI_PORT` | Port for the Gradio web UI (`woven-imprint ui`). |
-| `ui_browser` | `auto` | — | Browser to open when UI launches. `auto` detects platform (WSL → Windows browser, macOS → default, Linux → xdg-open). Set to `chrome`, `firefox`, `edge`, or `none` to override. |
+| `demo_port` | `7860` | `WOVEN_IMPRINT_DEMO_PORT` | Port for the React demo UI (`woven-imprint demo`). |
+| `demo_host` | `127.0.0.1` | `WOVEN_IMPRINT_DEMO_HOST` | Host to bind the demo UI to. Use `0.0.0.0` for network/Tailscale access. |
+| `demo_browser` | `true` | `WOVEN_IMPRINT_DEMO_BROWSER` | Whether to open a browser automatically when the demo starts. Set to `false` to launch without opening a browser. |
 
 ---
 
@@ -386,3 +388,14 @@ server:
 character:
   parallel: true
 ```
+
+---
+
+## Security Notice
+
+Woven-imprint stores data locally in plaintext:
+
+- `~/.woven_imprint/config.yaml` may contain provider API keys
+- `~/.woven_imprint/characters.db` stores memories and relationships in plaintext SQLite
+
+For sensitive use cases, we recommend OS-level disk encryption (e.g., LUKS, FileVault, BitLocker). Woven-imprint does not provide encrypted-at-rest storage.

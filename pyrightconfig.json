@@ -6,7 +6,8 @@
         "src/woven_imprint/embedding/openai_embedding.py",
         "src/woven_imprint/mcp_server.py",
         "src/woven_imprint/migrate/importer.py",
-        "src/woven_imprint/ui.py"
+        "src/woven_imprint/server/demo.py",
+        "src/woven_imprint/server/models.py"
     ],
     "pythonVersion": "3.12",
     "typeCheckingMode": "basic",

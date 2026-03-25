@@ -29,6 +29,16 @@ from typing import Any
 from urllib.parse import urlparse, parse_qs
 
 from ..engine import Engine
+from .services import (
+    create_character_service,
+    list_characters_service,
+    get_character_state_service,
+    start_session_service,
+    end_session_service,
+    record_message_service,
+    recall_memories_service,
+    get_relationship_service,
+)
 
 
 _engine: Engine | None = None
@@ -129,15 +139,7 @@ class SidecarHandler(BaseHTTPRequestHandler):
             self._send_error("name is required", 400)
             return
 
-        engine = _get_engine()
-
-        # Name deduplication — return existing character if name matches
-        existing = engine.list_characters()
-        for c in existing:
-            if c["name"].lower() == name.lower():
-                self._send_json({"id": c["id"], "name": c["name"], "created": False})
-                return
-
+        # Build persona dict from body (request parsing stays here)
         raw_persona = body.get("persona")
         if isinstance(raw_persona, str):
             persona = {"personality": raw_persona}
@@ -145,63 +147,45 @@ class SidecarHandler(BaseHTTPRequestHandler):
             persona = raw_persona
         else:
             persona = {}
-        # Merge top-level convenience fields into persona dict
         for key in ("personality", "speaking_style", "occupation", "appearance", "backstory"):
             if key in body and key not in persona:
                 persona[key] = body[key]
 
-        birthdate = body.get("birthdate")
-        char = engine.create_character(name, persona=persona, birthdate=birthdate)
-        self._send_json({"id": char.id, "name": char.name, "created": True}, 201)
+        try:
+            result = create_character_service(
+                _get_engine(),
+                name,
+                persona,
+                body.get("birthdate"),
+            )
+            self._send_json(result, 201 if result["created"] else 200)
+        except Exception as exc:
+            self._send_error(str(exc), 500)
 
     def _handle_list_characters(self):
-        engine = _get_engine()
-        chars = engine.list_characters()
+        chars = list_characters_service(_get_engine())
         self._send_json({"characters": chars})
 
     def _handle_get_character(self, char_id: str):
-        engine = _get_engine()
-        char = engine.load_character(char_id)
-        if not char:
+        try:
+            data = get_character_state_service(_get_engine(), char_id)
+            self._send_json(data)
+        except KeyError:
             self._send_error(f"character '{char_id}' not found", 404)
-            return
-
-        data: dict[str, Any] = {
-            "id": char.id,
-            "name": char.name,
-        }
-        try:
-            data["emotion"] = char.emotion.to_dict()
-        except Exception:
-            data["emotion"] = {"mood": "neutral", "intensity": 0.5}
-        try:
-            data["arc"] = {
-                "phase": char.arc.current_phase.value,
-                "tension": char.arc.tension,
-            }
-        except Exception:
-            data["arc"] = None
-        self._send_json(data)
 
     def _handle_start_session(self, char_id: str):
-        engine = _get_engine()
-        char = engine.load_character(char_id)
-        if not char:
+        try:
+            result = start_session_service(_get_engine(), char_id)
+            self._send_json(result)
+        except KeyError:
             self._send_error(f"character '{char_id}' not found", 404)
-            return
-
-        session_id = char.start_session()
-        self._send_json({"session_id": session_id})
 
     def _handle_end_session(self, char_id: str):
-        engine = _get_engine()
-        char = engine.load_character(char_id)
-        if not char:
+        try:
+            result = end_session_service(_get_engine(), char_id)
+            self._send_json(result)
+        except KeyError:
             self._send_error(f"character '{char_id}' not found", 404)
-            return
-
-        summary = char.end_session()
-        self._send_json({"summary": summary})
 
     def _handle_record(self):
         body = self._read_body()
@@ -218,18 +202,20 @@ class SidecarHandler(BaseHTTPRequestHandler):
             self._send_error("character_id, role, and content are required", 400)
             return
 
-        if role not in ("user", "assistant"):
-            self._send_error("role must be 'user' or 'assistant'", 400)
-            return
-
-        engine = _get_engine()
-        char = engine.load_character(char_id)
-        if not char:
+        try:
+            record_message_service(
+                _get_engine(),
+                char_id,
+                role,
+                content,
+                user_id,
+                strict_roles=True,
+            )
+            self._send_json({"ok": True})
+        except KeyError:
             self._send_error(f"character '{char_id}' not found", 404)
-            return
-
-        char.ingest(role, content, user_id=user_id)
-        self._send_json({"ok": True})
+        except ValueError as exc:
+            self._send_error(str(exc), 400)
 
     def _handle_memory_query(self, qs: dict):
         char_id = qs.get("character_id", [None])[0]
@@ -246,49 +232,26 @@ class SidecarHandler(BaseHTTPRequestHandler):
             except (ValueError, IndexError):
                 pass
 
-        engine = _get_engine()
-        char = engine.load_character(char_id)
-        if not char:
-            self._send_error(f"character '{char_id}' not found", 404)
-            return
-
-        memories = char.recall(query, limit=limit)
-
-        # Build formatted context string for prompt injection
         user_id = qs.get("user_id", [None])[0]
-        context_parts: list[str] = []
 
-        if user_id:
-            rel = char.relationships.get(user_id)
-            if rel:
-                try:
-                    desc = char.relationships.describe(user_id)
-                    if desc:
-                        context_parts.append(f"[Relationship with {user_id}: {desc}]")
-                except Exception:
-                    pass
-
-        if memories:
-            context_parts.append("[Relevant memories:]")
-            for m in memories[:limit]:
-                content = m.get("content", "")[:200]
-                context_parts.append(f"- {content}")
-
-        context = "\n".join(context_parts)
-        self._send_json({"memories": memories, "context": context})
+        try:
+            result = recall_memories_service(
+                _get_engine(),
+                char_id,
+                query,
+                limit=limit,
+                user_id=user_id,
+            )
+            self._send_json(result)
+        except KeyError:
+            self._send_error(f"character '{char_id}' not found", 404)
 
     def _handle_get_relationship(self, char_id: str, target_id: str):
-        engine = _get_engine()
-        char = engine.load_character(char_id)
-        if not char:
-            self._send_error(f"character '{char_id}' not found", 404)
-            return
-
-        rel = char.get_relationship(target_id)
-        if rel is None:
-            self._send_json({"relationship": None})
-        else:
+        try:
+            rel = get_relationship_service(_get_engine(), char_id, target_id)
             self._send_json({"relationship": rel})
+        except KeyError:
+            self._send_error(f"character '{char_id}' not found", 404)
 
     # ---- Helpers ----
 

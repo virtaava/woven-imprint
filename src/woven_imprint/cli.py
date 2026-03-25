@@ -278,14 +278,6 @@ def cmd_migrate(args):
     engine.close()
 
 
-def cmd_ui(args):
-    """Launch the web UI."""
-    from .ui import launch
-
-    browser = args.browser if hasattr(args, "browser") else None
-    launch(db_path=args.db, model=args.model, port=args.port, browser=browser)
-
-
 def cmd_update(args):
     """Update Woven Imprint and all extras to the latest version."""
     import shutil
@@ -305,7 +297,6 @@ def cmd_update(args):
         if pipx_venv.exists():
             # Check which extras are installed and upgrade them
             extras = {
-                "gradio": "UI",
                 "openai": "OpenAI",
                 "anthropic": "Anthropic",
                 "pymupdf": "PDF",
@@ -550,17 +541,6 @@ def main():
     p_config = sub.add_parser("config", help="View or create configuration file")
     p_config.add_argument("--init", action="store_true", help="Create default config.yaml")
 
-    # ui
-    p_ui = sub.add_parser(
-        "ui", help="Launch web interface (requires: pip install woven-imprint[ui])"
-    )
-    p_ui.add_argument("--port", type=int, default=7860)
-    p_ui.add_argument(
-        "--browser",
-        default=None,
-        help="Browser to open (e.g., chrome, firefox, edge, none). Default: auto-detect",
-    )
-
     # update
     sub.add_parser("update", help="Update Woven Imprint to the latest version")
 
@@ -582,7 +562,6 @@ def main():
         "import": cmd_import,
         "migrate": cmd_migrate,
         "config": cmd_config,
-        "ui": cmd_ui,
         "update": cmd_update,
         "serve": cmd_serve,
     }

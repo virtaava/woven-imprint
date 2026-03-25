@@ -5,6 +5,23 @@ All notable changes to Woven Imprint will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-25
+
+### Added
+- React demo UI with Meridian character (`woven-imprint demo`)
+- FastAPI demo server with auth, CORS, provider config
+- X-Ray sidebar: live memory feed, relationship radar, emotion indicator
+- Service-layer extraction for sidecar/API server reuse
+- Persistence regression tests
+- Security hardening (localhost-only, bearer auth, key redaction)
+
+### Removed
+- Gradio web UI (`woven-imprint ui` command removed)
+- `[ui]` optional dependency (replaced by `[demo]`)
+
+### Changed
+- `woven-imprint demo` now launches the React demo (previously a terminal REPL)
+
 ## [0.4.0] - 2026-03-18
 
 ### Added

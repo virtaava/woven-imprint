@@ -212,15 +212,15 @@ character:
 
 ## Server Settings
 
-Controls the OpenAI-compatible API server and web UI.
+Controls the OpenAI-compatible API server and React demo UI.
 
 ```yaml
 server:
   api_port: 8650
   api_key: null
   cors_origin: http://localhost
-  ui_port: 7860
-  ui_browser: auto
+  demo_port: 5173
+  demo_browser: auto
 ```
 
 | Setting | Default | Env Var | Description |
@@ -228,8 +228,8 @@ server:
 | `api_port` | `8650` | `WOVEN_IMPRINT_API_PORT` | Port for the OpenAI-compatible API proxy (`woven-imprint serve`). |
 | `api_key` | `null` | `WOVEN_IMPRINT_API_KEY` | Bearer token required for API requests. `null` = no authentication (local dev only). Set this before exposing the API to a network. |
 | `cors_origin` | `http://localhost` | — | Allowed CORS origin for the API server. Change to `*` only if you understand the security implications. |
-| `ui_port` | `7860` | `WOVEN_IMPRINT_UI_PORT` | Port for the Gradio web UI (`woven-imprint ui`). |
-| `ui_browser` | `auto` | — | Browser to open when UI launches. `auto` detects platform (WSL → Windows browser, macOS → default, Linux → xdg-open). Set to `chrome`, `firefox`, `edge`, or `none` to override. |
+| `demo_port` | `5173` | `WOVEN_IMPRINT_DEMO_PORT` | Port for the React demo UI (`woven-imprint demo`). |
+| `demo_browser` | `auto` | — | Browser to open when demo launches. `auto` detects platform (WSL → Windows browser, macOS → default, Linux → xdg-open). Set to `chrome`, `firefox`, `edge`, or `none` to override. |
 
 ---
 
@@ -386,3 +386,14 @@ server:
 character:
   parallel: true
 ```
+
+---
+
+## Security Notice
+
+Woven-imprint stores data locally in plaintext:
+
+- `~/.woven_imprint/config.yaml` may contain provider API keys
+- `~/.woven_imprint/characters.db` stores memories and relationships in plaintext SQLite
+
+For sensitive use cases, we recommend OS-level disk encryption (e.g., LUKS, FileVault, BitLocker). Woven-imprint does not provide encrypted-at-rest storage.

@@ -95,11 +95,11 @@ Or set it permanently in `~/.woven_imprint/config.yaml` — see [Configuration](
 
 ## Step 4: Try It
 
-### Web interface (recommended)
+### React demo UI (recommended)
 
 ```
-pip install woven-imprint[ui]
-woven-imprint ui
+pip install woven-imprint[demo]
+woven-imprint demo
 ```
 
 This opens a browser tab with everything you need — chat, create characters,
@@ -107,25 +107,19 @@ import existing ones, and see stats. No terminal needed after this.
 
 **WSL users**: If it opens Chromium instead of your Windows browser, specify it:
 ```
-woven-imprint ui --browser none
+woven-imprint demo --browser none
 ```
-Then open `http://127.0.0.1:7860` in your Windows browser manually.
+Then open `http://127.0.0.1:5173` in your Windows browser manually.
 Or install wslu for automatic Windows browser support:
 ```
 sudo apt install wslu
-woven-imprint ui
-```
-
-**If you installed with pipx**, inject Gradio first:
-```
-pipx inject woven-imprint gradio
-woven-imprint ui
-```
-
-### Terminal
-
-```
 woven-imprint demo
+```
+
+### Terminal REPL
+
+```
+woven-imprint chat alice
 ```
 
 You'll chat with a character named Alice Blackwood. Type messages and press Enter.

@@ -47,8 +47,8 @@ See [Getting Started](docs/GETTING_STARTED.md) for platform-specific setup.
 **Prefer a graphical interface?**
 
 ```bash
-pip install woven-imprint[ui]
-woven-imprint ui
+pip install woven-imprint[demo]
+woven-imprint demo
 ```
 
 Opens a browser with chat, character management, migration, and settings — no terminal needed.

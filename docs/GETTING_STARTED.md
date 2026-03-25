@@ -21,11 +21,11 @@ ollama pull llama3.2 && ollama pull nomic-embed-text
 woven-imprint demo
 ```
 
-Or use the web interface:
+Or use the React demo UI:
 
 ```bash
-pip install woven-imprint[ui]
-woven-imprint ui
+pip install woven-imprint[demo]
+woven-imprint demo
 ```
 
 ### No Ollama? Use OpenAI instead

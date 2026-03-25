@@ -10,7 +10,7 @@ pip install woven-imprint[openai]    # + OpenAI/Azure/vLLM backend
 pip install woven-imprint[anthropic] # + Anthropic Claude backend
 pip install woven-imprint[mcp]       # + MCP server for IDE integration
 pip install woven-imprint[pdf]       # + PDF knowledge file extraction
-pip install woven-imprint[ui]        # + Gradio web interface
+pip install woven-imprint[demo]      # + React demo UI
 pip install woven-imprint[all]       # everything
 ```
 
@@ -221,12 +221,20 @@ response = client.chat.completions.create(
 )
 ```
 
-### Web UI
+### React Demo UI
 
 ```bash
-woven-imprint ui                      # auto-detect browser
-woven-imprint ui --browser chrome     # specific browser
-woven-imprint ui --browser none       # don't open, just print URL
+woven-imprint demo                      # auto-detect browser, localhost:5173
+woven-imprint demo --browser chrome     # specific browser
+woven-imprint demo --browser none       # don't open, just print URL
+```
+
+The demo server runs on `localhost:5173` by default. Configure in `~/.woven_imprint/config.yaml`:
+
+```yaml
+server:
+  demo_port: 5173
+  demo_browser: auto
 ```
 
 ## Configuration
@@ -247,8 +255,8 @@ LLM providers, memory, context window, relationships, persona, server, storage, 
 
 ```bash
 # Getting started
-woven-imprint demo                        # Interactive demo
-woven-imprint ui                          # Web interface
+woven-imprint demo                        # React demo UI
+woven-imprint chat alice                  # Chat with character
 
 # Character management
 woven-imprint create "Name"               # Create character
@@ -266,8 +274,8 @@ woven-imprint migrate <path> -k f1 f2    # With knowledge files
 
 # Server
 woven-imprint serve --port 8650           # OpenAI-compatible API
-woven-imprint ui --port 7860              # Web interface
-woven-imprint ui --browser chrome         # Specify browser
+woven-imprint demo --port 5173            # React demo UI
+woven-imprint demo --browser chrome       # Specify browser
 
 # Maintenance
 woven-imprint update                      # Update to latest version

@@ -26,24 +26,24 @@ The UI is at **http://localhost:7860** — bookmark it or navigate there manuall
 
 ## 3. Connect an LLM
 
-On first launch, click **⚙ Settings** to configure your LLM provider.
+**No model is configured by default** — you must set one up before chatting. Click **⚙ Settings** in the top bar.
 
 **Option A — Ollama (local, free, no account needed)**
 
-Install Ollama from [ollama.com](https://ollama.com), then pull the models:
+Install Ollama from [ollama.com](https://ollama.com), then pull a model and the embedding model:
 ```bash
 ollama pull llama3.2
 ollama pull nomic-embed-text
 ```
-In the Settings panel, select **Ollama** and click **Test Connection**. Done.
+In Settings, select **Ollama**. The UI discovers your installed models automatically. Pick one, click **Test Connection**, then **Save**.
 
 **Option B — OpenAI, Anthropic, DeepSeek, or any API**
 
-Select your provider in Settings, paste your API key, pick a model, and click **Test Connection**. The UI discovers available models automatically.
+Select your provider in Settings, paste your API key. The UI queries the provider's API and shows available models. Pick one, click **Test Connection**, then **Save**.
 
 ---
 
-Once connected you'll meet **Meridian**, a demo character who knows how woven-imprint works and can answer questions about it. Chat with her, then create your own characters from the **Characters** tab.
+Once connected you'll meet **Meridian**, a built-in demo character who knows how woven-imprint works. Chat with her, create your own characters from the **Characters** tab, or click the **?** icon in the top bar for the full [UI Guide](UI_GUIDE.md).
 
 ---
 

@@ -136,7 +136,16 @@ with Engine("characters.db") as engine:
     char.reflect()                    # generate inner reflection
     char.consolidate()                # compress buffer → core memories
     char.evolve()                     # detect personality growth
-    char.end_session()                # summarize and persist state
+
+    # Session management
+    session_id = char.start_session()       # start new session
+    char.resume_session(session_id)         # resume a previous session
+    summary = char.end_session()            # end session, returns summary
+
+    # Sessions are conversation boundaries — not memory boundaries.
+    # The character remembers everything across sessions. Ending a session
+    # generates a summary that becomes a core memory.
+
     char.export("marcus.json")        # full portable export
 ```
 
@@ -241,10 +250,14 @@ server:
 Features:
 - **Chat** with any character, with markdown rendering
 - **Character management** — create, delete, export, import (JSON/PNG/markdown), migrate from text
-- **X-Ray panel** — real-time memory feed, relationship radar chart, emotion indicator (collapsible)
+- **X-Ray panel** — real-time memory feed, relationship radar, emotion, session history (collapsible, responsive)
+- **Session management** — start new sessions, rename them, resume old ones
 - **Provider configuration** — Ollama, OpenAI, Anthropic, DeepSeek, NVIDIA NIM, or any OpenAI-compatible API
-- **Live model discovery** — queries the actual provider API for available models
+- **Live model discovery** — queries the provider API for available models (no hardcoded lists)
 - **Reflect** — trigger character self-reflection
+- **Help** — click the **?** icon for the full [UI Guide](UI_GUIDE.md)
+
+> **Note:** No model is configured by default. On first launch, click Settings to choose a provider and model.
 
 ## Configuration
 

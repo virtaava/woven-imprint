@@ -1,4 +1,4 @@
-import { BookOpen, Settings, Wifi, WifiOff, PanelRightOpen, PanelRightClose, Users, ChevronDown } from 'lucide-react'
+import { BookOpen, Settings, Wifi, WifiOff, PanelRightOpen, PanelRightClose, Users, ChevronDown, HelpCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -74,6 +74,14 @@ export function TopBar({ character, provider, sessionId, memoryCount, onOpenProv
         </Button>
         <Button variant="ghost" size="icon" onClick={onOpenProviderModal}>
           <Settings className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => window.open('https://github.com/virtaava/woven-imprint/blob/master/docs/UI_GUIDE.md', '_blank')}
+          title="Help — UI Guide"
+        >
+          <HelpCircle className="size-4" />
         </Button>
       </div>
     </div>

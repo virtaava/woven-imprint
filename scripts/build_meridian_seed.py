@@ -47,10 +47,12 @@ def build_seed(output_path: str, model: str | None = None) -> None:
     # Read documentation files
     docs_dir = Path(__file__).parent.parent / "docs"
     doc_files = [
-        "ARCHITECTURE.md",
+        "GETTING_STARTED.md",
+        "UI_GUIDE.md",
+        "MIGRATION.md",
         "CONFIGURATION.md",
         "DEVELOPER_GUIDE.md",
-        "GETTING_STARTED.md",
+        "ARCHITECTURE.md",
         "RESULTS.md",
         "EVALUATION.md",
         "RESEARCH.md",

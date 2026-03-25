@@ -362,16 +362,62 @@ def create_app(
 # Meridian seed helper
 # ---------------------------------------------------------------------------
 
+def _import_seed_db(engine: Engine, seed_path: Path) -> None:
+    """Import Meridian character data from pre-built seed database."""
+    import sqlite3
+    import json
+
+    seed_conn = sqlite3.connect(str(seed_path))
+    seed_conn.row_factory = sqlite3.Row
+
+    row = seed_conn.execute(
+        "SELECT * FROM characters WHERE name = 'Meridian' LIMIT 1"
+    ).fetchone()
+    if not row:
+        seed_conn.close()
+        return
+
+    char_id = row["id"]
+
+    from woven_imprint.data.meridian_persona import MERIDIAN_PERSONA, MERIDIAN_BIRTHDATE
+    char = engine.create_character(
+        name="Meridian",
+        persona=MERIDIAN_PERSONA,
+        birthdate=MERIDIAN_BIRTHDATE,
+        character_id=char_id,
+    )
+
+    memories = seed_conn.execute(
+        "SELECT content, tier, importance FROM memories WHERE character_id = ?",
+        (char_id,),
+    ).fetchall()
+
+    for mem in memories:
+        char.memory.add(
+            content=mem["content"],
+            tier=mem["tier"],
+            importance=mem["importance"],
+        )
+
+    seed_conn.close()
+    logger.info(f"Imported {len(memories)} seed memories for Meridian")
+
+
 def _seed_meridian_if_needed(engine: Engine) -> None:
-    """Ensure the demo Meridian character exists."""
+    """Seed the Meridian demo character if not already present."""
     chars = engine.list_characters()
     for c in chars:
         if c["name"].lower() == "meridian":
             return
 
-    from woven_imprint.data.meridian_persona import MERIDIAN_PERSONA, MERIDIAN_BIRTHDATE
+    # Try seed DB first
+    seed_db = Path(__file__).parent.parent / "data" / "meridian_seed.db"
+    if seed_db.exists():
+        _import_seed_db(engine, seed_db)
+        return
 
-    # TODO (Task 14): check for seed DB at data/meridian_seed.db and import
+    # Fallback: create with persona only (no pre-built knowledge)
+    from woven_imprint.data.meridian_persona import MERIDIAN_PERSONA, MERIDIAN_BIRTHDATE
     engine.create_character(
         name="Meridian",
         persona=MERIDIAN_PERSONA,

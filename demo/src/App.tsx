@@ -5,6 +5,7 @@ import { XRayPanel } from '@/components/XRayPanel'
 import { ProviderModal } from '@/components/ProviderModal'
 import {
   getProviderConfig,
+  testProviderConnection,
   fetchCharacters,
   startSession,
   sendMessage,
@@ -39,20 +40,28 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<Memory[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
 
-  // Load provider config on mount
+  // Load provider config on mount — always verify connection works
   useEffect(() => {
     async function init() {
       try {
         const config = await getProviderConfig()
         setProviderConfig(config)
-        if (!config.api_key_configured && config.provider !== 'ollama') {
-          setShowProviderModal(true)
-        } else {
-          setMessages([MERIDIAN_GREETING])
-          await initCharacter()
+
+        // Test the actual connection before assuming it works
+        if (config.api_key_configured || config.provider === 'ollama') {
+          const test = await testProviderConnection({
+            provider: config.provider,
+            model: config.model,
+          })
+          if (test.success) {
+            setMessages([MERIDIAN_GREETING])
+            await initCharacter()
+            return
+          }
         }
+        // Connection failed or no key — show setup
+        setShowProviderModal(true)
       } catch {
-        // API not available, show modal
         setShowProviderModal(true)
       }
     }

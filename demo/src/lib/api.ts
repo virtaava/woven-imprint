@@ -61,6 +61,13 @@ export async function updateProviderConfig(config: { provider: string; model: st
   return res.json()
 }
 
+export async function fetchAvailableModels(provider: string, base_url?: string) {
+  const params = new URLSearchParams({ provider })
+  if (base_url) params.set('base_url', base_url)
+  const res = await fetch(`${API_BASE}/api/config/models?${params}`, { headers: headers() })
+  return res.json()
+}
+
 export async function testProviderConnection(config: { provider: string; model: string; api_key?: string; base_url?: string }) {
   const res = await fetch(`${API_BASE}/api/config/provider/test`, {
     method: 'POST',

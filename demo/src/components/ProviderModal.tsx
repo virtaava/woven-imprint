@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2, RefreshCw } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -10,12 +10,13 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { testProviderConnection, updateProviderConfig } from '@/lib/api'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { testProviderConnection, updateProviderConfig, fetchAvailableModels } from '@/lib/api'
 import type { ProviderConfig } from '@/lib/types'
 
 const PROVIDERS = [
   { id: 'openai', label: 'OpenAI', needsKey: true, defaultModel: 'gpt-4o-mini' },
-  { id: 'anthropic', label: 'Anthropic', needsKey: true, defaultModel: 'claude-sonnet-4-20250514' },
+  { id: 'anthropic', label: 'Anthropic', needsKey: true, defaultModel: 'claude-sonnet-4-5-20250514' },
   { id: 'ollama', label: 'Ollama', needsKey: false, defaultModel: 'llama3.2', defaultUrl: 'http://localhost:11434' },
   { id: 'deepseek', label: 'DeepSeek', needsKey: true, defaultModel: 'deepseek-chat' },
 ]
@@ -35,6 +36,8 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [loadingModels, setLoadingModels] = useState(false)
 
   const providerInfo = PROVIDERS.find((p) => p.id === provider)
 
@@ -46,6 +49,7 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
     }
   }, [currentConfig])
 
+  // Fetch models when provider or base URL changes
   useEffect(() => {
     const info = PROVIDERS.find((p) => p.id === provider)
     if (info) {
@@ -59,7 +63,36 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
       }
     }
     setTestResult(null)
+    setAvailableModels([])
+
+    // Auto-fetch models for this provider
+    if (open) {
+      loadModels(provider, info?.defaultUrl || baseUrl)
+    }
   }, [provider])
+
+  // Re-fetch when modal opens
+  useEffect(() => {
+    if (open) {
+      loadModels(provider, baseUrl)
+    }
+  }, [open])
+
+  const loadModels = async (prov: string, url?: string) => {
+    setLoadingModels(true)
+    try {
+      const res = await fetchAvailableModels(prov, url || undefined)
+      setAvailableModels(res.models || [])
+    } catch {
+      setAvailableModels([])
+    } finally {
+      setLoadingModels(false)
+    }
+  }
+
+  const handleRefreshModels = () => {
+    loadModels(provider, baseUrl)
+  }
 
   const handleTest = async () => {
     setTesting(true)
@@ -141,29 +174,81 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
             </div>
           )}
 
-          {/* Model */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Model</label>
-            <Input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="Model name"
-            />
-          </div>
-
           {/* Base URL */}
           {(provider === 'ollama' || provider === 'openai') && (
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted-foreground">
                 Base URL {provider !== 'ollama' && '(optional)'}
               </label>
-              <Input
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder={provider === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
-              />
+              <div className="flex gap-2">
+                <Input
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder={provider === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
+                  className="flex-1"
+                />
+                {provider === 'ollama' && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleRefreshModels}
+                    disabled={loadingModels}
+                    title="Refresh models from this URL"
+                  >
+                    <RefreshCw className={`size-3.5 ${loadingModels ? 'animate-spin' : ''}`} />
+                  </Button>
+                )}
+              </div>
             </div>
           )}
+
+          {/* Model selector */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground">Model</label>
+              {loadingModels && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" /> Loading models...
+                </span>
+              )}
+            </div>
+
+            {availableModels.length > 0 ? (
+              <ScrollArea className="max-h-40 rounded-md border">
+                <div className="flex flex-col p-1">
+                  {availableModels.map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setModel(m)}
+                      className={`rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                        model === m
+                          ? 'bg-amber-400/10 text-amber-400'
+                          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </ScrollArea>
+            ) : (
+              <Input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="Model name"
+              />
+            )}
+
+            {/* Always show the manual input if models are loaded, for custom entries */}
+            {availableModels.length > 0 && (
+              <Input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="Or type a model name..."
+                className="text-xs"
+              />
+            )}
+          </div>
 
           {/* Test result */}
           {testResult && (

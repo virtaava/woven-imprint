@@ -355,6 +355,56 @@ def create_app(
         except Exception as exc:
             return {"success": False, "message": str(exc)}
 
+    @app.get("/api/config/models", dependencies=[Depends(_check_auth)])
+    async def list_available_models(provider: str, base_url: str | None = None):
+        """Fetch available models from a provider.
+
+        For Ollama/OpenAI-compatible servers, queries the /api/tags or /v1/models
+        endpoint. For cloud providers, returns a curated list of popular models.
+        """
+        import httpx
+
+        models: list[str] = []
+
+        if provider == "ollama":
+            url = (base_url or "http://localhost:11434").rstrip("/")
+            try:
+                async with httpx.AsyncClient(timeout=5) as client:
+                    # Try Ollama native API first
+                    resp = await client.get(f"{url}/api/tags")
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        models = [m["name"] for m in data.get("models", [])]
+            except Exception:
+                pass
+
+            if not models:
+                # Try OpenAI-compatible /v1/models (llama.cpp, etc.)
+                try:
+                    async with httpx.AsyncClient(timeout=5) as client:
+                        resp = await client.get(f"{url}/v1/models")
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            models = [m["id"] for m in data.get("data", [])]
+                except Exception:
+                    pass
+
+        elif provider == "openai":
+            models = [
+                "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo",
+                "o4-mini", "o3-mini",
+            ]
+        elif provider == "anthropic":
+            models = [
+                "claude-sonnet-4-5-20250514",
+                "claude-haiku-4-5-20251001",
+                "claude-opus-4-20250514",
+            ]
+        elif provider == "deepseek":
+            models = ["deepseek-chat", "deepseek-reasoner"]
+
+        return {"models": models}
+
     # --- Static files (after all API routes) ---
     if STATIC_DIR.is_dir():
         app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=False), name="static")

@@ -202,10 +202,14 @@ export function XRayPanel({ character, memories, relationship, onSearchMemory, s
                             <Input
                               value={editAlias}
                               onChange={(e) => setEditAlias(e.target.value)}
+                              onBlur={() => setEditingSessionId(null)}
+                              onKeyDown={(e) => { if (e.key === 'Escape') setEditingSessionId(null) }}
                               className="h-5 flex-1 text-[11px]"
                               autoFocus
                             />
-                            <Button type="submit" variant="ghost" size="icon" className="size-5">
+                            <Button type="submit" variant="ghost" size="icon" className="size-5"
+                              onMouseDown={(e) => e.preventDefault()}
+                            >
                               <Check className="size-3" />
                             </Button>
                           </form>

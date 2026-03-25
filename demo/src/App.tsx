@@ -14,6 +14,7 @@ import {
   fetchCharacterState,
   recallMemories,
   fetchRelationship,
+  reflectCharacter,
 } from '@/lib/api'
 import type { ChatMessage, CharacterState, CharacterSummary, Memory, Relationship, ProviderConfig } from '@/lib/types'
 
@@ -32,6 +33,7 @@ const SETUP_PROMPT: ChatMessage = {
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([SETUP_PROMPT])
   const [loading, setLoading] = useState(false)
+  const [reflectLoading, setReflectLoading] = useState(false)
   const [characterState, setCharacterState] = useState<CharacterState | null>(null)
   const [memories, setMemories] = useState<Memory[]>([])
   const [relationship, setRelationship] = useState<Relationship | null>(null)
@@ -191,6 +193,38 @@ export default function App() {
     [messages, providerConfig, refreshXRay]
   )
 
+  const handleReflect = useCallback(
+    async () => {
+      if (!characterId) return
+      setReflectLoading(true)
+
+      try {
+        const res = await reflectCharacter(characterId)
+        const reflection = res.reflection || res.result || 'Internal reflection completed.'
+
+        const systemMsg: ChatMessage = {
+          role: 'system',
+          content: `✦ ${reflection}`,
+        }
+        setMessages((prev) => [...prev, systemMsg])
+
+        // Refresh X-Ray after reflection
+        await refreshXRay()
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'system',
+            content: 'Failed to reflect. Please try again.',
+          },
+        ])
+      } finally {
+        setReflectLoading(false)
+      }
+    },
+    [characterId, refreshXRay]
+  )
+
   const handleSearchMemory = useCallback(
     async (query: string) => {
       if (!characterId) return
@@ -290,7 +324,14 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
         {/* Chat panel */}
         <div className={`flex flex-col transition-all duration-300 ${xrayVisible ? 'w-[70%]' : 'w-full'}`}>
-          <ChatPanel messages={messages} loading={loading} onSend={handleSend} />
+          <ChatPanel
+            messages={messages}
+            loading={loading}
+            onSend={handleSend}
+            onReflect={handleReflect}
+            reflectLoading={reflectLoading}
+            characterSelected={!!characterId}
+          />
         </div>
 
         {/* X-Ray panel */}

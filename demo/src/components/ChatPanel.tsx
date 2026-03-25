@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { BookOpen, Send, Loader2 } from 'lucide-react'
+import { BookOpen, Send, Loader2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -16,9 +16,12 @@ interface ChatPanelProps {
   messages: ChatMessage[]
   loading: boolean
   onSend: (text: string) => void
+  onReflect?: () => void
+  reflectLoading?: boolean
+  characterSelected?: boolean
 }
 
-export function ChatPanel({ messages, loading, onSend }: ChatPanelProps) {
+export function ChatPanel({ messages, loading, onSend, onReflect, reflectLoading = false, characterSelected = true }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const showChips = messages.length <= 1 // Only show on first greeting
@@ -40,11 +43,29 @@ export function ChatPanel({ messages, loading, onSend }: ChatPanelProps) {
     onSend(prompt)
   }
 
+  const handleReflect = () => {
+    if (onReflect && !reflectLoading && !loading) {
+      onReflect()
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       {/* Messages */}
       <ScrollArea className="flex-1 overflow-auto">
         <div className="flex flex-col gap-4 p-4">
+          {messages.length === 0 && (
+            <div className="flex h-full items-center justify-center text-center">
+              <div className="max-w-sm">
+                <div className="mb-3 flex justify-center">
+                  <BookOpen className="size-8 text-muted-foreground" />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Start a conversation to begin. Select or create a character to see their memory and emotions update in real time.
+                </p>
+              </div>
+            </div>
+          )}
           {messages.map((msg, i) => (
             <div
               key={i}
@@ -56,12 +77,19 @@ export function ChatPanel({ messages, loading, onSend }: ChatPanelProps) {
                   <BookOpen className="size-4" />
                 </div>
               )}
+              {msg.role === 'system' && (
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-400/20 text-amber-400">
+                  <Sparkles className="size-4" />
+                </div>
+              )}
 
               {/* Bubble */}
               <div
                 className={`max-w-[75%] rounded-xl px-4 py-2.5 text-sm leading-relaxed ${
                   msg.role === 'user'
                     ? 'bg-primary text-primary-foreground'
+                    : msg.role === 'system'
+                    ? 'border border-amber-400/30 bg-amber-400/10 italic text-amber-900/80 dark:text-amber-100/80'
                     : 'bg-muted text-foreground'
                 }`}
               >
@@ -128,21 +156,42 @@ export function ChatPanel({ messages, loading, onSend }: ChatPanelProps) {
       </ScrollArea>
 
       {/* Input */}
-      <form
-        onSubmit={handleSubmit}
-        className="flex gap-2 border-t border-border bg-card p-3"
-      >
-        <Input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Message Meridian..."
-          disabled={loading}
-          className="flex-1"
-        />
-        <Button type="submit" size="default" disabled={!input.trim() || loading}>
-          <Send className="size-4" />
-        </Button>
-      </form>
+      <div className="flex flex-col gap-2 border-t border-border bg-card p-3">
+        <div className="flex gap-2">
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Message Meridian..."
+            disabled={loading || reflectLoading}
+            className="flex-1"
+          />
+          <Button type="submit" size="default" disabled={!input.trim() || loading || reflectLoading} onClick={handleSubmit}>
+            <Send className="size-4" />
+          </Button>
+        </div>
+        {characterSelected && (
+          <Button
+            type="button"
+            variant="outline"
+            size="default"
+            disabled={reflectLoading || loading}
+            onClick={handleReflect}
+            className="w-full"
+          >
+            {reflectLoading ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                <span>Reflecting...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="size-4" />
+                <span>Reflect</span>
+              </>
+            )}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

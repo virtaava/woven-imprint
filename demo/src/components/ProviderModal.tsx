@@ -35,6 +35,7 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
   const [baseUrl, setBaseUrl] = useState('')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [testPassed, setTestPassed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
@@ -63,6 +64,7 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
       }
     }
     setTestResult(null)
+    setTestPassed(false)
     setAvailableModels([])
 
     // Auto-fetch models for this provider
@@ -104,9 +106,12 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
         api_key: apiKey || undefined,
         base_url: baseUrl || undefined,
       })
-      setTestResult({ ok: res.ok ?? res.success ?? true, message: res.message || 'Connection successful' })
+      const ok = res.ok ?? res.success ?? true
+      setTestResult({ ok, message: res.message || 'Connection successful' })
+      setTestPassed(ok)
     } catch (err: any) {
       setTestResult({ ok: false, message: err.message || 'Connection failed' })
+      setTestPassed(false)
     } finally {
       setTesting(false)
     }
@@ -168,7 +173,7 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
               <Input
                 type="password"
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                onChange={(e) => { setApiKey(e.target.value); setTestPassed(false); setTestResult(null) }}
                 placeholder={currentConfig?.api_key_configured ? 'Key configured (leave empty to keep)' : 'sk-...'}
               />
             </div>
@@ -183,7 +188,7 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
               <div className="flex gap-2">
                 <Input
                   value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
+                  onChange={(e) => { setBaseUrl(e.target.value); setTestPassed(false); setTestResult(null) }}
                   placeholder={provider === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
                   className="flex-1"
                 />
@@ -219,7 +224,7 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
                   {availableModels.map((m) => (
                     <button
                       key={m}
-                      onClick={() => setModel(m)}
+                      onClick={() => { setModel(m); setTestPassed(false); setTestResult(null) }}
                       className={`rounded px-2 py-1.5 text-left text-xs transition-colors ${
                         model === m
                           ? 'bg-amber-400/10 text-amber-400'
@@ -234,7 +239,7 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
             ) : (
               <Input
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
+                onChange={(e) => { setModel(e.target.value); setTestPassed(false); setTestResult(null) }}
                 placeholder="Model name"
               />
             )}
@@ -243,7 +248,7 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
             {availableModels.length > 0 && (
               <Input
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
+                onChange={(e) => { setModel(e.target.value); setTestPassed(false); setTestResult(null) }}
                 placeholder="Or type a model name..."
                 className="text-xs"
               />
@@ -265,15 +270,22 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={handleTest} disabled={testing || !model}>
-            {testing && <Loader2 className="size-3.5 animate-spin" />}
-            Test Connection
-          </Button>
-          <Button onClick={handleSave} disabled={saving || !model}>
-            {saving && <Loader2 className="size-3.5 animate-spin" />}
-            Save
-          </Button>
+        <DialogFooter className="flex-col items-stretch gap-2 sm:flex-col">
+          {!testPassed && model && (
+            <p className="text-xs text-muted-foreground text-center">
+              Test the connection before saving to verify the model is reachable.
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={handleTest} disabled={testing || !model}>
+              {testing && <Loader2 className="size-3.5 animate-spin" />}
+              Test Connection
+            </Button>
+            <Button onClick={handleSave} disabled={saving || !model || !testPassed}>
+              {saving && <Loader2 className="size-3.5 animate-spin" />}
+              Save
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

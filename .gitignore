@@ -12,3 +12,4 @@ docs/AUDIT_FINDINGS.md
 *.db
 article_draft.md
 .worktrees/
+demo/node_modules/

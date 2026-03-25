@@ -364,49 +364,72 @@ def create_app(
     async def list_available_models(provider: str, base_url: str | None = None):
         """Fetch available models from a provider.
 
-        For Ollama/OpenAI-compatible servers, queries the /api/tags or /v1/models
-        endpoint. For cloud providers, returns a curated list of popular models.
+        For local servers (Ollama, llama.cpp, any OpenAI-compatible),
+        queries the actual API. For cloud providers without a custom
+        base_url, returns curated lists.
         """
         import httpx
 
         models: list[str] = []
 
-        if provider == "ollama":
-            url = (base_url or "http://localhost:11434").rstrip("/")
+        async def _try_ollama_tags(url: str) -> list[str]:
             try:
                 async with httpx.AsyncClient(timeout=5) as client:
-                    # Try Ollama native API first
                     resp = await client.get(f"{url}/api/tags")
                     if resp.status_code == 200:
-                        data = resp.json()
-                        models = [m["name"] for m in data.get("models", [])]
+                        return [m["name"] for m in resp.json().get("models", [])]
             except Exception:
                 pass
+            return []
 
+        async def _try_openai_models(url: str) -> list[str]:
+            try:
+                async with httpx.AsyncClient(timeout=5) as client:
+                    resp = await client.get(f"{url}/v1/models")
+                    if resp.status_code == 200:
+                        return [m["id"] for m in resp.json().get("data", [])]
+            except Exception:
+                pass
+            return []
+
+        if provider == "ollama":
+            url = (base_url or "http://localhost:11434").rstrip("/")
+            models = await _try_ollama_tags(url)
             if not models:
-                # Try OpenAI-compatible /v1/models (llama.cpp, etc.)
-                try:
-                    async with httpx.AsyncClient(timeout=5) as client:
-                        resp = await client.get(f"{url}/v1/models")
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            models = [m["id"] for m in data.get("data", [])]
-                except Exception:
-                    pass
+                models = await _try_openai_models(url)
+
+        elif provider == "openai" and base_url:
+            # Custom base URL — try to discover models from the server
+            url = base_url.rstrip("/")
+            # Strip /v1 suffix if present for the tags probe
+            bare = url.removesuffix("/v1")
+            models = await _try_ollama_tags(bare)
+            if not models:
+                models = await _try_openai_models(bare)
+            # If still nothing, the server might not list models
+            # (e.g. DeepSeek, NVIDIA) — fall back to curated lists
+            if not models:
+                if "deepseek" in base_url.lower():
+                    models = ["deepseek-chat", "deepseek-reasoner"]
+                elif "nvidia" in base_url.lower() or "nim" in base_url.lower():
+                    models = [
+                        "meta/llama-3.1-8b-instruct",
+                        "meta/llama-3.1-70b-instruct",
+                        "nvidia/llama-3.1-nemotron-70b-instruct",
+                    ]
 
         elif provider == "openai":
             models = [
-                "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo",
+                "gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
                 "o4-mini", "o3-mini",
             ]
+
         elif provider == "anthropic":
             models = [
                 "claude-sonnet-4-5-20250514",
                 "claude-haiku-4-5-20251001",
                 "claude-opus-4-20250514",
             ]
-        elif provider == "deepseek":
-            models = ["deepseek-chat", "deepseek-reasoner"]
 
         return {"models": models}
 

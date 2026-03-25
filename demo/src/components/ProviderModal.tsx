@@ -14,11 +14,14 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { testProviderConnection, updateProviderConfig, fetchAvailableModels } from '@/lib/api'
 import type { ProviderConfig } from '@/lib/types'
 
+// provider id maps to woven-imprint's provider system.
+// DeepSeek and NVIDIA use 'openai' provider with custom base_url.
 const PROVIDERS = [
-  { id: 'openai', label: 'OpenAI', needsKey: true, defaultModel: 'gpt-4o-mini' },
-  { id: 'anthropic', label: 'Anthropic', needsKey: true, defaultModel: 'claude-sonnet-4-5-20250514' },
-  { id: 'ollama', label: 'Ollama', needsKey: false, defaultModel: 'llama3.2', defaultUrl: 'http://localhost:11434' },
-  { id: 'deepseek', label: 'DeepSeek', needsKey: true, defaultModel: 'deepseek-chat' },
+  { id: 'openai', label: 'OpenAI', needsKey: true, defaultModel: 'gpt-4o-mini', showUrl: true },
+  { id: 'anthropic', label: 'Anthropic', needsKey: true, defaultModel: 'claude-sonnet-4-5-20250514', showUrl: false },
+  { id: 'ollama', label: 'Ollama', needsKey: false, defaultModel: 'llama3.2', defaultUrl: 'http://localhost:11434', showUrl: true },
+  { id: 'openai', label: 'DeepSeek', needsKey: true, defaultModel: 'deepseek-chat', defaultUrl: 'https://api.deepseek.com/v1', showUrl: false, preset: 'deepseek' },
+  { id: 'openai', label: 'NVIDIA NIM', needsKey: true, defaultModel: 'meta/llama-3.1-8b-instruct', defaultUrl: 'https://integrate.api.nvidia.com/v1', showUrl: false, preset: 'nvidia' },
 ]
 
 interface ProviderModalProps {
@@ -29,6 +32,8 @@ interface ProviderModalProps {
 }
 
 export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: ProviderModalProps) {
+  // selectedKey uniquely identifies the preset (preset field or label)
+  const [selectedKey, setSelectedKey] = useState('OpenAI')
   const [provider, setProvider] = useState('openai')
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -40,38 +45,35 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
 
-  const providerInfo = PROVIDERS.find((p) => p.id === provider)
+  const getKey = (p: typeof PROVIDERS[number]) => p.preset || p.label
+  const selected = PROVIDERS.find((p) => getKey(p) === selectedKey)
 
   useEffect(() => {
     if (currentConfig) {
-      setProvider(currentConfig.provider || 'openai')
+      // Find the best matching preset for the current config
+      const match = PROVIDERS.find(
+        (p) => p.id === currentConfig.provider && p.defaultUrl === currentConfig.base_url
+      ) || PROVIDERS.find((p) => p.id === currentConfig.provider)
+      if (match) setSelectedKey(getKey(match))
       setModel(currentConfig.model || '')
       setBaseUrl(currentConfig.base_url || '')
     }
   }, [currentConfig])
 
-  // Fetch models when provider or base URL changes
+  // When preset changes, update provider/model/url
   useEffect(() => {
-    const info = PROVIDERS.find((p) => p.id === provider)
-    if (info) {
-      if (!model || PROVIDERS.some((p) => p.defaultModel === model)) {
-        setModel(info.defaultModel)
-      }
-      if (info.defaultUrl && !baseUrl) {
-        setBaseUrl(info.defaultUrl)
-      } else if (!info.defaultUrl && PROVIDERS.some((p) => p.defaultUrl === baseUrl)) {
-        setBaseUrl('')
-      }
-    }
+    if (!selected) return
+    setProvider(selected.id)
+    setModel(selected.defaultModel)
+    setBaseUrl(selected.defaultUrl || '')
     setTestResult(null)
     setTestPassed(false)
     setAvailableModels([])
 
-    // Auto-fetch models for this provider
     if (open) {
-      loadModels(provider, info?.defaultUrl || baseUrl)
+      loadModels(selected.id, selected.defaultUrl || '')
     }
-  }, [provider])
+  }, [selectedKey])
 
   // Re-fetch when modal opens
   useEffect(() => {
@@ -150,24 +152,27 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted-foreground">Provider</label>
             <div className="flex flex-wrap gap-2">
-              {PROVIDERS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setProvider(p.id)}
-                  className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
-                    provider === p.id
-                      ? 'border-amber-400 bg-amber-400/10 text-amber-400'
-                      : 'border-border text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
+              {PROVIDERS.map((p) => {
+                const key = p.preset || p.label
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setSelectedKey(key)}
+                    className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
+                      selectedKey === key
+                        ? 'border-amber-400 bg-amber-400/10 text-amber-400'
+                        : 'border-border text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
           {/* API Key */}
-          {providerInfo?.needsKey && (
+          {selected?.needsKey && (
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted-foreground">API Key</label>
               <Input
@@ -180,10 +185,10 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
           )}
 
           {/* Base URL */}
-          {(provider === 'ollama' || provider === 'openai') && (
+          {selected?.showUrl && (
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted-foreground">
-                Base URL {provider !== 'ollama' && '(optional)'}
+                Base URL {selected.id !== 'ollama' && '(optional)'}
               </label>
               <div className="flex gap-2">
                 <Input
@@ -192,7 +197,7 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
                   placeholder={provider === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
                   className="flex-1"
                 />
-                {provider === 'ollama' && (
+                {selected?.id === 'ollama' && (
                   <Button
                     variant="outline"
                     size="icon"

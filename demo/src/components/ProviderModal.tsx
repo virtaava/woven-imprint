@@ -15,13 +15,14 @@ import { testProviderConnection, updateProviderConfig, fetchAvailableModels } fr
 import type { ProviderConfig } from '@/lib/types'
 
 // provider id maps to woven-imprint's provider system.
-// DeepSeek and NVIDIA use 'openai' provider with custom base_url.
+// DeepSeek, NVIDIA, and Custom all use 'openai' provider with custom base_url.
 const PROVIDERS = [
-  { id: 'openai', label: 'OpenAI', needsKey: true, defaultModel: 'gpt-4o-mini', showUrl: true },
-  { id: 'anthropic', label: 'Anthropic', needsKey: true, defaultModel: 'claude-sonnet-4-5-20250514', showUrl: false },
-  { id: 'ollama', label: 'Ollama', needsKey: false, defaultModel: 'llama3.2', defaultUrl: 'http://localhost:11434', showUrl: true },
-  { id: 'openai', label: 'DeepSeek', needsKey: true, defaultModel: 'deepseek-chat', defaultUrl: 'https://api.deepseek.com/v1', showUrl: false, preset: 'deepseek' },
-  { id: 'openai', label: 'NVIDIA NIM', needsKey: true, defaultModel: 'meta/llama-3.1-8b-instruct', defaultUrl: 'https://integrate.api.nvidia.com/v1', showUrl: false, preset: 'nvidia' },
+  { id: 'ollama', label: 'Ollama', needsKey: false, defaultModel: 'llama3.2', defaultUrl: 'http://localhost:11434', showUrl: true, keyHint: '' },
+  { id: 'openai', label: 'OpenAI', needsKey: true, defaultModel: 'gpt-4o-mini', showUrl: false, keyHint: 'sk-...' },
+  { id: 'anthropic', label: 'Anthropic', needsKey: true, defaultModel: 'claude-sonnet-4-5-20250514', showUrl: false, keyHint: 'sk-ant-...' },
+  { id: 'openai', label: 'DeepSeek', needsKey: true, defaultModel: 'deepseek-chat', defaultUrl: 'https://api.deepseek.com/v1', showUrl: false, preset: 'deepseek', keyHint: 'sk-...' },
+  { id: 'openai', label: 'NVIDIA NIM', needsKey: true, defaultModel: 'meta/llama-3.1-8b-instruct', defaultUrl: 'https://integrate.api.nvidia.com/v1', showUrl: false, preset: 'nvidia', keyHint: 'nvapi-...' },
+  { id: 'openai', label: 'Custom', needsKey: true, defaultModel: '', showUrl: true, preset: 'custom', keyHint: 'API key (if required)', description: 'Any OpenAI-compatible API' },
 ]
 
 interface ProviderModalProps {
@@ -163,12 +164,16 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
                         ? 'border-amber-400 bg-amber-400/10 text-amber-400'
                         : 'border-border text-muted-foreground hover:text-foreground'
                     }`}
+                    title={(p as any).description || p.label}
                   >
                     {p.label}
                   </button>
                 )
               })}
             </div>
+            {selected && (selected as any).description && (
+              <p className="text-xs text-muted-foreground">{(selected as any).description}</p>
+            )}
           </div>
 
           {/* API Key */}
@@ -179,12 +184,7 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
                 type="password"
                 value={apiKey}
                 onChange={(e) => { setApiKey(e.target.value); setTestPassed(false); setTestResult(null) }}
-                placeholder={currentConfig?.api_key_configured ? 'Key configured (leave empty to keep)' :
-                  selected?.preset === 'nvidia' ? 'nvapi-...' :
-                  selected?.id === 'anthropic' ? 'sk-ant-...' :
-                  selected?.preset === 'deepseek' ? 'sk-...' :
-                  'sk-...'
-                }
+                placeholder={currentConfig?.api_key_configured ? 'Key configured (leave empty to keep)' : (selected?.keyHint || 'API key')}
               />
             </div>
           )}

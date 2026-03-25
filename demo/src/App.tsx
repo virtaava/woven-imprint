@@ -17,11 +17,17 @@ import type { ChatMessage, CharacterState, Memory, Relationship, ProviderConfig 
 const MERIDIAN_GREETING: ChatMessage = {
   role: 'assistant',
   content:
-    "Hello! I'm **Meridian**, a character powered by [woven-imprint](https://github.com/virtaava/woven-imprint). I have persistent memory, evolving emotions, and relationships that develop over time.\n\nAsk me anything about how woven-imprint works, or just chat \u2014 and watch the X-Ray panel on the right to see my internal state update in real time.",
+    "Ah \u2014 a new visitor. Welcome. I am **Meridian**, Keeper of the Imprint. I remember everything that matters about the people I meet. Your name, what you're building, the questions that keep you up at night. That is what this place does \u2014 it gives characters like me a real memory.\n\nWhat shall I call you?",
+}
+
+const SETUP_PROMPT: ChatMessage = {
+  role: 'assistant',
+  content:
+    "Welcome to the **woven-imprint** demo. Before we begin, I need an LLM provider to power my responses.\n\nClick the **\u2699 Settings** button in the top bar to configure your provider (OpenAI, Anthropic, DeepSeek, or a local Ollama model). Once that's set, we can talk properly.\n\nThe **X-Ray panel** on the right will show my memory, emotions, and relationships updating in real time as we chat.",
 }
 
 export default function App() {
-  const [messages, setMessages] = useState<ChatMessage[]>([MERIDIAN_GREETING])
+  const [messages, setMessages] = useState<ChatMessage[]>([SETUP_PROMPT])
   const [loading, setLoading] = useState(false)
   const [characterState, setCharacterState] = useState<CharacterState | null>(null)
   const [memories, setMemories] = useState<Memory[]>([])
@@ -42,6 +48,7 @@ export default function App() {
         if (!config.api_key_configured && config.provider !== 'ollama') {
           setShowProviderModal(true)
         } else {
+          setMessages([MERIDIAN_GREETING])
           await initCharacter()
         }
       } catch {
@@ -117,7 +124,7 @@ export default function App() {
       setLoading(true)
 
       try {
-        const model = providerConfig?.model || 'gpt-4o-mini'
+        const model = 'meridian'  // Demo server matches character by name
         const allMessages = [...messages, userMsg].map((m) => ({
           role: m.role,
           content: m.content,
@@ -125,7 +132,7 @@ export default function App() {
 
         const res = await sendMessage(model, allMessages)
         const content =
-          res.choices?.[0]?.message?.content || res.content || res.response || 'I seem to have lost my train of thought.'
+          res.choices?.[0]?.message?.content || res.content || res.response || 'Something went wrong \u2014 check your provider configuration in Settings.'
 
         const assistantMsg: ChatMessage = { role: 'assistant', content }
         setMessages((prev) => [...prev, assistantMsg])
@@ -166,6 +173,7 @@ export default function App() {
   const handleProviderSaved = useCallback(
     async (config: ProviderConfig) => {
       setProviderConfig(config)
+      setMessages([MERIDIAN_GREETING])
       if (!characterId) {
         await initCharacter()
       }

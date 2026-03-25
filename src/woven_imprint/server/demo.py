@@ -57,6 +57,9 @@ _engine_lock: asyncio.Lock = asyncio.Lock()
 _character_lock_guard: asyncio.Lock = asyncio.Lock()
 _character_locks: dict[str, asyncio.Lock] = {}
 _AUTH_COOKIE_NAME = "woven_demo_auth"
+# Character instance cache — keeps session state alive across requests.
+# Only used by the single-process demo server.
+_char_cache: dict[str, object] = {}
 _rate_limit_lock: asyncio.Lock = asyncio.Lock()
 _rate_limit_events: dict[str, deque[float]] = {}
 _RATE_LIMIT_RULES = {
@@ -158,6 +161,13 @@ async def _character_mutation(character_id: str):
         yield
 
 
+def _get_character(character_id: str):
+    """Return a cached Character instance, preserving session state across requests."""
+    if character_id not in _char_cache:
+        _char_cache[character_id] = _engine.get_character(character_id)
+    return _char_cache[character_id]
+
+
 # ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
@@ -211,6 +221,7 @@ def create_app(
     _auth_token = token or secrets.token_urlsafe(32)
     _rate_limit_events.clear()
     _character_locks.clear()
+    _char_cache.clear()
 
     app = FastAPI(
         title="woven-imprint demo",
@@ -365,6 +376,7 @@ def create_app(
             try:
                 delete_character_service(_engine, character_id)
                 _character_locks.pop(character_id, None)
+                _char_cache.pop(character_id, None)
                 return {"ok": True}
             except KeyError:
                 raise HTTPException(404, f"Character '{character_id}' not found")
@@ -381,8 +393,9 @@ def create_app(
     async def reflect_character(character_id: str):
         async with _character_mutation(character_id):
             try:
-                result = reflect_character_service(_engine, character_id)
-                return result
+                char = _get_character(character_id)
+                reflection = char.reflect()
+                return {"reflection": reflection}
             except KeyError:
                 raise HTTPException(404, f"Character '{character_id}' not found")
 
@@ -391,7 +404,9 @@ def create_app(
     async def start_session(character_id: str):
         async with _character_mutation(character_id):
             try:
-                return start_session_service(_engine, character_id)
+                char = _get_character(character_id)
+                session_id = char.start_session()
+                return {"session_id": session_id}
             except KeyError:
                 raise HTTPException(404, f"Character '{character_id}' not found")
 
@@ -399,7 +414,9 @@ def create_app(
     async def end_session(character_id: str):
         async with _character_mutation(character_id):
             try:
-                return end_session_service(_engine, character_id)
+                char = _get_character(character_id)
+                summary = char.end_session()
+                return {"summary": summary}
             except KeyError:
                 raise HTTPException(404, f"Character '{character_id}' not found")
 
@@ -431,7 +448,9 @@ def create_app(
     async def resume_session(character_id: str, session_id: str):
         async with _character_mutation(character_id):
             try:
-                return resume_session_service(_engine, character_id, session_id)
+                char = _get_character(character_id)
+                char.resume_session(session_id)
+                return {"session_id": session_id}
             except KeyError:
                 raise HTTPException(404, f"Character '{character_id}' not found")
 
@@ -490,7 +509,7 @@ def create_app(
             raise HTTPException(404, f"No character matches model '{body.model}'")
 
         async with _character_mutation(match["id"]):
-            char = _engine.get_character(match["id"])
+            char = _get_character(match["id"])
             user_msg = extract_last_user_message(body.messages)
             user_id = extract_user_id_from_messages(body.messages)
 
@@ -561,6 +580,7 @@ def create_app(
     @app.post("/api/config/provider", dependencies=[Depends(_check_auth)])
     async def set_provider_config(body: ProviderConfigRequest):
         from woven_imprint.providers import create_llm
+        from woven_imprint.llm.resilience import reset_breaker
 
         async with _engine_mutation():
             cfg = get_config()
@@ -572,6 +592,7 @@ def create_app(
                 cfg.llm.base_url = body.base_url
 
             try:
+                reset_breaker(body.provider)
                 _engine.llm = create_llm(cfg=cfg)
                 save_config(cfg)
             except Exception as exc:
@@ -839,9 +860,24 @@ def run_demo_server(
     resolved_db = cfg.storage.db_path
     Path(resolved_db).parent.mkdir(parents=True, exist_ok=True)
 
+    try:
+        llm = create_llm(cfg=cfg)
+    except Exception:
+        # No valid LLM configured yet — user will set it via the UI
+        from woven_imprint.llm.base import LLMProvider
+
+        class _PlaceholderLLM(LLMProvider):
+            def generate(self, messages, **kw):
+                raise ValueError("No LLM configured. Open Settings to choose a provider and model.")
+
+            def generate_json(self, messages, **kw):
+                raise ValueError("No LLM configured.")
+
+        llm = _PlaceholderLLM()
+
     engine = Engine(
         db_path=resolved_db,
-        llm=create_llm(cfg=cfg),
+        llm=llm,
         embedding=create_embedding(cfg=cfg),
     )
 

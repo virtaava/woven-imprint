@@ -89,6 +89,11 @@ def _get_breaker(name: str) -> CircuitBreaker:
     return _breakers[name]
 
 
+def reset_breaker(name: str) -> None:
+    """Reset the circuit breaker for a provider (e.g. after config change)."""
+    _breakers.pop(name, None)
+
+
 def resilient_call(fn, *args, provider_name: str = "default", **kwargs):
     """Call fn with retry + backoff + circuit breaker.
 

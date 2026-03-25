@@ -22,7 +22,7 @@ from pathlib import Path
 
 @dataclass
 class LLMConfig:
-    model: str = "llama3.2"
+    model: str = ""
     embedding_model: str = "nomic-embed-text"
     ollama_host: str = "http://127.0.0.1:11434"
     llm_provider: str = "ollama"  # ollama, openai, anthropic

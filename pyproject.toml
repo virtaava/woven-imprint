@@ -48,6 +48,9 @@ Documentation = "https://github.com/virtaava/woven-imprint/tree/master/docs"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+woven_imprint = ["demo_static/**/*", "data/*.db"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100

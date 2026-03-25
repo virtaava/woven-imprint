@@ -14,3 +14,4 @@ docs/AUDIT_FINDINGS.md
 article_draft.md
 .worktrees/
 demo/node_modules/
+dist/

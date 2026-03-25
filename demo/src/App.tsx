@@ -59,10 +59,10 @@ export default function App() {
             return
           }
         }
-        // Connection failed or no key — show setup
-        setShowProviderModal(true)
+        // Connection failed or no key — setup prompt is already showing,
+        // let the user read it and open Settings manually
       } catch {
-        setShowProviderModal(true)
+        // API not available — setup prompt already visible
       }
     }
     init()

@@ -20,38 +20,48 @@ This guide covers both native Windows and WSL (Windows Subsystem for Linux).
 
 ## Step 2: Install Woven Imprint
 
-In PowerShell:
-
+**PowerShell (native Windows)**:
 ```
-pip install woven-imprint
-```
-
-You should see "Successfully installed woven-imprint".
-
-### Troubleshooting
-
-**"pip is not recognized"**: Close and reopen PowerShell. If that doesn't work, try:
-```
-python -m pip install woven-imprint
+pip install woven-imprint[demo]
 ```
 
-**Using WSL?** If you see "externally-managed-environment", use pipx:
-```
+**WSL (Ubuntu)** — use pipx or a virtual environment to avoid "externally-managed-environment" errors:
+
+```bash
+# Option A: pipx (recommended for WSL)
 sudo apt install pipx
 pipx install woven-imprint
-```
+pipx inject woven-imprint fastapi uvicorn
 
-Or create a virtual environment:
-```
+# Option B: virtual environment
 python3 -m venv ~/woven-imprint-env
 source ~/woven-imprint-env/bin/activate
-pip install woven-imprint
-```
-You'll need to run the `source` command each time you open a new terminal.
-Add it to your profile to make it automatic:
-```
+pip install woven-imprint[demo]
 echo 'source ~/woven-imprint-env/bin/activate' >> ~/.bashrc
 ```
+
+### Upgrading from a previous version
+
+**PowerShell**:
+```
+pip install --upgrade woven-imprint[demo]
+```
+
+**WSL with pipx**:
+```bash
+pipx upgrade woven-imprint
+pipx inject woven-imprint --force fastapi uvicorn
+```
+
+**WSL with venv**:
+```bash
+source ~/woven-imprint-env/bin/activate
+pip install --upgrade woven-imprint[demo]
+```
+
+Your character data carries over automatically — no migration needed.
+
+> **Note**: The old `[ui]` extra (Gradio) has been replaced by `[demo]`. If you had gradio installed, you can remove it: `pip uninstall gradio -y`
 
 ## Step 3: Install an AI Model
 
@@ -98,7 +108,6 @@ Or set it permanently in `~/.woven_imprint/config.yaml` — see [Configuration](
 ### React demo UI (recommended)
 
 ```
-pip install woven-imprint[demo]
 woven-imprint demo
 ```
 
@@ -203,7 +212,15 @@ woven-imprint migrate persona.md
 woven-imprint update
 ```
 
-This auto-detects pip vs pipx and upgrades everything including extras (UI, PDF, etc.).
+This auto-detects pip vs pipx and upgrades everything including extras.
+
+Or manually:
+
+**PowerShell**: `pip install --upgrade woven-imprint[demo]`
+
+**WSL pipx**: `pipx upgrade woven-imprint && pipx inject woven-imprint --force fastapi uvicorn`
+
+**WSL venv**: `source ~/woven-imprint-env/bin/activate && pip install --upgrade woven-imprint[demo]`
 
 ## What's Next?
 

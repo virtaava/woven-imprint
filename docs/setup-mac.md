@@ -20,14 +20,22 @@
 ## Step 2: Install Woven Imprint
 
 ```
-pip3 install woven-imprint
+pip3 install woven-imprint[demo]
 ```
 
 You should see "Successfully installed woven-imprint".
 
+### Upgrading from a previous version
+
+```
+pip3 install --upgrade woven-imprint[demo]
+```
+
+Your character data carries over automatically — no migration needed.
+
 ### Troubleshooting
 
-**"pip3 not found"**: Try `python3 -m pip install woven-imprint`
+**"pip3 not found"**: Try `python3 -m pip install woven-imprint[demo]`
 
 ## Step 3: Install an AI Model
 

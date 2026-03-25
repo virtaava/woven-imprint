@@ -30,24 +30,41 @@ sudo dnf install python3 python3-pip
 
 ### Recommended: use pipx (avoids "externally-managed-environment" errors)
 
-```
+```bash
 sudo apt install pipx    # Ubuntu/Debian
 pipx install woven-imprint
+pipx inject woven-imprint fastapi uvicorn    # for the demo UI
 ```
 
 ### Alternative: virtual environment
 
-```
+```bash
 python3 -m venv ~/woven-imprint-env
 source ~/woven-imprint-env/bin/activate
-pip install woven-imprint
+pip install woven-imprint[demo]
 ```
 
 You'll need to run `source ~/woven-imprint-env/bin/activate` each time you
 open a new terminal. Make it automatic:
-```
+```bash
 echo 'source ~/woven-imprint-env/bin/activate' >> ~/.bashrc
 ```
+
+### Upgrading from a previous version
+
+**pipx**:
+```bash
+pipx upgrade woven-imprint
+pipx inject woven-imprint --force fastapi uvicorn
+```
+
+**venv**:
+```bash
+source ~/woven-imprint-env/bin/activate
+pip install --upgrade woven-imprint[demo]
+```
+
+Your character data (`~/.woven_imprint/characters.db`) is fully compatible across versions — no migration needed.
 
 ## Step 3: Install an AI Model
 
@@ -87,14 +104,7 @@ Or set it permanently in `~/.woven_imprint/config.yaml` — see [Configuration](
 
 ### React demo UI (recommended)
 
-**pipx**:
-```
-woven-imprint demo
-```
-
-**venv**:
-```
-pip install woven-imprint[demo]
+```bash
 woven-imprint demo
 ```
 

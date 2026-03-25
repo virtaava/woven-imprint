@@ -5,12 +5,17 @@ import pytest
 from tests.helpers import make_test_engine
 from woven_imprint.server.services import (
     create_character_service,
+    delete_character_service,
+    export_character_service,
+    import_character_service,
     list_characters_service,
     get_character_state_service,
+    migrate_character_service,
+    recall_memories_service,
+    record_message_service,
+    reflect_character_service,
     start_session_service,
     end_session_service,
-    record_message_service,
-    recall_memories_service,
     get_relationship_service,
     find_character_by_name_or_id,
     extract_last_user_message,
@@ -258,3 +263,57 @@ class TestExtractHelpers:
     def test_extract_user_id_custom_default(self):
         msgs = []
         assert extract_user_id_from_messages(msgs, default="anon") == "anon"
+
+
+# ── delete_character_service ─────────────────────────────────────────
+
+class TestDeleteCharacter:
+    def test_deletes_existing_character(self, engine):
+        created = create_character_service(engine, "Alice", {}, None)
+        delete_character_service(engine, created["id"])
+        assert list_characters_service(engine) == []
+
+    def test_raises_keyerror_for_unknown_id(self, engine):
+        with pytest.raises(KeyError):
+            delete_character_service(engine, "nonexistent-id")
+
+
+# ── export_character_service ─────────────────────────────────────────
+
+class TestExportCharacter:
+    def test_exports_existing_character(self, engine):
+        created = create_character_service(engine, "Alice", {"personality": "kind"}, None)
+        data = export_character_service(engine, created["id"])
+        assert isinstance(data, dict)
+        assert "persona" in data or "id" in data
+
+    def test_raises_keyerror_for_unknown_id(self, engine):
+        with pytest.raises(KeyError):
+            export_character_service(engine, "nonexistent-id")
+
+
+# ── import_character_service ─────────────────────────────────────────
+
+class TestImportCharacter:
+    def test_imports_from_exported_data(self, engine):
+        created = create_character_service(engine, "Alice", {"personality": "kind"}, None)
+        exported = export_character_service(engine, created["id"])
+        # Delete original so we can re-import
+        delete_character_service(engine, created["id"])
+        result = import_character_service(engine, exported)
+        assert result["imported"] is True
+        assert result["id"]
+
+
+# ── reflect_character_service ────────────────────────────────────────
+
+class TestReflectCharacter:
+    def test_reflect_returns_reflection(self, engine):
+        created = create_character_service(engine, "Alice", {}, None)
+        result = reflect_character_service(engine, created["id"])
+        assert "reflection" in result
+        assert isinstance(result["reflection"], str)
+
+    def test_raises_keyerror_for_unknown_id(self, engine):
+        with pytest.raises(KeyError):
+            reflect_character_service(engine, "nonexistent-id")

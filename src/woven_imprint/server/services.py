@@ -106,3 +106,49 @@ def extract_user_id_from_messages(messages, default="api_user"):
                 if line.strip().startswith("user_id:"):
                     return line.split(":", 1)[1].strip()
     return default
+
+
+def delete_character_service(engine, character_id):
+    """Delete a character. Raises KeyError if not found."""
+    engine.get_character(character_id)  # verify exists
+    engine.delete_character(character_id)
+
+
+def export_character_service(engine, character_id):
+    """Export character as JSON dict. Raises KeyError if not found."""
+    char = engine.get_character(character_id)
+    return char.export()
+
+
+def import_character_service(engine, data: dict):
+    """Import character from JSON dict. Returns character info."""
+    import tempfile, json, os
+    # Write to temp file since engine.import_character expects a path
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(data, f)
+        tmp_path = f.name
+    try:
+        char = engine.import_character(tmp_path)
+        return {"id": char.id, "name": getattr(char, "name", ""), "imported": True}
+    finally:
+        os.unlink(tmp_path)
+
+
+def migrate_character_service(engine, name, text=None, file_path=None):
+    """Migrate/create character from text or file. Returns character info."""
+    from woven_imprint.migrate import CharacterImporter
+    importer = CharacterImporter(engine)
+    if text:
+        char = importer.from_text(text, name=name)
+    elif file_path:
+        char = importer.from_file(file_path, name=name)
+    else:
+        raise ValueError("Either text or file_path must be provided")
+    return {"id": char.id, "name": getattr(char, "name", ""), "migrated": True}
+
+
+def reflect_character_service(engine, character_id):
+    """Trigger character reflection. Returns reflection text."""
+    char = engine.get_character(character_id)
+    reflection = char.reflect()
+    return {"reflection": reflection}

@@ -27,15 +27,20 @@ from woven_imprint.server.models import (
 )
 from woven_imprint.server.services import (
     create_character_service,
+    delete_character_service,
     end_session_service,
+    export_character_service,
     extract_last_user_message,
     extract_user_id_from_messages,
     find_character_by_name_or_id,
     get_character_state_service,
     get_relationship_service,
+    import_character_service,
     list_characters_service,
+    migrate_character_service,
     recall_memories_service,
     record_message_service,
+    reflect_character_service,
     start_session_service,
 )
 
@@ -170,12 +175,63 @@ def create_app(
         status = 201 if result["created"] else 200
         return JSONResponse(result, status_code=status)
 
+    # --- Character management (import/migrate before {character_id} routes) ---
+    @app.post("/api/characters/import", dependencies=[Depends(_check_auth)])
+    async def import_character(request: Request):
+        body = await request.json()
+        async with _mutation_lock:
+            try:
+                result = import_character_service(_engine, body)
+                return result
+            except Exception as exc:
+                raise HTTPException(400, str(exc))
+
+    @app.post("/api/characters/migrate", dependencies=[Depends(_check_auth)])
+    async def migrate_character(request: Request):
+        body = await request.json()
+        name = body.get("name", "")
+        text = body.get("text")
+        if not name:
+            raise HTTPException(400, "Name is required")
+        async with _mutation_lock:
+            try:
+                result = migrate_character_service(_engine, name, text=text)
+                return result
+            except Exception as exc:
+                raise HTTPException(400, str(exc))
+
     @app.get("/api/characters/{character_id}", dependencies=[Depends(_check_auth)])
     async def get_character(character_id: str):
         try:
             return get_character_state_service(_engine, character_id)
         except KeyError:
             raise HTTPException(404, f"Character '{character_id}' not found")
+
+    @app.delete("/api/characters/{character_id}", dependencies=[Depends(_check_auth)])
+    async def delete_character(character_id: str):
+        async with _mutation_lock:
+            try:
+                delete_character_service(_engine, character_id)
+                return {"ok": True}
+            except KeyError:
+                raise HTTPException(404, f"Character '{character_id}' not found")
+
+    @app.get("/api/characters/{character_id}/export", dependencies=[Depends(_check_auth)])
+    async def export_character(character_id: str):
+        try:
+            data = export_character_service(_engine, character_id)
+            return data
+        except KeyError:
+            raise HTTPException(404, f"Character '{character_id}' not found")
+
+    @app.post("/api/characters/{character_id}/reflect", dependencies=[Depends(_check_auth)])
+    async def reflect_character(character_id: str):
+        async with _mutation_lock:
+            try:
+                result = reflect_character_service(_engine, character_id)
+                return result
+            except KeyError:
+                raise HTTPException(404, f"Character '{character_id}' not found")
 
     # --- Sessions ---
     @app.post("/api/characters/{character_id}/session", dependencies=[Depends(_check_auth)])

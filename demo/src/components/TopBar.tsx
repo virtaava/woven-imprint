@@ -46,12 +46,13 @@ export function TopBar({ character, provider, sessionId, memoryCount, onOpenProv
       <div className="flex items-center gap-3">
         {provider && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {provider.api_key_configured ? (
+            {(provider.api_key_configured || provider.provider === 'ollama') ? (
               <Wifi className="size-3.5 text-emerald-400" />
             ) : (
               <WifiOff className="size-3.5 text-destructive" />
             )}
-            <span>{provider.provider}/{provider.model}</span>
+            <span className="capitalize">{provider.provider}</span>
+            <span className="text-foreground">{provider.model}</span>
           </div>
         )}
         <Button variant="ghost" size="icon-sm" onClick={onOpenProviderModal}>

@@ -332,7 +332,12 @@ def create_app(
         except Exception as exc:
             raise HTTPException(500, f"Failed to create LLM: {exc}")
 
-        return {"ok": True}
+        return {
+            "provider": body.provider,
+            "model": body.model,
+            "base_url": body.base_url,
+            "api_key_configured": bool(body.api_key or cfg.llm.api_key),
+        }
 
     @app.post("/api/config/provider/test", dependencies=[Depends(_check_auth)])
     async def test_provider(body: ProviderConfigRequest):

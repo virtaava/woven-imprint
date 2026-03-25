@@ -95,7 +95,7 @@ INSERT OR IGNORE INTO schema_version (version) VALUES (1);
 
 # Future migrations go here: version → SQL
 _MIGRATIONS: dict[int, str] = {
-    # 2: "ALTER TABLE characters ADD COLUMN ...",
+    2: "ALTER TABLE sessions ADD COLUMN alias TEXT;",
 }
 
 
@@ -406,3 +406,19 @@ class SQLiteStorage:
             (character_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def rename_session(self, session_id: str, alias: str) -> None:
+        """Set or update the alias for a session."""
+        self._conn.execute(
+            "UPDATE sessions SET alias = ? WHERE id = ?",
+            (alias, session_id),
+        )
+        self._commit()
+
+    def reopen_session(self, session_id: str) -> None:
+        """Clear ended_at so the session is active again."""
+        self._conn.execute(
+            "UPDATE sessions SET ended_at = NULL WHERE id = ?",
+            (session_id,),
+        )
+        self._commit()

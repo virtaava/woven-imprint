@@ -7,6 +7,7 @@ import logging
 import secrets
 import time
 import uuid
+from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from starlette.responses import HTMLResponse
 from starlette.staticfiles import StaticFiles
 
 from woven_imprint import __version__
-from woven_imprint.config import get_config, WovenConfig, LLMConfig
+from woven_imprint.config import get_config, save_config, WovenConfig, LLMConfig
 from woven_imprint.engine import Engine
 from woven_imprint.server.models import (
     ChatCompletionRequest,
@@ -37,10 +38,13 @@ from woven_imprint.server.services import (
     get_relationship_service,
     import_character_service,
     list_characters_service,
+    list_sessions_service,
     migrate_character_service,
     recall_memories_service,
     record_message_service,
     reflect_character_service,
+    rename_session_service,
+    resume_session_service,
     start_session_service,
 )
 
@@ -49,7 +53,17 @@ logger = logging.getLogger(__name__)
 # Module-level state
 _engine: Engine | None = None
 _auth_token: str = ""
-_mutation_lock: asyncio.Lock = asyncio.Lock()
+_engine_lock: asyncio.Lock = asyncio.Lock()
+_character_lock_guard: asyncio.Lock = asyncio.Lock()
+_character_locks: dict[str, asyncio.Lock] = {}
+_AUTH_COOKIE_NAME = "woven_demo_auth"
+_rate_limit_lock: asyncio.Lock = asyncio.Lock()
+_rate_limit_events: dict[str, deque[float]] = {}
+_RATE_LIMIT_RULES = {
+    "chat": {"limit": 20, "window": 60.0},
+    "mutation": {"limit": 60, "window": 60.0},
+    "read": {"limit": 240, "window": 60.0},
+}
 
 STATIC_DIR = Path(__file__).parent.parent / "demo_static"
 
@@ -62,8 +76,86 @@ STATIC_DIR = Path(__file__).parent.parent / "demo_static"
 def _check_auth(request: Request) -> None:
     """Validate Bearer token on protected routes."""
     auth = request.headers.get("authorization", "")
-    if not auth.startswith("Bearer ") or auth[7:] != _auth_token:
+    cookie_token = request.cookies.get(_AUTH_COOKIE_NAME, "")
+    bearer_ok = auth.startswith("Bearer ") and auth[7:] == _auth_token
+    cookie_ok = cookie_token == _auth_token
+    if not bearer_ok and not cookie_ok:
         raise HTTPException(401, "Invalid or missing auth token")
+
+
+def _rate_limit_bucket(request: Request) -> str | None:
+    path = request.url.path
+    if request.method == "OPTIONS" or path == "/api/health":
+        return None
+    if path == "/" or path.startswith("/assets/") or path == "/favicon.svg":
+        return None
+    if path == "/v1/chat/completions":
+        return "chat"
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        return "mutation"
+    if path.startswith("/api/") or path.startswith("/v1/"):
+        return "read"
+    return None
+
+
+async def _enforce_rate_limit(request: Request) -> JSONResponse | None:
+    bucket = _rate_limit_bucket(request)
+    if bucket is None:
+        return None
+
+    rule = _RATE_LIMIT_RULES[bucket]
+    limit = int(rule["limit"])
+    window = float(rule["window"])
+    client_host = request.client.host if request.client else "unknown"
+    key = f"{client_host}:{bucket}"
+    now = time.monotonic()
+
+    async with _rate_limit_lock:
+        events = _rate_limit_events.setdefault(key, deque())
+        cutoff = now - window
+        while events and events[0] <= cutoff:
+            events.popleft()
+
+        if len(events) >= limit:
+            retry_after = max(1, int(events[0] + window - now))
+            return JSONResponse(
+                {
+                    "error": "rate_limited",
+                    "detail": "Too many requests. Please retry shortly.",
+                },
+                status_code=429,
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        events.append(now)
+
+    return None
+
+
+@asynccontextmanager
+async def _engine_mutation():
+    """Guard global structural mutations.
+
+    Use for operations that change the engine-wide character set or shared
+    runtime configuration. Do not nest character locks inside this context.
+    """
+    async with _engine_lock:
+        yield
+
+
+@asynccontextmanager
+async def _character_mutation(character_id: str):
+    """Guard mutations scoped to a single character.
+
+    Character-local operations may run concurrently across different
+    characters, but serialize per character. Do not acquire the engine lock
+    from inside this context.
+    """
+    async with _character_lock_guard:
+        lock = _character_locks.setdefault(character_id, asyncio.Lock())
+
+    async with lock:
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -117,12 +209,21 @@ def create_app(
     if engine is not None:
         _engine = engine
     _auth_token = token or secrets.token_urlsafe(32)
+    _rate_limit_events.clear()
+    _character_locks.clear()
 
     app = FastAPI(
         title="woven-imprint demo",
         version=__version__,
         lifespan=_lifespan,
     )
+
+    @app.middleware("http")
+    async def rate_limit_middleware(request: Request, call_next):
+        limited = await _enforce_rate_limit(request)
+        if limited is not None:
+            return limited
+        return await call_next(request)
 
     # CORS — locked to localhost by default; if host is 0.0.0.0, allow all origins
     # (needed for Tailscale / remote access)
@@ -152,14 +253,20 @@ def create_app(
 
     # --- Token-injected index ---
     @app.get("/")
-    async def index_with_token():
+    async def index_with_token(request: Request):
         index_path = STATIC_DIR / "index.html"
         if not index_path.exists():
             return JSONResponse({"error": "Demo UI not built"}, 503)
         html = index_path.read_text()
-        inject = f'<script>window.__WOVEN_TOKEN__="{_auth_token}";</script>'
-        html = html.replace("</head>", f"{inject}</head>", 1)
-        return HTMLResponse(html)
+        response = HTMLResponse(html)
+        response.set_cookie(
+            key=_AUTH_COOKIE_NAME,
+            value=_auth_token,
+            httponly=True,
+            samesite="strict",
+            secure=request.url.scheme == "https",
+        )
+        return response
 
     # --- Characters ---
     @app.get("/api/characters", dependencies=[Depends(_check_auth)])
@@ -168,7 +275,7 @@ def create_app(
 
     @app.post("/api/characters", dependencies=[Depends(_check_auth)])
     async def create_character(body: CreateCharacterRequest):
-        async with _mutation_lock:
+        async with _engine_mutation():
             persona = body.persona
             if isinstance(persona, str):
                 persona = {"personality": persona}
@@ -185,7 +292,7 @@ def create_app(
     @app.post("/api/characters/import", dependencies=[Depends(_check_auth)])
     async def import_character(request: Request):
         body = await request.json()
-        async with _mutation_lock:
+        async with _engine_mutation():
             try:
                 result = import_character_service(_engine, body)
                 return result
@@ -218,7 +325,7 @@ def create_app(
             tmp.write(content)
             tmp_path = tmp.name
 
-        async with _mutation_lock:
+        async with _engine_mutation():
             try:
                 result = migrate_character_service(
                     _engine, name=str(name) if name else None, file_path=tmp_path
@@ -238,7 +345,7 @@ def create_app(
         text = body.get("text")
         if not name:
             raise HTTPException(400, "Name is required")
-        async with _mutation_lock:
+        async with _engine_mutation():
             try:
                 result = migrate_character_service(_engine, name, text=text)
                 return result
@@ -254,9 +361,10 @@ def create_app(
 
     @app.delete("/api/characters/{character_id}", dependencies=[Depends(_check_auth)])
     async def delete_character(character_id: str):
-        async with _mutation_lock:
+        async with _engine_mutation():
             try:
                 delete_character_service(_engine, character_id)
+                _character_locks.pop(character_id, None)
                 return {"ok": True}
             except KeyError:
                 raise HTTPException(404, f"Character '{character_id}' not found")
@@ -271,7 +379,7 @@ def create_app(
 
     @app.post("/api/characters/{character_id}/reflect", dependencies=[Depends(_check_auth)])
     async def reflect_character(character_id: str):
-        async with _mutation_lock:
+        async with _character_mutation(character_id):
             try:
                 result = reflect_character_service(_engine, character_id)
                 return result
@@ -281,7 +389,7 @@ def create_app(
     # --- Sessions ---
     @app.post("/api/characters/{character_id}/session", dependencies=[Depends(_check_auth)])
     async def start_session(character_id: str):
-        async with _mutation_lock:
+        async with _character_mutation(character_id):
             try:
                 return start_session_service(_engine, character_id)
             except KeyError:
@@ -289,16 +397,48 @@ def create_app(
 
     @app.delete("/api/characters/{character_id}/session", dependencies=[Depends(_check_auth)])
     async def end_session(character_id: str):
-        async with _mutation_lock:
+        async with _character_mutation(character_id):
             try:
                 return end_session_service(_engine, character_id)
+            except KeyError:
+                raise HTTPException(404, f"Character '{character_id}' not found")
+
+    # --- Session history / management ---
+    @app.get("/api/characters/{character_id}/sessions", dependencies=[Depends(_check_auth)])
+    async def list_sessions(character_id: str, limit: int = 20):
+        try:
+            return list_sessions_service(_engine, character_id, limit=limit)
+        except KeyError:
+            raise HTTPException(404, f"Character '{character_id}' not found")
+
+    @app.patch(
+        "/api/characters/{character_id}/sessions/{session_id}", dependencies=[Depends(_check_auth)]
+    )
+    async def rename_session(character_id: str, session_id: str, request: Request):
+        body = await request.json()
+        alias = body.get("alias", "").strip()
+        if not alias:
+            raise HTTPException(400, "alias is required")
+        try:
+            return rename_session_service(_engine, character_id, session_id, alias)
+        except KeyError:
+            raise HTTPException(404, f"Character '{character_id}' not found")
+
+    @app.post(
+        "/api/characters/{character_id}/sessions/{session_id}/resume",
+        dependencies=[Depends(_check_auth)],
+    )
+    async def resume_session(character_id: str, session_id: str):
+        async with _character_mutation(character_id):
+            try:
+                return resume_session_service(_engine, character_id, session_id)
             except KeyError:
                 raise HTTPException(404, f"Character '{character_id}' not found")
 
     # --- Record ---
     @app.post("/api/record", dependencies=[Depends(_check_auth)])
     async def record_message(body: RecordMessageRequest):
-        async with _mutation_lock:
+        async with _character_mutation(body.character_id):
             try:
                 record_message_service(
                     _engine,
@@ -345,12 +485,11 @@ def create_app(
     # --- OpenAI-compatible chat completions ---
     @app.post("/v1/chat/completions", dependencies=[Depends(_check_auth)])
     async def chat_completions(body: ChatCompletionRequest):
-        async with _mutation_lock:
-            # Find character by model name
-            match = find_character_by_name_or_id(_engine, body.model)
-            if not match:
-                raise HTTPException(404, f"No character matches model '{body.model}'")
+        match = find_character_by_name_or_id(_engine, body.model)
+        if not match:
+            raise HTTPException(404, f"No character matches model '{body.model}'")
 
+        async with _character_mutation(match["id"]):
             char = _engine.get_character(match["id"])
             user_msg = extract_last_user_message(body.messages)
             user_id = extract_user_id_from_messages(body.messages)
@@ -423,19 +562,20 @@ def create_app(
     async def set_provider_config(body: ProviderConfigRequest):
         from woven_imprint.providers import create_llm
 
-        cfg = get_config()
-        cfg.llm.llm_provider = body.provider
-        cfg.llm.model = body.model
-        if body.api_key is not None:
-            cfg.llm.api_key = body.api_key
-        if body.base_url is not None:
-            cfg.llm.base_url = body.base_url
+        async with _engine_mutation():
+            cfg = get_config()
+            cfg.llm.llm_provider = body.provider
+            cfg.llm.model = body.model
+            if body.api_key is not None:
+                cfg.llm.api_key = body.api_key
+            if body.base_url is not None:
+                cfg.llm.base_url = body.base_url
 
-        # Rebuild engine LLM
-        try:
-            _engine.llm = create_llm(cfg=cfg)
-        except Exception as exc:
-            raise HTTPException(500, f"Failed to create LLM: {exc}")
+            try:
+                _engine.llm = create_llm(cfg=cfg)
+                save_config(cfg)
+            except Exception as exc:
+                raise HTTPException(500, f"Failed to create LLM: {exc}")
 
         return {
             "provider": body.provider,
@@ -560,18 +700,16 @@ def _import_seed_db(engine: Engine, seed_path: Path) -> None:
     """Import Meridian character data from pre-built seed database."""
     import sqlite3
 
+    from woven_imprint.data.meridian_persona import MERIDIAN_PERSONA, MERIDIAN_BIRTHDATE
+
     seed_conn = sqlite3.connect(str(seed_path))
     seed_conn.row_factory = sqlite3.Row
-
     row = seed_conn.execute("SELECT * FROM characters WHERE name = 'Meridian' LIMIT 1").fetchone()
     if not row:
         seed_conn.close()
         return
 
     char_id = row["id"]
-
-    from woven_imprint.data.meridian_persona import MERIDIAN_PERSONA, MERIDIAN_BIRTHDATE
-
     char = engine.create_character(
         name="Meridian",
         persona=MERIDIAN_PERSONA,
@@ -579,20 +717,68 @@ def _import_seed_db(engine: Engine, seed_path: Path) -> None:
         character_id=char_id,
     )
 
-    memories = seed_conn.execute(
-        "SELECT content, tier, importance FROM memories WHERE character_id = ?",
+    storage = getattr(engine, "storage", None)
+    conn = getattr(storage, "_conn", None)
+
+    if conn is None:
+        memories = seed_conn.execute(
+            "SELECT content, tier, importance FROM memories WHERE character_id = ?",
+            (char_id,),
+        ).fetchall()
+        for mem in memories:
+            char.memory.add(
+                content=mem["content"],
+                tier=mem["tier"],
+                importance=mem["importance"],
+            )
+        seed_conn.close()
+        logger.info(f"Imported {len(memories)} seed memories for Meridian")
+        return
+
+    memory_count_row = seed_conn.execute(
+        "SELECT COUNT(*) AS count FROM memories WHERE character_id = ?",
         (char_id,),
-    ).fetchall()
-
-    for mem in memories:
-        char.memory.add(
-            content=mem["content"],
-            tier=mem["tier"],
-            importance=mem["importance"],
-        )
-
+    ).fetchone()
     seed_conn.close()
-    logger.info(f"Imported {len(memories)} seed memories for Meridian")
+
+    attached = False
+    try:
+        conn.execute("ATTACH DATABASE ? AS meridian_seed", (str(seed_path),))
+        attached = True
+        conn.execute(
+            """
+            INSERT INTO memories
+                (id, character_id, tier, content, embedding, importance, certainty,
+                 status, source_refs, session_id, role, metadata, created_at, accessed_at)
+            SELECT
+                id, ?, tier, content, embedding, importance, certainty,
+                status, source_refs, session_id, role, metadata, created_at, accessed_at
+            FROM meridian_seed.memories
+            WHERE character_id = ?
+            ON CONFLICT(id) DO UPDATE SET
+                character_id=excluded.character_id,
+                tier=excluded.tier,
+                content=excluded.content,
+                embedding=excluded.embedding,
+                importance=excluded.importance,
+                certainty=excluded.certainty,
+                status=excluded.status,
+                source_refs=excluded.source_refs,
+                session_id=excluded.session_id,
+                role=excluded.role,
+                metadata=excluded.metadata,
+                created_at=excluded.created_at,
+                accessed_at=excluded.accessed_at
+            """,
+            (char.id, char_id),
+        )
+        storage._commit()
+    finally:
+        if attached:
+            conn.execute("DETACH DATABASE meridian_seed")
+
+    imported = memory_count_row["count"] if memory_count_row else 0
+    logger.info(f"Merged {imported} seed memories for Meridian")
 
 
 def _seed_meridian_if_needed(engine: Engine) -> None:
@@ -666,7 +852,6 @@ def run_demo_server(
     url = f"http://{host}:{port}"
     print(f"\n  woven-imprint demo v{__version__}")
     print(f"  URL:   {url}")
-    print(f"  Token: {token}")
     if host != "127.0.0.1":
         print(f"  ⚠ Bound to {host} — accessible from network")
     print()

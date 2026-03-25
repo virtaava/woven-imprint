@@ -112,6 +112,21 @@ class Character:
         )
         return self._session_id
 
+    def resume_session(self, session_id: str) -> str:
+        """Resume a previous session. New messages will be tagged with that session ID.
+
+        Args:
+            session_id: The session ID to resume.
+
+        Returns:
+            The resumed session ID.
+        """
+        self._session_id = session_id
+        self._turn_count = 0
+        self._context.clear()
+        self.storage.reopen_session(session_id)
+        return session_id
+
     def chat(self, message: str, user_id: str | None = None) -> str:
         """Send a message and get an in-character response.
 

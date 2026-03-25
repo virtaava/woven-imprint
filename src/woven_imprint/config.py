@@ -16,7 +16,7 @@ Usage:
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 
@@ -380,4 +380,40 @@ migration:
   chunk_size: 50
 """
     p.write_text(content)
+    return p
+
+
+def _format_yaml_scalar(value) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _dump_simple_yaml(data: dict, indent: int = 0) -> list[str]:
+    lines: list[str] = []
+    pad = " " * indent
+    for key, value in data.items():
+        if isinstance(value, dict):
+            lines.append(f"{pad}{key}:")
+            lines.extend(_dump_simple_yaml(value, indent + 2))
+        else:
+            lines.append(f"{pad}{key}: {_format_yaml_scalar(value)}")
+    return lines
+
+
+def save_config(cfg: WovenConfig | None = None, path: str | None = None) -> Path:
+    """Persist config to config.yaml."""
+    p = Path(path or _config_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    data = asdict(cfg or get_config())
+
+    try:
+        import yaml
+
+        p.write_text(yaml.safe_dump(data, sort_keys=False))
+    except ImportError:
+        p.write_text("\n".join(_dump_simple_yaml(data)) + "\n")
+
     return p

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { BookOpen, Send, Loader2, Sparkles } from 'lucide-react'
+import { BookOpen, Send, Loader2, Sparkles, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -19,9 +19,10 @@ interface ChatPanelProps {
   onReflect?: () => void
   reflectLoading?: boolean
   characterSelected?: boolean
+  onNewSession?: () => void
 }
 
-export function ChatPanel({ messages, loading, onSend, onReflect, reflectLoading = false, characterSelected = true }: ChatPanelProps) {
+export function ChatPanel({ messages, loading, onSend, onReflect, reflectLoading = false, characterSelected = true, onNewSession }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const showChips = messages.length <= 1 // Only show on first greeting
@@ -170,26 +171,40 @@ export function ChatPanel({ messages, loading, onSend, onReflect, reflectLoading
           </Button>
         </div>
         {characterSelected && (
-          <Button
-            type="button"
-            variant="outline"
-            size="default"
-            disabled={reflectLoading || loading}
-            onClick={handleReflect}
-            className="w-full"
-          >
-            {reflectLoading ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                <span>Reflecting...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="size-4" />
-                <span>Reflect</span>
-              </>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="default"
+              disabled={reflectLoading || loading}
+              onClick={handleReflect}
+              className="flex-1"
+            >
+              {reflectLoading ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  <span>Reflecting...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="size-4" />
+                  <span>Reflect</span>
+                </>
+              )}
+            </Button>
+            {onNewSession && (
+              <Button
+                type="button"
+                variant="outline"
+                size="default"
+                disabled={reflectLoading || loading}
+                onClick={onNewSession}
+              >
+                <RotateCcw className="size-4" />
+                <span>New Session</span>
+              </Button>
             )}
-          </Button>
+          </div>
         )}
       </div>
     </div>

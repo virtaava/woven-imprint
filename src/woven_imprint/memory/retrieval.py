@@ -106,15 +106,17 @@ class MemoryRetriever:
         if not all_memories:
             return []
 
-        # Strategy 1: Semantic ranking
-        query_embedding = self.embedder.embed(query)
-        semantic_scores = []
-        for m in all_memories:
-            if m.get("embedding"):
-                sim = _cosine_similarity(query_embedding, m["embedding"])
-                semantic_scores.append((m["id"], sim))
-        semantic_scores.sort(key=lambda x: x[1], reverse=True)
-        semantic_ranked = [mid for mid, _ in semantic_scores]
+        # Strategy 1: Semantic ranking (skip if query empty)
+        semantic_ranked = []
+        if query.strip():
+            query_embedding = self.embedder.embed(query)
+            semantic_scores = []
+            for m in all_memories:
+                if m.get("embedding"):
+                    sim = _cosine_similarity(query_embedding, m["embedding"])
+                    semantic_scores.append((m["id"], sim))
+            semantic_scores.sort(key=lambda x: x[1], reverse=True)
+            semantic_ranked = [mid for mid, _ in semantic_scores]
 
         # Strategy 2: Keyword ranking (BM25 via FTS5) — uses pre-fetched candidates
         keyword_ranked = [m["id"] for m in fts_candidates]
@@ -127,11 +129,16 @@ class MemoryRetriever:
         recency_scores.sort(key=lambda x: x[1], reverse=True)
         recency_ranked = [mid for mid, _ in recency_scores]
 
-        # Strategy 4: Importance with tier boost
+        # Strategy 4: Importance with tier boost + user affinity
         importance_scores = []
         for m in all_memories:
             base = m.get("importance", 0.5) * m.get("certainty", 1.0)
             boost = _get_tier_boosts().get(m.get("tier", "buffer"), 0.0)
+            # User affinity bonus
+            if relationship_target:
+                meta = m.get("metadata", {})
+                if meta.get("user_id") == relationship_target:
+                    base += 0.2
             importance_scores.append((m["id"], base + boost))
         importance_scores.sort(key=lambda x: x[1], reverse=True)
         importance_ranked = [mid for mid, _ in importance_scores]

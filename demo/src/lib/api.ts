@@ -1,8 +1,5 @@
-const getToken = () => (window as any).__WOVEN_TOKEN__ || ''
-
 const headers = () => ({
   'Content-Type': 'application/json',
-  'Authorization': `Bearer ${getToken()}`,
 })
 
 const API_BASE = ''  // Same origin
@@ -115,7 +112,7 @@ export async function importCharacterFile(file: File, name?: string) {
   if (name) formData.append('name', name)
   const res = await fetch(`${API_BASE}/api/characters/import-file`, {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${getToken()}` },  // No Content-Type — browser sets multipart boundary
+    // No Content-Type — browser sets multipart boundary
     body: formData,
   })
   return res.json()
@@ -141,6 +138,29 @@ export async function reflectCharacter(id: string) {
 export async function endSession(characterId: string) {
   const res = await fetch(`${API_BASE}/api/characters/${characterId}/session`, {
     method: 'DELETE',
+    headers: headers(),
+  })
+  return res.json()
+}
+
+export async function fetchSessions(characterId: string, limit = 20) {
+  const params = new URLSearchParams({ limit: String(limit) })
+  const res = await fetch(`${API_BASE}/api/characters/${characterId}/sessions?${params}`, { headers: headers() })
+  return res.json()
+}
+
+export async function renameSession(characterId: string, sessionId: string, alias: string) {
+  const res = await fetch(`${API_BASE}/api/characters/${characterId}/sessions/${sessionId}`, {
+    method: 'PATCH',
+    headers: headers(),
+    body: JSON.stringify({ alias }),
+  })
+  return res.json()
+}
+
+export async function resumeSession(characterId: string, sessionId: string) {
+  const res = await fetch(`${API_BASE}/api/characters/${characterId}/sessions/${sessionId}/resume`, {
+    method: 'POST',
     headers: headers(),
   })
   return res.json()

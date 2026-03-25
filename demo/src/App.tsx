@@ -15,8 +15,11 @@ import {
   recallMemories,
   fetchRelationship,
   reflectCharacter,
+  fetchSessions,
+  renameSession as renameSessionApi,
+  resumeSession as resumeSessionApi,
 } from '@/lib/api'
-import type { ChatMessage, CharacterState, CharacterSummary, Memory, Relationship, ProviderConfig } from '@/lib/types'
+import type { ChatMessage, CharacterState, CharacterSummary, Memory, Relationship, ProviderConfig, Session } from '@/lib/types'
 
 const MERIDIAN_GREETING: ChatMessage = {
   role: 'assistant',
@@ -47,6 +50,7 @@ export default function App() {
     localStorage.getItem('woven-character-id')
   )
   const [characters, setCharacters] = useState<CharacterSummary[]>([])
+  const [sessions, setSessions] = useState<Session[]>([])
   const [searchResults, setSearchResults] = useState<Memory[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [xrayVisible, setXrayVisible] = useState(() => {
@@ -154,6 +158,16 @@ export default function App() {
     }
   }, [])
 
+  const refreshSessions = useCallback(async () => {
+    if (!characterId) return
+    try {
+      const res = await fetchSessions(characterId)
+      setSessions(res.sessions || [])
+    } catch {
+      // ignore
+    }
+  }, [characterId])
+
   const refreshXRay = useCallback(async () => {
     if (!characterId) return
     try {
@@ -174,7 +188,8 @@ export default function App() {
     } catch {
       // ignore
     }
-  }, [characterId])
+    await refreshSessions()
+  }, [characterId, refreshSessions])
 
   const handleSend = useCallback(
     async (text: string) => {
@@ -260,6 +275,55 @@ export default function App() {
     },
     [characterId]
   )
+
+  const handleNewSession = useCallback(async () => {
+    if (!characterId) return
+    // End current session
+    if (sessionId) {
+      try { await endSession(characterId) } catch { /* ignore */ }
+    }
+    // Start fresh session
+    try {
+      const session = await startSession(characterId)
+      setSessionId(session.session_id || session.id || 'active')
+      setMessages([{
+        role: 'system',
+        content: 'New session started. The character remembers everything from previous sessions.',
+      }])
+      await refreshSessions()
+    } catch {
+      // ignore
+    }
+  }, [characterId, sessionId, refreshSessions])
+
+  const handleResumeSession = useCallback(async (sid: string) => {
+    if (!characterId) return
+    // End current session if active
+    if (sessionId && sessionId !== sid) {
+      try { await endSession(characterId) } catch { /* ignore */ }
+    }
+    try {
+      await resumeSessionApi(characterId, sid)
+      setSessionId(sid)
+      setMessages([{
+        role: 'system',
+        content: 'Resumed previous session. Continue where you left off.',
+      }])
+      await refreshSessions()
+    } catch {
+      // ignore
+    }
+  }, [characterId, sessionId, refreshSessions])
+
+  const handleRenameSession = useCallback(async (sid: string, alias: string) => {
+    if (!characterId) return
+    try {
+      await renameSessionApi(characterId, sid, alias)
+      await refreshSessions()
+    } catch {
+      // ignore
+    }
+  }, [characterId, refreshSessions])
 
   const handleProviderSaved = useCallback(
     async (config: ProviderConfig) => {
@@ -355,6 +419,7 @@ export default function App() {
             onReflect={handleReflect}
             reflectLoading={reflectLoading}
             characterSelected={!!characterId}
+            onNewSession={handleNewSession}
           />
         </div>
 
@@ -368,6 +433,10 @@ export default function App() {
               onSearchMemory={handleSearchMemory}
               searchResults={searchResults}
               searchLoading={searchLoading}
+              sessions={sessions}
+              activeSessionId={sessionId}
+              onResumeSession={handleResumeSession}
+              onRenameSession={handleRenameSession}
             />
           </div>
         )}

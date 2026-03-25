@@ -57,6 +57,10 @@ class OllamaEmbedding(EmbeddingProvider):
             raise
 
     def embed(self, text: str) -> list[float]:
+        if not text.strip():
+            # Return zero vector of appropriate dimensionality
+            dims = self.dimensions()
+            return [0.0] * dims
         resp = self._post({"model": self.model, "input": text})
         embeddings = resp.json()["embeddings"]
         vec = embeddings[0]
@@ -65,11 +69,34 @@ class OllamaEmbedding(EmbeddingProvider):
         return vec
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        resp = self._post({"model": self.model, "input": texts})
+        # Handle empty strings by returning zero vectors
+        if not texts:
+            return []
+        # Get dimensionality (will call embed("test") if unknown)
+        dims = self.dimensions()
+        # Prepare result list
+        results = []
+        non_empty_indices = []
+        non_empty_texts = []
+        for i, text in enumerate(texts):
+            if not text.strip():
+                results.append([0.0] * dims)
+            else:
+                results.append(None)  # placeholder
+                non_empty_indices.append(i)
+                non_empty_texts.append(text)
+        # If all texts were empty, return zero vectors
+        if not non_empty_texts:
+            return results
+        # Get embeddings for non-empty texts
+        resp = self._post({"model": self.model, "input": non_empty_texts})
         vecs = resp.json()["embeddings"]
         if self._dims is None and vecs:
             self._dims = len(vecs[0])
-        return vecs
+        # Place embeddings at correct positions
+        for idx, vec in zip(non_empty_indices, vecs):
+            results[idx] = vec
+        return results
 
     def dimensions(self) -> int:
         if self._dims is None:

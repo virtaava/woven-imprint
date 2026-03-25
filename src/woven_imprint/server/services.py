@@ -176,3 +176,24 @@ def reflect_character_service(engine, character_id):
     char = engine.get_character(character_id)
     reflection = char.reflect()
     return {"reflection": reflection}
+
+
+def list_sessions_service(engine, character_id, limit=20):
+    """List past sessions for a character. Raises KeyError if not found."""
+    char = engine.get_character(character_id)
+    sessions = char.storage.get_sessions(character_id, limit=limit)
+    return {"sessions": sessions}
+
+
+def rename_session_service(engine, character_id, session_id, alias):
+    """Set or update the alias for a session."""
+    engine.get_character(character_id)  # verify character exists
+    engine.storage.rename_session(session_id, alias)
+    return {"session_id": session_id, "alias": alias}
+
+
+def resume_session_service(engine, character_id, session_id):
+    """Resume a previous session. Returns session_id."""
+    char = engine.get_character(character_id)
+    char.resume_session(session_id)
+    return {"session_id": session_id}

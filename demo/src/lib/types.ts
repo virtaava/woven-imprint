@@ -37,3 +37,12 @@ export interface CharacterSummary {
   character_id?: string
   name: string
 }
+
+export interface Session {
+  id: string
+  character_id: string
+  alias: string | null
+  summary: string | null
+  started_at: string
+  ended_at: string | null
+}

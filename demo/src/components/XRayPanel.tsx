@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts'
-import { Brain, Search, Activity, Zap } from 'lucide-react'
+import { Brain, Search, Activity, Zap, Clock, Play, Pencil, Check } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import type { CharacterState, Memory, Relationship } from '@/lib/types'
+import type { CharacterState, Memory, Relationship, Session } from '@/lib/types'
 
 const TIER_COLORS: Record<string, string> = {
   bedrock: 'text-amber-400 border-amber-400/30 bg-amber-400/10',
@@ -22,10 +22,16 @@ interface XRayPanelProps {
   onSearchMemory: (query: string) => void
   searchResults: Memory[]
   searchLoading: boolean
+  sessions?: Session[]
+  activeSessionId?: string | null
+  onResumeSession?: (sessionId: string) => void
+  onRenameSession?: (sessionId: string, alias: string) => void
 }
 
-export function XRayPanel({ character, memories, relationship, onSearchMemory, searchResults, searchLoading }: XRayPanelProps) {
+export function XRayPanel({ character, memories, relationship, onSearchMemory, searchResults, searchLoading, sessions = [], activeSessionId, onResumeSession, onRenameSession }: XRayPanelProps) {
   const [searchQuery, setSearchQuery] = useState('')
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const [editAlias, setEditAlias] = useState('')
 
   const radarData = relationship
     ? [
@@ -44,7 +50,7 @@ export function XRayPanel({ character, memories, relationship, onSearchMemory, s
   }
 
   return (
-    <ScrollArea className="h-full overflow-auto border-l border-border bg-card/50">
+    <ScrollArea className="h-full max-h-[40vh] overflow-auto bg-card/50 lg:max-h-none">
       <div className="flex flex-col gap-4 p-4">
         {/* Header */}
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -153,6 +159,98 @@ export function XRayPanel({ character, memories, relationship, onSearchMemory, s
             )}
           </CardContent>
         </Card>
+
+        {/* Session History */}
+        {sessions.length > 0 && (
+          <>
+            <Separator />
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-xs">
+                  <Clock className="size-3.5 text-amber-400" />
+                  Sessions
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-1.5">
+                  {sessions.slice(0, 10).map((s) => {
+                    const isActive = s.id === activeSessionId
+                    const isEditing = editingSessionId === s.id
+                    const label = s.alias || s.summary?.slice(0, 60) || s.id.slice(0, 12)
+                    const date = s.started_at ? new Date(s.started_at + 'Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''
+
+                    return (
+                      <div
+                        key={s.id}
+                        className={`flex items-center gap-1.5 rounded-md border p-1.5 text-[11px] ${
+                          isActive
+                            ? 'border-amber-400/40 bg-amber-400/10'
+                            : 'border-border/50 bg-background/50'
+                        }`}
+                      >
+                        {isEditing ? (
+                          <form
+                            className="flex flex-1 gap-1"
+                            onSubmit={(e) => {
+                              e.preventDefault()
+                              if (editAlias.trim() && onRenameSession) {
+                                onRenameSession(s.id, editAlias.trim())
+                              }
+                              setEditingSessionId(null)
+                            }}
+                          >
+                            <Input
+                              value={editAlias}
+                              onChange={(e) => setEditAlias(e.target.value)}
+                              className="h-5 flex-1 text-[11px]"
+                              autoFocus
+                            />
+                            <Button type="submit" variant="ghost" size="icon" className="size-5">
+                              <Check className="size-3" />
+                            </Button>
+                          </form>
+                        ) : (
+                          <>
+                            <span className="flex-1 truncate">{label}</span>
+                            <span className="shrink-0 text-muted-foreground">{date}</span>
+                            {onRenameSession && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-5"
+                                onClick={() => {
+                                  setEditingSessionId(s.id)
+                                  setEditAlias(s.alias || '')
+                                }}
+                              >
+                                <Pencil className="size-2.5" />
+                              </Button>
+                            )}
+                            {!isActive && onResumeSession && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-5"
+                                onClick={() => onResumeSession(s.id)}
+                              >
+                                <Play className="size-2.5" />
+                              </Button>
+                            )}
+                            {isActive && (
+                              <Badge variant="outline" className="h-4 px-1 text-[9px] text-amber-400 border-amber-400/30">
+                                active
+                              </Badge>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
 
         <Separator />
 

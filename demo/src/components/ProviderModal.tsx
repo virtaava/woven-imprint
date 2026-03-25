@@ -72,23 +72,24 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
     setTestPassed(false)
     setAvailableModels([])
 
-    // Don't auto-fetch for Custom — user needs to enter URL first
-    if (open && !isCustom) {
+    // Auto-fetch only for Ollama (no key needed). For cloud providers,
+    // user enters their API key first, then clicks refresh.
+    if (open && selected.id === 'ollama') {
       loadModels(selected.id, selected.defaultUrl || '')
     }
   }, [selectedKey])
 
-  // Re-fetch when modal opens
+  // Re-fetch when modal opens (only for Ollama — local, no key)
   useEffect(() => {
-    if (open) {
+    if (open && provider === 'ollama') {
       loadModels(provider, baseUrl)
     }
   }, [open])
 
-  const loadModels = async (prov: string, url?: string) => {
+  const loadModels = async (prov: string, url?: string, key?: string) => {
     setLoadingModels(true)
     try {
-      const res = await fetchAvailableModels(prov, url || undefined)
+      const res = await fetchAvailableModels(prov, url || undefined, key || undefined)
       setAvailableModels(res.models || [])
     } catch {
       setAvailableModels([])
@@ -98,7 +99,7 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
   }
 
   const handleRefreshModels = () => {
-    loadModels(provider, baseUrl)
+    loadModels(provider, baseUrl, apiKey)
   }
 
   const handleTest = async () => {
@@ -226,11 +227,25 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-muted-foreground">Model</label>
-              {loadingModels && (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Loader2 className="size-3 animate-spin" /> Loading models...
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {loadingModels && (
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Loader2 className="size-3 animate-spin" /> Loading...
+                  </span>
+                )}
+                {!loadingModels && availableModels.length === 0 && (selected?.needsKey ? apiKey : true) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRefreshModels}
+                    className="h-5 px-2 text-xs text-muted-foreground"
+                    disabled={isCustom && !baseUrl}
+                  >
+                    <RefreshCw className="mr-1 size-3" />
+                    Fetch models
+                  </Button>
+                )}
+              </div>
             </div>
 
             {availableModels.length > 0 ? (

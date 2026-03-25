@@ -361,16 +361,21 @@ def create_app(
             return {"success": False, "message": str(exc)}
 
     @app.get("/api/config/models", dependencies=[Depends(_check_auth)])
-    async def list_available_models(provider: str, base_url: str | None = None):
-        """Fetch available models from a provider.
+    async def list_available_models(
+        provider: str,
+        base_url: str | None = None,
+        api_key: str | None = None,
+    ):
+        """Fetch available models from a provider by querying its API.
 
-        For local servers (Ollama, llama.cpp, any OpenAI-compatible),
-        queries the actual API. For cloud providers without a custom
-        base_url, returns curated lists.
+        All providers are queried live — no hardcoded lists. Falls back
+        to the configured API key if none is passed explicitly.
         """
         import httpx
 
         models: list[str] = []
+        cfg = get_config()
+        key = api_key or cfg.llm.api_key or ""
 
         async def _try_ollama_tags(url: str) -> list[str]:
             try:
@@ -382,12 +387,32 @@ def create_app(
                 pass
             return []
 
-        async def _try_openai_models(url: str) -> list[str]:
+        async def _try_openai_models(url: str, auth_key: str = "") -> list[str]:
             try:
-                async with httpx.AsyncClient(timeout=5) as client:
-                    resp = await client.get(f"{url}/v1/models")
+                hdrs: dict[str, str] = {}
+                if auth_key:
+                    hdrs["Authorization"] = f"Bearer {auth_key}"
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(f"{url}/v1/models", headers=hdrs)
                     if resp.status_code == 200:
                         return [m["id"] for m in resp.json().get("data", [])]
+            except Exception:
+                pass
+            return []
+
+        async def _try_anthropic_models(auth_key: str) -> list[str]:
+            try:
+                hdrs = {
+                    "x-api-key": auth_key,
+                    "anthropic-version": "2023-06-01",
+                }
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(
+                        "https://api.anthropic.com/v1/models", headers=hdrs
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json().get("data", [])
+                        return [m["id"] for m in data]
             except Exception:
                 pass
             return []
@@ -398,38 +423,23 @@ def create_app(
             if not models:
                 models = await _try_openai_models(url)
 
-        elif provider == "openai" and base_url:
-            # Custom base URL — try to discover models from the server
-            url = base_url.rstrip("/")
-            # Strip /v1 suffix if present for the tags probe
-            bare = url.removesuffix("/v1")
-            models = await _try_ollama_tags(bare)
-            if not models:
-                models = await _try_openai_models(bare)
-            # If still nothing, the server might not list models
-            # (e.g. DeepSeek, NVIDIA) — fall back to curated lists
-            if not models:
-                if "deepseek" in base_url.lower():
-                    models = ["deepseek-chat", "deepseek-reasoner"]
-                elif "nvidia" in base_url.lower() or "nim" in base_url.lower():
-                    models = [
-                        "meta/llama-3.1-8b-instruct",
-                        "meta/llama-3.1-70b-instruct",
-                        "nvidia/llama-3.1-nemotron-70b-instruct",
-                    ]
+        elif provider == "anthropic":
+            if key:
+                models = await _try_anthropic_models(key)
 
         elif provider == "openai":
-            models = [
-                "gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
-                "o4-mini", "o3-mini",
-            ]
-
-        elif provider == "anthropic":
-            models = [
-                "claude-sonnet-4-5-20250514",
-                "claude-haiku-4-5-20251001",
-                "claude-opus-4-20250514",
-            ]
+            if base_url:
+                url = base_url.rstrip("/")
+                bare = url.removesuffix("/v1")
+                # Try Ollama tags first (for local servers)
+                models = await _try_ollama_tags(bare)
+                if not models:
+                    models = await _try_openai_models(bare, key)
+            else:
+                # Default OpenAI API
+                models = await _try_openai_models(
+                    "https://api.openai.com", key
+                )
 
         return {"models": models}
 

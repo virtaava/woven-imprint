@@ -21,6 +21,11 @@ from pathlib import Path
 from typing import Any
 
 from ..engine import Engine
+from .services import (
+    find_character_by_name_or_id,
+    extract_last_user_message,
+    extract_user_id_from_messages,
+)
 
 
 _engine: Engine | None = None
@@ -104,20 +109,8 @@ class OpenAIHandler(BaseHTTPRequestHandler):
 
         engine = _get_engine()
 
-        # Find or create character by model name
-        chars = engine.list_characters()
-        match = next(
-            (
-                c
-                for c in chars
-                if c["name"].lower().replace(" ", "-") == model_name
-                or c["name"].lower().replace(" ", "_") == model_name
-                or c["name"].lower() == model_name
-                or c["id"] == model_name
-            ),
-            None,
-        )
-
+        # Find character by model name
+        match = find_character_by_name_or_id(engine, model_name)
         if not match:
             self._send_error(
                 f"Character '{model_name}' not found. "
@@ -128,26 +121,12 @@ class OpenAIHandler(BaseHTTPRequestHandler):
 
         char = engine.load_character(match["id"])
 
-        # Extract the last user message
-        user_msg = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                user_msg = msg.get("content", "")
-                break
-
+        user_msg = extract_last_user_message(messages)
         if not user_msg:
             self._send_error("no user message found", 400)
             return
 
-        # Extract user_id from the first system message or use default
-        user_id = "api_user"
-        for msg in messages:
-            if msg.get("role") == "system" and "user_id:" in msg.get("content", ""):
-                # Allow user_id override via system message
-                for line in msg["content"].split("\n"):
-                    if line.strip().startswith("user_id:"):
-                        user_id = line.split(":", 1)[1].strip()
-                        break
+        user_id = extract_user_id_from_messages(messages)
 
         # Generate response
         response = char.chat(user_msg, user_id=user_id)

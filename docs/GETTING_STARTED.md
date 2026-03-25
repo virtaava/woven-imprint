@@ -80,7 +80,7 @@ pip install woven-imprint
 woven-imprint chat MyCharacter
 ```
 
-### Remote access (Tailscale / LAN)
+### Remote access (LAN / server)
 
 ```bash
 woven-imprint demo --host 0.0.0.0 --port 7860

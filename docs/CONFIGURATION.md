@@ -230,7 +230,7 @@ server:
 | `api_key` | `null` | `WOVEN_IMPRINT_API_KEY` | Bearer token required for API requests. `null` = no authentication (local dev only). Set this before exposing the API to a network. |
 | `cors_origin` | `http://localhost` | — | Allowed CORS origin for the API server. Change to `*` only if you understand the security implications. |
 | `demo_port` | `7860` | `WOVEN_IMPRINT_DEMO_PORT` | Port for the React demo UI (`woven-imprint demo`). |
-| `demo_host` | `127.0.0.1` | `WOVEN_IMPRINT_DEMO_HOST` | Host to bind the demo UI to. Use `0.0.0.0` for network/Tailscale access. |
+| `demo_host` | `127.0.0.1` | `WOVEN_IMPRINT_DEMO_HOST` | Host to bind the demo UI to. Use `0.0.0.0` to expose on all network interfaces. |
 | `demo_browser` | `true` | `WOVEN_IMPRINT_DEMO_BROWSER` | Whether to open a browser automatically when the demo starts. Set to `false` to launch without opening a browser. |
 
 ---

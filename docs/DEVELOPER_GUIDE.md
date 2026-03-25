@@ -226,7 +226,7 @@ response = client.chat.completions.create(
 ```bash
 woven-imprint demo                          # localhost:7860, auto-open browser
 woven-imprint demo --port 8080              # custom port
-woven-imprint demo --host 0.0.0.0           # expose on all interfaces (Tailscale, LAN)
+woven-imprint demo --host 0.0.0.0           # expose on all network interfaces
 woven-imprint demo --no-browser             # don't open browser
 ```
 

@@ -57,7 +57,7 @@ Opens a browser with:
 - **Character management** — create, import (JSON/PNG/SillyTavern cards), export, migrate
 - **Provider support** — Ollama, OpenAI, Anthropic, DeepSeek, NVIDIA NIM, or any OpenAI-compatible API with live model discovery
 
-Use `--host 0.0.0.0` for remote access over Tailscale/LAN.
+Use `--host 0.0.0.0` to expose on your local network or a remote server.
 
 ## Quick Start
 

@@ -297,6 +297,7 @@ def cmd_update(args):
         if pipx_venv.exists():
             # Check which extras are installed and upgrade them
             extras = {
+                "fastapi": "Demo",
                 "openai": "OpenAI",
                 "anthropic": "Anthropic",
                 "pymupdf": "PDF",

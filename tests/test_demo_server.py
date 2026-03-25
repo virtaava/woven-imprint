@@ -1,4 +1,8 @@
-"""Tests for the FastAPI demo server."""
+"""Tests for the FastAPI demo server.
+
+Requires the [demo] extra (fastapi, uvicorn) and httpx.
+Skipped automatically if not installed.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,10 @@ import sys
 from pathlib import Path
 
 import pytest
+
+# Skip entire module if demo dependencies aren't installed
+pytest.importorskip("fastapi", reason="demo extras not installed")
+pytest.importorskip("httpx", reason="httpx not installed")
 
 # Ensure tests/ helpers are importable
 sys.path.insert(0, str(Path(__file__).parent))

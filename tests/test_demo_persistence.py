@@ -3,6 +3,8 @@
 import os
 import tempfile
 
+import pytest
+
 # Import from shared helpers
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
@@ -77,6 +79,10 @@ class TestCrossSessionPersistence:
             os.unlink(db_path)
 
 
+@pytest.mark.skipif(
+    not __import__("importlib").util.find_spec("fastapi"),
+    reason="demo extras not installed",
+)
 class TestSeedIdempotency:
     """Verify Meridian seeding is safe to run multiple times."""
 

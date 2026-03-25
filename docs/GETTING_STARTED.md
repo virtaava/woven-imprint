@@ -47,6 +47,14 @@ Once connected you'll meet **Meridian**, a demo character who knows how woven-im
 
 ---
 
+## Bringing an existing character?
+
+If you have a character from ChatGPT, a Custom GPT, SillyTavern, or a text file, you can import it and pick up where you left off — memory and all.
+
+→ **[Migration Guide](MIGRATION.md)**
+
+---
+
 ## Platform guides
 
 For a full walkthrough including Python installation and troubleshooting:

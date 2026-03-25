@@ -193,7 +193,6 @@ def create_app(
         Supports: JSON exports, SillyTavern PNG cards, ChatGPT exports,
         markdown/text persona files. Uses CharacterImporter.from_file().
         """
-        from fastapi import UploadFile, File, Form
         import tempfile
 
         # Parse multipart form data

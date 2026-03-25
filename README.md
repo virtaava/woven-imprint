@@ -8,7 +8,9 @@
 
 Characters that survive across time.
 
-**Setup**: [Windows/WSL](docs/setup-windows.md) | [macOS](docs/setup-mac.md) | [Linux](docs/setup-linux.md) | [Docker](docs/setup-docker.md) | [Developer Guide](docs/DEVELOPER_GUIDE.md) | [Configuration](docs/CONFIGURATION.md) | [Architecture](docs/ARCHITECTURE.md) | [Evaluation](docs/EVALUATION.md) | [MCP Setup](examples/mcp_setup.md)
+**[Getting Started](docs/GETTING_STARTED.md)** | [UI Guide](docs/UI_GUIDE.md) | [Migration](docs/MIGRATION.md) | [Configuration](docs/CONFIGURATION.md) | [Developer Guide](docs/DEVELOPER_GUIDE.md) | [Architecture](docs/ARCHITECTURE.md)
+
+**Platform setup**: [Windows/WSL](docs/setup-windows.md) | [macOS](docs/setup-mac.md) | [Linux](docs/setup-linux.md) | [Docker](docs/setup-docker.md) | [MCP Setup](examples/mcp_setup.md)
 
 Woven Imprint is infrastructure for building AI characters that persist. Characters
 accumulate memories across sessions, maintain consistent personalities, and develop

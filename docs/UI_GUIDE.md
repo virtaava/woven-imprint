@@ -156,3 +156,12 @@ Click a character name in the list to switch. This ends the current session with
 - **Check the X-Ray panel** to see how the character's emotions and relationship with you are evolving.
 - **Name your sessions** to find them later — click the pencil icon next to any session.
 - **Resume old sessions** when you want to continue a specific conversation thread.
+
+---
+
+## See Also
+
+- **[Getting Started](GETTING_STARTED.md)** — install, run, connect an LLM
+- **[Migration Guide](MIGRATION.md)** — bring characters from ChatGPT, SillyTavern, or text
+- **[Configuration](CONFIGURATION.md)** — all provider and memory settings
+- **[Developer Guide](DEVELOPER_GUIDE.md)** — Python API, MCP, CLI reference

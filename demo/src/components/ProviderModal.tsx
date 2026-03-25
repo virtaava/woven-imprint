@@ -62,6 +62,7 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
   }, [currentConfig])
 
   // When preset changes, update provider/model/url
+  const isCustom = selected?.preset === 'custom'
   useEffect(() => {
     if (!selected) return
     setProvider(selected.id)
@@ -71,7 +72,8 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
     setTestPassed(false)
     setAvailableModels([])
 
-    if (open) {
+    // Don't auto-fetch for Custom — user needs to enter URL first
+    if (open && !isCustom) {
       loadModels(selected.id, selected.defaultUrl || '')
     }
   }, [selectedKey])
@@ -193,27 +195,30 @@ export function ProviderModal({ open, onOpenChange, currentConfig, onSaved }: Pr
           {selected?.showUrl && (
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted-foreground">
-                Base URL {selected.id !== 'ollama' && '(optional)'}
+                Base URL {!isCustom && selected.id !== 'ollama' && '(optional)'}
               </label>
               <div className="flex gap-2">
                 <Input
                   value={baseUrl}
-                  onChange={(e) => { setBaseUrl(e.target.value); setTestPassed(false); setTestResult(null) }}
-                  placeholder={provider === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
+                  onChange={(e) => { setBaseUrl(e.target.value); setTestPassed(false); setTestResult(null); if (isCustom) setAvailableModels([]) }}
+                  placeholder={isCustom ? 'http://localhost:8000/v1' : provider === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
                   className="flex-1"
                 />
-                {selected?.id === 'ollama' && (
+                {(selected?.id === 'ollama' || isCustom) && (
                   <Button
                     variant="outline"
                     size="icon"
                     onClick={handleRefreshModels}
-                    disabled={loadingModels}
-                    title="Refresh models from this URL"
+                    disabled={loadingModels || (!baseUrl && isCustom)}
+                    title="Fetch available models from this URL"
                   >
                     <RefreshCw className={`size-3.5 ${loadingModels ? 'animate-spin' : ''}`} />
                   </Button>
                 )}
               </div>
+              {isCustom && !baseUrl && (
+                <p className="text-xs text-muted-foreground">Enter the base URL, then click refresh to discover available models.</p>
+              )}
             </div>
           )}
 

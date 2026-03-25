@@ -45,23 +45,24 @@ echo 'source ~/woven-imprint-env/bin/activate' >> ~/.bashrc
 **PowerShell**:
 ```
 pip install --upgrade woven-imprint[demo]
+pip uninstall gradio -y    # remove old UI if present
 ```
 
-**WSL with pipx**:
+**WSL with pipx** (clean reinstall removes old gradio dependencies):
 ```bash
-pipx upgrade woven-imprint
-pipx inject woven-imprint --force fastapi uvicorn
+pipx uninstall woven-imprint
+pipx install woven-imprint
+pipx inject woven-imprint fastapi uvicorn
 ```
 
 **WSL with venv**:
 ```bash
 source ~/woven-imprint-env/bin/activate
 pip install --upgrade woven-imprint[demo]
+pip uninstall gradio -y    # remove old UI if present
 ```
 
-Your character data carries over automatically — no migration needed.
-
-> **Note**: The old `[ui]` extra (Gradio) has been replaced by `[demo]`. If you had gradio installed, you can remove it: `pip uninstall gradio -y`
+Your character data (`~/.woven_imprint/characters.db`) and config carry over automatically — no migration needed.
 
 ## Step 3: Install an AI Model
 

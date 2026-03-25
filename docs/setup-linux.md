@@ -52,19 +52,21 @@ echo 'source ~/woven-imprint-env/bin/activate' >> ~/.bashrc
 
 ### Upgrading from a previous version
 
-**pipx**:
+**pipx** (clean reinstall removes old gradio dependencies):
 ```bash
-pipx upgrade woven-imprint
-pipx inject woven-imprint --force fastapi uvicorn
+pipx uninstall woven-imprint
+pipx install woven-imprint
+pipx inject woven-imprint fastapi uvicorn
 ```
 
 **venv**:
 ```bash
 source ~/woven-imprint-env/bin/activate
 pip install --upgrade woven-imprint[demo]
+pip uninstall gradio -y    # remove old UI if present
 ```
 
-Your character data (`~/.woven_imprint/characters.db`) is fully compatible across versions — no migration needed.
+Your character data (`~/.woven_imprint/characters.db`) and config carry over automatically — no migration needed.
 
 ## Step 3: Install an AI Model
 

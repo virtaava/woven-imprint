@@ -10,6 +10,7 @@ test_live*.py
 test_stellamore.py
 docs/AUDIT_FINDINGS.md
 *.db
+!src/woven_imprint/data/meridian_seed.db
 article_draft.md
 .worktrees/
 demo/node_modules/

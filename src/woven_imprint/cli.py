@@ -42,39 +42,20 @@ def _get_db_only_engine(db_path: str | None = None) -> Engine:
 
 
 def cmd_demo(args):
-    """Run the interactive demo with a pre-built character."""
-    engine = _get_engine(args.db, args.model)
+    """Launch the demo web UI with Meridian."""
+    try:
+        from woven_imprint.server.demo import run_demo_server
+    except ImportError:
+        print("Demo requires extra dependencies. Install with:")
+        print("  pip install woven-imprint[demo]")
+        return
 
-    # Check if demo character exists
-    chars = engine.list_characters()
-    demo_char = next((c for c in chars if c["name"] == "Alice Blackwood"), None)
-
-    if demo_char:
-        alice = engine.load_character(demo_char["id"])
-    else:
-        alice = engine.create_character(
-            name="Alice Blackwood",
-            birthdate="1998-03-15",
-            persona={
-                "backstory": (
-                    "A sharp-witted private detective in London who left the Metropolitan "
-                    "Police after her partner was killed during an undercover operation. "
-                    "She now works alone from a cramped office above a chip shop in Brixton."
-                ),
-                "personality": "witty, skeptical, observant, secretly lonely, dark humor",
-                "speaking_style": "clipped sentences, dry humor, avoids emotional topics",
-                "occupation": "private investigator",
-            },
-        )
-        print(f"Created character: {alice.name}")
-
-    print(f"\n{'=' * 50}")
-    print("  WOVEN IMPRINT — Interactive Demo")
-    print(f"  Character: {alice.name} (age {alice.persona.age})")
-    print("  Type /help for commands, /quit to exit")
-    print(f"{'=' * 50}\n")
-
-    _chat_loop(alice, engine)
+    run_demo_server(
+        port=getattr(args, "port", 7860),
+        db_path=getattr(args, "db", None),
+        model=getattr(args, "model", None),
+        no_browser=getattr(args, "no_browser", False),
+    )
 
 
 def cmd_create(args):
@@ -492,7 +473,9 @@ def main():
     sub = parser.add_subparsers(dest="command")
 
     # demo
-    sub.add_parser("demo", help="Interactive demo with a pre-built character")
+    p_demo = sub.add_parser("demo", help="Launch the demo web UI with Meridian")
+    p_demo.add_argument("--port", type=int, default=7860, help="Port to bind to (default: 7860)")
+    p_demo.add_argument("--no-browser", action="store_true", help="Skip opening browser")
 
     # create
     p_create = sub.add_parser("create", help="Create a new character")

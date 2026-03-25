@@ -90,6 +90,7 @@ async def _lifespan(app: FastAPI):
 def create_app(
     engine: Engine | None = None,
     port: int = 7860,
+    host: str = "127.0.0.1",
     token: str | None = None,
 ) -> tuple[FastAPI, str]:
     """Create the FastAPI demo application.
@@ -97,6 +98,7 @@ def create_app(
     Args:
         engine: Pre-built Engine (uses module-level default if None).
         port: Port number (for CORS origin list).
+        host: Host to bind to (affects CORS policy).
         token: Fixed auth token (random if None).
 
     Returns:
@@ -114,11 +116,15 @@ def create_app(
         lifespan=_lifespan,
     )
 
-    # CORS — locked to localhost only
-    origins = [
-        f"http://127.0.0.1:{port}",
-        f"http://localhost:{port}",
-    ]
+    # CORS — locked to localhost by default; if host is 0.0.0.0, allow all origins
+    # (needed for Tailscale / remote access)
+    if host in ("0.0.0.0", "::"):
+        origins = ["*"]
+    else:
+        origins = [
+            f"http://127.0.0.1:{port}",
+            f"http://localhost:{port}",
+        ]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -429,6 +435,7 @@ def _seed_meridian_if_needed(engine: Engine) -> None:
 
 def run_demo_server(
     port: int = 7860,
+    host: str = "127.0.0.1",
     db_path: str | None = None,
     model: str | None = None,
     no_browser: bool = False,
@@ -437,6 +444,8 @@ def run_demo_server(
 
     Args:
         port: Port to bind to.
+        host: Host to bind to. Default 127.0.0.1 (localhost only).
+              Use 0.0.0.0 to expose on all interfaces (e.g. Tailscale).
         db_path: SQLite database path.
         model: LLM model name override.
         no_browser: Skip opening browser.
@@ -461,15 +470,18 @@ def run_demo_server(
 
     _seed_meridian_if_needed(engine)
 
-    app, token = create_app(engine=engine, port=port)
+    app, token = create_app(engine=engine, port=port, host=host)
 
-    url = f"http://127.0.0.1:{port}"
+    url = f"http://{host}:{port}"
     print(f"\n  woven-imprint demo v{__version__}")
     print(f"  URL:   {url}")
-    print(f"  Token: {token}\n")
+    print(f"  Token: {token}")
+    if host != "127.0.0.1":
+        print(f"  ⚠ Bound to {host} — accessible from network")
+    print()
 
     if not no_browser:
         import webbrowser
-        webbrowser.open(url)
+        webbrowser.open(f"http://127.0.0.1:{port}")
 
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    uvicorn.run(app, host=host, port=port, log_level="warning")

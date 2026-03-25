@@ -52,6 +52,7 @@ def cmd_demo(args):
 
     run_demo_server(
         port=getattr(args, "port", 7860),
+        host=getattr(args, "host", "127.0.0.1"),
         db_path=getattr(args, "db", None),
         model=getattr(args, "model", None),
         no_browser=getattr(args, "no_browser", False),
@@ -475,6 +476,7 @@ def main():
     # demo
     p_demo = sub.add_parser("demo", help="Launch the demo web UI with Meridian")
     p_demo.add_argument("--port", type=int, default=7860, help="Port to bind to (default: 7860)")
+    p_demo.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1, use 0.0.0.0 for network access)")
     p_demo.add_argument("--no-browser", action="store_true", help="Skip opening browser")
 
     # create

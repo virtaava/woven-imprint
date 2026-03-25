@@ -153,7 +153,10 @@ class SidecarHandler(BaseHTTPRequestHandler):
 
         try:
             result = create_character_service(
-                _get_engine(), name, persona, body.get("birthdate"),
+                _get_engine(),
+                name,
+                persona,
+                body.get("birthdate"),
             )
             self._send_json(result, 201 if result["created"] else 200)
         except Exception as exc:
@@ -201,7 +204,12 @@ class SidecarHandler(BaseHTTPRequestHandler):
 
         try:
             record_message_service(
-                _get_engine(), char_id, role, content, user_id, strict_roles=True,
+                _get_engine(),
+                char_id,
+                role,
+                content,
+                user_id,
+                strict_roles=True,
             )
             self._send_json({"ok": True})
         except KeyError:
@@ -228,7 +236,11 @@ class SidecarHandler(BaseHTTPRequestHandler):
 
         try:
             result = recall_memories_service(
-                _get_engine(), char_id, query, limit=limit, user_id=user_id,
+                _get_engine(),
+                char_id,
+                query,
+                limit=limit,
+                user_id=user_id,
             )
             self._send_json(result)
         except KeyError:

@@ -29,6 +29,7 @@ def engine():
 
 # ── create_character_service ──────────────────────────────────────────
 
+
 class TestCreateCharacter:
     def test_creates_new_character(self, engine):
         result = create_character_service(engine, "Alice", {"personality": "kind"}, None)
@@ -61,6 +62,7 @@ class TestCreateCharacter:
 
 # ── list_characters_service ───────────────────────────────────────────
 
+
 class TestListCharacters:
     def test_empty_initially(self, engine):
         assert list_characters_service(engine) == []
@@ -74,6 +76,7 @@ class TestListCharacters:
 
 
 # ── get_character_state_service ───────────────────────────────────────
+
 
 class TestGetCharacterState:
     def test_returns_state_dict(self, engine):
@@ -90,6 +93,7 @@ class TestGetCharacterState:
 
 
 # ── start_session / end_session ───────────────────────────────────────
+
 
 class TestSessionLifecycle:
     def test_start_session_returns_session_id(self, engine):
@@ -114,6 +118,7 @@ class TestSessionLifecycle:
 
 
 # ── record_message_service ────────────────────────────────────────────
+
 
 class TestRecordMessage:
     def test_records_user_message(self, engine):
@@ -160,6 +165,7 @@ class TestRecordMessage:
 
 # ── recall_memories_service ───────────────────────────────────────────
 
+
 class TestRecallMemories:
     def test_recall_after_record(self, engine):
         created = create_character_service(engine, "Alice", {}, None)
@@ -181,6 +187,7 @@ class TestRecallMemories:
 
 # ── get_relationship_service ──────────────────────────────────────────
 
+
 class TestGetRelationship:
     def test_returns_none_for_no_relationship(self, engine):
         created = create_character_service(engine, "Alice", {}, None)
@@ -193,6 +200,7 @@ class TestGetRelationship:
 
 
 # ── find_character_by_name_or_id ──────────────────────────────────────
+
 
 class TestFindCharacter:
     def test_find_by_exact_name(self, engine):
@@ -231,6 +239,7 @@ class TestFindCharacter:
 
 # ── extract helpers ───────────────────────────────────────────────────
 
+
 class TestExtractHelpers:
     def test_extract_last_user_message(self):
         msgs = [
@@ -266,6 +275,7 @@ class TestExtractHelpers:
 
 # ── delete_character_service ─────────────────────────────────────────
 
+
 class TestDeleteCharacter:
     def test_deletes_existing_character(self, engine):
         created = create_character_service(engine, "Alice", {}, None)
@@ -278,6 +288,7 @@ class TestDeleteCharacter:
 
 
 # ── export_character_service ─────────────────────────────────────────
+
 
 class TestExportCharacter:
     def test_exports_existing_character(self, engine):
@@ -293,6 +304,7 @@ class TestExportCharacter:
 
 # ── import_character_service ─────────────────────────────────────────
 
+
 class TestImportCharacter:
     def test_imports_from_exported_data(self, engine):
         created = create_character_service(engine, "Alice", {"personality": "kind"}, None)
@@ -305,6 +317,7 @@ class TestImportCharacter:
 
 
 # ── reflect_character_service ────────────────────────────────────────
+
 
 class TestReflectCharacter:
     def test_reflect_returns_reflection(self, engine):

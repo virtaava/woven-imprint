@@ -26,6 +26,7 @@ from woven_imprint.server.demo import create_app
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def app_client():
     """Authed test client against a test app."""
@@ -53,6 +54,7 @@ def unauthed_client(app_client):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _create_test_character(client, name="TestChar"):
     """Create a character via the API and return the response dict."""
     resp = client.post("/api/characters", json={"name": name})
@@ -63,6 +65,7 @@ def _create_test_character(client, name="TestChar"):
 # ---------------------------------------------------------------------------
 # TestHealth
 # ---------------------------------------------------------------------------
+
 
 class TestHealth:
     def test_health_no_auth(self, unauthed_client):
@@ -82,6 +85,7 @@ class TestHealth:
 # ---------------------------------------------------------------------------
 # TestAuth
 # ---------------------------------------------------------------------------
+
 
 class TestAuth:
     def test_missing_auth_rejected(self, unauthed_client):
@@ -108,6 +112,7 @@ class TestAuth:
 # ---------------------------------------------------------------------------
 # TestCORS
 # ---------------------------------------------------------------------------
+
 
 class TestCORS:
     def test_evil_origin_no_cors_header(self, app_client):
@@ -139,6 +144,7 @@ class TestCORS:
 # ---------------------------------------------------------------------------
 # TestCharacterEndpoints
 # ---------------------------------------------------------------------------
+
 
 class TestCharacterEndpoints:
     def test_create_and_list(self, app_client):
@@ -199,11 +205,14 @@ class TestCharacterEndpoints:
         created = _create_test_character(client, "Dave")
         char_id = created["id"]
 
-        resp = client.post("/api/record", json={
-            "character_id": char_id,
-            "role": "user",
-            "content": "Hello Dave!",
-        })
+        resp = client.post(
+            "/api/record",
+            json={
+                "character_id": char_id,
+                "role": "user",
+                "content": "Hello Dave!",
+            },
+        )
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
 
@@ -211,6 +220,7 @@ class TestCharacterEndpoints:
 # ---------------------------------------------------------------------------
 # TestProviderConfig
 # ---------------------------------------------------------------------------
+
 
 class TestProviderConfig:
     def test_get_provider_redacts_key(self, app_client):
@@ -229,6 +239,7 @@ class TestProviderConfig:
 # ---------------------------------------------------------------------------
 # TestXRaySanitization
 # ---------------------------------------------------------------------------
+
 
 class TestXRaySanitization:
     def test_character_state_no_path_leak(self, app_client):
@@ -261,16 +272,20 @@ class TestXRaySanitization:
 # TestChatCompletions
 # ---------------------------------------------------------------------------
 
+
 class TestChatCompletions:
     def test_chat_completions_basic(self, app_client):
         """OpenAI-compatible chat endpoint returns valid structure."""
         client, _token, _engine = app_client
         _create_test_character(client, "Echo")
 
-        resp = client.post("/v1/chat/completions", json={
-            "model": "Echo",
-            "messages": [{"role": "user", "content": "Hello Echo!"}],
-        })
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "Echo",
+                "messages": [{"role": "user", "content": "Hello Echo!"}],
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["object"] == "chat.completion"
@@ -284,8 +299,11 @@ class TestChatCompletions:
 
     def test_chat_completions_no_character(self, app_client):
         client, _token, _engine = app_client
-        resp = client.post("/v1/chat/completions", json={
-            "model": "nonexistent-character",
-            "messages": [{"role": "user", "content": "Hello"}],
-        })
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "nonexistent-character",
+                "messages": [{"role": "user", "content": "Hello"}],
+            },
+        )
         assert resp.status_code == 404

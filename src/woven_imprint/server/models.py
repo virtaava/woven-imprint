@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 # --- Requests ---
 
+
 class CreateCharacterRequest(BaseModel):
     name: str = Field(..., max_length=200)
     persona: dict | str | None = None
@@ -36,6 +37,7 @@ class ProviderConfigRequest(BaseModel):
 
 
 # --- Responses ---
+
 
 class HealthResponse(BaseModel):
     status: str

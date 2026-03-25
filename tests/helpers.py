@@ -19,8 +19,13 @@ class FakeLLM:
         if "emotion" in system.lower():
             return {"mood": "neutral", "intensity": 0.5, "cause": ""}
         if "relationship" in system.lower():
-            return {"trust": 0.01, "affection": 0.0, "respect": 0.0,
-                    "familiarity": 0.02, "tension": 0.0}
+            return {
+                "trust": 0.01,
+                "affection": 0.0,
+                "respect": 0.0,
+                "familiarity": 0.02,
+                "tension": 0.0,
+            }
         if "narrative" in system.lower() or "beat" in system.lower():
             return {"beat_type": "none"}
         if "consistency" in system.lower():
@@ -60,9 +65,11 @@ def make_test_engine(db_path=":memory:"):
     embedder = FakeEmbedder()
     engine = Engine(db_path=db_path, llm=llm, embedding=embedder)
     orig = engine.create_character
+
     def _create_seq(*a, **kw):
         c = orig(*a, **kw)
         c.parallel = False
         return c
+
     engine.create_character = _create_seq
     return engine

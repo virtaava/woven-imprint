@@ -7,6 +7,7 @@ import pytest
 
 # Import from shared helpers
 import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 from helpers import make_test_engine, FakeLLM, FakeEmbedder
 
@@ -26,10 +27,12 @@ def _make_engine_with_path(db_path):
     embedder = FakeEmbedder()
     engine = Engine(db_path=db_path, llm=llm, embedding=embedder)
     orig = engine.create_character
+
     def _create_seq(*a, **kw):
         c = orig(*a, **kw)
         c.parallel = False
         return c
+
     engine.create_character = _create_seq
     return engine
 
@@ -55,8 +58,9 @@ class TestCrossSessionPersistence:
             engine2 = _make_engine_with_path(db_path)
             result = recall_memories_service(engine2, char_id, "favorite color", 10, None)
             contents = [m.get("content", "") for m in result["memories"]]
-            assert any("blue" in c.lower() for c in contents), \
+            assert any("blue" in c.lower() for c in contents), (
                 f"Expected 'blue' in recalled memories, got: {contents}"
+            )
             engine2.close()
         finally:
             os.unlink(db_path)

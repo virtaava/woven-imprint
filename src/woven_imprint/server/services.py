@@ -4,7 +4,9 @@ Business logic extracted from sidecar.py and api.py handlers.
 Both the existing stdlib servers and the new FastAPI demo server
 call these same functions — no logic duplication.
 """
+
 from __future__ import annotations
+
 
 def create_character_service(engine, name, persona, birthdate):
     """Create a character, deduplicating by name (case-insensitive).
@@ -20,8 +22,10 @@ def create_character_service(engine, name, persona, birthdate):
     char = engine.create_character(name=name, persona=persona, birthdate=birthdate)
     return {"id": char.id, "name": name, "created": True}
 
+
 def list_characters_service(engine):
     return engine.list_characters()
+
 
 def get_character_state_service(engine, character_id):
     """Raises KeyError if not found. Uses char.name property."""
@@ -30,7 +34,11 @@ def get_character_state_service(engine, character_id):
     arc_phase = ""
     arc_tension = 0.0
     if hasattr(char, "arc") and char.arc:
-        arc_phase = char.arc.current_phase.value if hasattr(char.arc.current_phase, "value") else str(char.arc.current_phase)
+        arc_phase = (
+            char.arc.current_phase.value
+            if hasattr(char.arc.current_phase, "value")
+            else str(char.arc.current_phase)
+        )
         arc_tension = getattr(char.arc, "tension", 0.0)
     return {
         "id": char.id,
@@ -39,18 +47,22 @@ def get_character_state_service(engine, character_id):
         "arc": {"phase": arc_phase, "tension": arc_tension},
     }
 
+
 def start_session_service(engine, character_id):
     char = engine.get_character(character_id)
     session_id = char.start_session()
     return {"session_id": session_id}
+
 
 def end_session_service(engine, character_id):
     char = engine.get_character(character_id)
     summary = char.end_session()
     return {"summary": summary}
 
+
 _SIDECAR_ROLES = {"user", "assistant"}
 _ALL_ROLES = {"user", "assistant", "character", "system"}
+
 
 def record_message_service(engine, character_id, role, content, user_id, *, strict_roles=True):
     """strict_roles=True (sidecar compat) only allows user/assistant."""
@@ -59,6 +71,7 @@ def record_message_service(engine, character_id, role, content, user_id, *, stri
         raise ValueError(f"Invalid role '{role}'. Must be one of: {allowed}")
     char = engine.get_character(character_id)
     char.ingest(role=role, content=content, user_id=user_id)
+
 
 def recall_memories_service(engine, character_id, query, limit=10, user_id=None):
     char = engine.get_character(character_id)
@@ -77,27 +90,34 @@ def recall_memories_service(engine, character_id, query, limit=10, user_id=None)
     context = "\n".join(context_parts)
     return {"memories": memories, "context": context}
 
+
 def get_relationship_service(engine, character_id, target_id):
     char = engine.get_character(character_id)
     return char.get_relationship(target_id)
+
 
 def find_character_by_name_or_id(engine, name_or_id):
     chars = engine.list_characters()
     model_name = name_or_id.lower().strip()
     return next(
-        (c for c in chars
-         if c["name"].lower().replace(" ", "-") == model_name
-         or c["name"].lower().replace(" ", "_") == model_name
-         or c["name"].lower() == model_name
-         or c["id"] == name_or_id),
+        (
+            c
+            for c in chars
+            if c["name"].lower().replace(" ", "-") == model_name
+            or c["name"].lower().replace(" ", "_") == model_name
+            or c["name"].lower() == model_name
+            or c["id"] == name_or_id
+        ),
         None,
     )
+
 
 def extract_last_user_message(messages):
     for msg in reversed(messages):
         if msg.get("role") == "user":
             return msg.get("content", "")
     return ""
+
 
 def extract_user_id_from_messages(messages, default="api_user"):
     for msg in messages:
@@ -125,8 +145,9 @@ def import_character_service(engine, data: dict):
     import tempfile
     import json
     import os
+
     # Write to temp file since engine.import_character expects a path
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(data, f)
         tmp_path = f.name
     try:
@@ -139,6 +160,7 @@ def import_character_service(engine, data: dict):
 def migrate_character_service(engine, name, text=None, file_path=None):
     """Migrate/create character from text or file. Returns character info."""
     from woven_imprint.migrate import CharacterImporter
+
     importer = CharacterImporter(engine)
     if text:
         char = importer.from_text(text, name=name)

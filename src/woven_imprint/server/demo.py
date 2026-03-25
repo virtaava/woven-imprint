@@ -58,6 +58,7 @@ STATIC_DIR = Path(__file__).parent.parent / "demo_static"
 # Auth
 # ---------------------------------------------------------------------------
 
+
 def _check_auth(request: Request) -> None:
     """Validate Bearer token on protected routes."""
     auth = request.headers.get("authorization", "")
@@ -68,6 +69,7 @@ def _check_auth(request: Request) -> None:
 # ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
+
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
@@ -91,6 +93,7 @@ async def _lifespan(app: FastAPI):
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
+
 
 def create_app(
     engine: Engine | None = None,
@@ -170,7 +173,10 @@ def create_app(
             if isinstance(persona, str):
                 persona = {"personality": persona}
             result = create_character_service(
-                _engine, body.name, persona, body.birthdate,
+                _engine,
+                body.name,
+                persona,
+                body.birthdate,
             )
         status = 201 if result["created"] else 200
         return JSONResponse(result, status_code=status)
@@ -222,6 +228,7 @@ def create_app(
                 raise HTTPException(400, str(exc))
             finally:
                 import os
+
                 os.unlink(tmp_path)
 
     @app.post("/api/characters/migrate", dependencies=[Depends(_check_auth)])
@@ -317,7 +324,11 @@ def create_app(
     ):
         try:
             return recall_memories_service(
-                _engine, character_id, query, limit=limit, user_id=user_id,
+                _engine,
+                character_id,
+                query,
+                limit=limit,
+                user_id=user_id,
             )
         except KeyError:
             raise HTTPException(404, f"Character '{character_id}' not found")
@@ -501,9 +512,7 @@ def create_app(
                     "anthropic-version": "2023-06-01",
                 }
                 async with httpx.AsyncClient(timeout=10) as client:
-                    resp = await client.get(
-                        "https://api.anthropic.com/v1/models", headers=hdrs
-                    )
+                    resp = await client.get("https://api.anthropic.com/v1/models", headers=hdrs)
                     if resp.status_code == 200:
                         data = resp.json().get("data", [])
                         return [m["id"] for m in data]
@@ -531,9 +540,7 @@ def create_app(
                     models = await _try_openai_models(bare, key)
             else:
                 # Default OpenAI API
-                models = await _try_openai_models(
-                    "https://api.openai.com", key
-                )
+                models = await _try_openai_models("https://api.openai.com", key)
 
         return {"models": models}
 
@@ -548,6 +555,7 @@ def create_app(
 # Meridian seed helper
 # ---------------------------------------------------------------------------
 
+
 def _import_seed_db(engine: Engine, seed_path: Path) -> None:
     """Import Meridian character data from pre-built seed database."""
     import sqlite3
@@ -555,9 +563,7 @@ def _import_seed_db(engine: Engine, seed_path: Path) -> None:
     seed_conn = sqlite3.connect(str(seed_path))
     seed_conn.row_factory = sqlite3.Row
 
-    row = seed_conn.execute(
-        "SELECT * FROM characters WHERE name = 'Meridian' LIMIT 1"
-    ).fetchone()
+    row = seed_conn.execute("SELECT * FROM characters WHERE name = 'Meridian' LIMIT 1").fetchone()
     if not row:
         seed_conn.close()
         return
@@ -565,6 +571,7 @@ def _import_seed_db(engine: Engine, seed_path: Path) -> None:
     char_id = row["id"]
 
     from woven_imprint.data.meridian_persona import MERIDIAN_PERSONA, MERIDIAN_BIRTHDATE
+
     char = engine.create_character(
         name="Meridian",
         persona=MERIDIAN_PERSONA,
@@ -603,6 +610,7 @@ def _seed_meridian_if_needed(engine: Engine) -> None:
 
     # Fallback: create with persona only (no pre-built knowledge)
     from woven_imprint.data.meridian_persona import MERIDIAN_PERSONA, MERIDIAN_BIRTHDATE
+
     engine.create_character(
         name="Meridian",
         persona=MERIDIAN_PERSONA,
@@ -614,6 +622,7 @@ def _seed_meridian_if_needed(engine: Engine) -> None:
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def run_demo_server(
     port: int = 7860,
@@ -664,6 +673,7 @@ def run_demo_server(
 
     if not no_browser:
         import webbrowser
+
         webbrowser.open(f"http://127.0.0.1:{port}")
 
     uvicorn.run(app, host=host, port=port, log_level="warning")

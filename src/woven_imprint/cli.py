@@ -476,7 +476,11 @@ def main():
     # demo
     p_demo = sub.add_parser("demo", help="Launch the demo web UI with Meridian")
     p_demo.add_argument("--port", type=int, default=7860, help="Port to bind to (default: 7860)")
-    p_demo.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1, use 0.0.0.0 for network access)")
+    p_demo.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host to bind to (default: 127.0.0.1, use 0.0.0.0 for network access)",
+    )
     p_demo.add_argument("--no-browser", action="store_true", help="Skip opening browser")
 
     # create

@@ -1,4 +1,4 @@
-import { BookOpen, Settings, Wifi, WifiOff, PanelRightOpen, PanelRightClose } from 'lucide-react'
+import { BookOpen, Settings, Wifi, WifiOff, PanelRightOpen, PanelRightClose, Users, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -10,11 +10,12 @@ interface TopBarProps {
   sessionId: string | null
   memoryCount: number
   onOpenProviderModal: () => void
+  onOpenCharacterDrawer: () => void
   xrayVisible: boolean
   onToggleXray: () => void
 }
 
-export function TopBar({ character, provider, sessionId, memoryCount, onOpenProviderModal, xrayVisible, onToggleXray }: TopBarProps) {
+export function TopBar({ character, provider, sessionId, memoryCount, onOpenProviderModal, onOpenCharacterDrawer, xrayVisible, onToggleXray }: TopBarProps) {
   return (
     <div className="flex h-14 items-center justify-between border-b border-border bg-card px-4">
       {/* Left: branding */}
@@ -27,20 +28,26 @@ export function TopBar({ character, provider, sessionId, memoryCount, onOpenProv
         <span className="text-sm text-muted-foreground">Interactive Demo</span>
       </div>
 
-      {/* Center: character info */}
+      {/* Center: character selector + info */}
       <div className="flex items-center gap-4">
+        <button
+          onClick={onOpenCharacterDrawer}
+          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:border-amber-400/30 hover:bg-amber-400/5"
+          title="Manage characters"
+        >
+          <Users className="size-3.5 text-amber-400" />
+          <span className="font-medium">{character?.name || 'No character'}</span>
+          <ChevronDown className="size-3 text-muted-foreground" />
+        </button>
+        {sessionId && (
+          <Badge variant="outline" className="text-xs text-amber-400 border-amber-400/30">
+            Session active
+          </Badge>
+        )}
         {character && (
-          <>
-            <span className="text-sm font-medium">{character.name}</span>
-            {sessionId && (
-              <Badge variant="outline" className="text-xs text-amber-400 border-amber-400/30">
-                Session active
-              </Badge>
-            )}
-            <span className="text-xs text-muted-foreground">
-              {memoryCount} memories
-            </span>
-          </>
+          <span className="text-xs text-muted-foreground">
+            {memoryCount} memories
+          </span>
         )}
       </div>
 

@@ -31,3 +31,9 @@ export interface ProviderConfig {
   base_url: string | null
   api_key_configured: boolean
 }
+
+export interface CharacterSummary {
+  id: string
+  character_id?: string
+  name: string
+}

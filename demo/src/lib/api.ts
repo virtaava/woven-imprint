@@ -77,3 +77,59 @@ export async function testProviderConnection(config: { provider: string; model: 
   })
   return res.json()
 }
+
+export async function createCharacter(data: { name: string; personality?: string; backstory?: string; speaking_style?: string; birthdate?: string }) {
+  const res = await fetch(`${API_BASE}/api/characters`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(data),
+  })
+  return res.json()
+}
+
+export async function deleteCharacter(id: string) {
+  const res = await fetch(`${API_BASE}/api/characters/${id}`, {
+    method: 'DELETE',
+    headers: headers(),
+  })
+  return res.json()
+}
+
+export async function exportCharacter(id: string) {
+  const res = await fetch(`${API_BASE}/api/characters/${id}/export`, { headers: headers() })
+  return res.json()
+}
+
+export async function importCharacter(data: object) {
+  const res = await fetch(`${API_BASE}/api/characters/import`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(data),
+  })
+  return res.json()
+}
+
+export async function migrateCharacter(name: string, text: string) {
+  const res = await fetch(`${API_BASE}/api/characters/migrate`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ name, text }),
+  })
+  return res.json()
+}
+
+export async function reflectCharacter(id: string) {
+  const res = await fetch(`${API_BASE}/api/characters/${id}/reflect`, {
+    method: 'POST',
+    headers: headers(),
+  })
+  return res.json()
+}
+
+export async function endSession(characterId: string) {
+  const res = await fetch(`${API_BASE}/api/characters/${characterId}/session`, {
+    method: 'DELETE',
+    headers: headers(),
+  })
+  return res.json()
+}

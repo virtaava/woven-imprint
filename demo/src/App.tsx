@@ -3,17 +3,19 @@ import { TopBar } from '@/components/TopBar'
 import { ChatPanel } from '@/components/ChatPanel'
 import { XRayPanel } from '@/components/XRayPanel'
 import { ProviderModal } from '@/components/ProviderModal'
+import { CharacterDrawer } from '@/components/CharacterDrawer'
 import {
   getProviderConfig,
   testProviderConnection,
   fetchCharacters,
   startSession,
+  endSession,
   sendMessage,
   fetchCharacterState,
   recallMemories,
   fetchRelationship,
 } from '@/lib/api'
-import type { ChatMessage, CharacterState, Memory, Relationship, ProviderConfig } from '@/lib/types'
+import type { ChatMessage, CharacterState, CharacterSummary, Memory, Relationship, ProviderConfig } from '@/lib/types'
 
 const MERIDIAN_GREETING: ChatMessage = {
   role: 'assistant',
@@ -35,8 +37,10 @@ export default function App() {
   const [relationship, setRelationship] = useState<Relationship | null>(null)
   const [providerConfig, setProviderConfig] = useState<ProviderConfig | null>(null)
   const [showProviderModal, setShowProviderModal] = useState(false)
+  const [showCharacterDrawer, setShowCharacterDrawer] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [characterId, setCharacterId] = useState<string | null>(null)
+  const [characters, setCharacters] = useState<CharacterSummary[]>([])
   const [searchResults, setSearchResults] = useState<Memory[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [xrayVisible, setXrayVisible] = useState(() => {
@@ -77,10 +81,25 @@ export default function App() {
     init()
   }, [])
 
+  const refreshCharacters = useCallback(async () => {
+    try {
+      const chars = await fetchCharacters()
+      const charList = chars.characters || chars
+      if (Array.isArray(charList)) {
+        setCharacters(charList.map((c: any) => ({ id: c.id || c.character_id, name: c.name })))
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
   const initCharacter = useCallback(async () => {
     try {
       const chars = await fetchCharacters()
       const charList = chars.characters || chars
+      if (Array.isArray(charList)) {
+        setCharacters(charList.map((c: any) => ({ id: c.id || c.character_id, name: c.name })))
+      }
       if (Array.isArray(charList) && charList.length > 0) {
         const char = charList[0]
         const id = char.id || char.character_id
@@ -199,6 +218,62 @@ export default function App() {
     [characterId, initCharacter]
   )
 
+  const switchCharacter = useCallback(
+    async (newId: string) => {
+      // End current session if active
+      if (characterId && sessionId) {
+        try {
+          await endSession(characterId)
+        } catch {
+          // ignore — session may already be ended
+        }
+      }
+
+      setCharacterId(newId)
+
+      // Start new session
+      try {
+        const session = await startSession(newId)
+        setSessionId(session.session_id || session.id || 'active')
+      } catch {
+        setSessionId(null)
+      }
+
+      // Load character state
+      try {
+        const state = await fetchCharacterState(newId)
+        setCharacterState(state)
+
+        // Reset messages with character-specific greeting
+        const greeting: ChatMessage = {
+          role: 'assistant',
+          content: `Hello! I am **${state.name}**. How can I help you today?`,
+        }
+        setMessages([greeting])
+      } catch {
+        setMessages([MERIDIAN_GREETING])
+      }
+
+      // Refresh X-Ray data
+      setMemories([])
+      setRelationship(null)
+      setSearchResults([])
+      try {
+        const mems = await recallMemories(newId, 'recent', 10)
+        setMemories(Array.isArray(mems) ? mems : mems.memories || [])
+      } catch {
+        // No memories yet
+      }
+      try {
+        const rel = await fetchRelationship(newId, 'user')
+        setRelationship(rel)
+      } catch {
+        // No relationship yet
+      }
+    },
+    [characterId, sessionId]
+  )
+
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       <TopBar
@@ -207,6 +282,7 @@ export default function App() {
         sessionId={sessionId}
         memoryCount={memories.length}
         onOpenProviderModal={() => setShowProviderModal(true)}
+        onOpenCharacterDrawer={() => setShowCharacterDrawer(true)}
         xrayVisible={xrayVisible}
         onToggleXray={() => setXrayVisible(v => !v)}
       />
@@ -237,6 +313,15 @@ export default function App() {
         onOpenChange={setShowProviderModal}
         currentConfig={providerConfig}
         onSaved={handleProviderSaved}
+      />
+
+      <CharacterDrawer
+        open={showCharacterDrawer}
+        onOpenChange={setShowCharacterDrawer}
+        characters={characters}
+        activeCharacterId={characterId}
+        onSelectCharacter={switchCharacter}
+        onRefreshCharacters={refreshCharacters}
       />
     </div>
   )

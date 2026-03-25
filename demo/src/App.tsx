@@ -39,6 +39,15 @@ export default function App() {
   const [characterId, setCharacterId] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<Memory[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const [xrayVisible, setXrayVisible] = useState(() => {
+    const saved = localStorage.getItem('woven-xray-visible')
+    return saved !== null ? saved === 'true' : true  // default visible
+  })
+
+  // Persist X-Ray visibility to localStorage
+  useEffect(() => {
+    localStorage.setItem('woven-xray-visible', String(xrayVisible))
+  }, [xrayVisible])
 
   // Load provider config on mount — always verify connection works
   useEffect(() => {
@@ -198,25 +207,29 @@ export default function App() {
         sessionId={sessionId}
         memoryCount={memories.length}
         onOpenProviderModal={() => setShowProviderModal(true)}
+        xrayVisible={xrayVisible}
+        onToggleXray={() => setXrayVisible(v => !v)}
       />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Chat panel - 70% */}
-        <div className="flex w-[70%] flex-col">
+        {/* Chat panel */}
+        <div className={`flex flex-col transition-all duration-300 ${xrayVisible ? 'w-[70%]' : 'w-full'}`}>
           <ChatPanel messages={messages} loading={loading} onSend={handleSend} />
         </div>
 
-        {/* X-Ray panel - 30% */}
-        <div className="w-[30%]">
-          <XRayPanel
-            character={characterState}
-            memories={memories}
-            relationship={relationship}
-            onSearchMemory={handleSearchMemory}
-            searchResults={searchResults}
-            searchLoading={searchLoading}
-          />
-        </div>
+        {/* X-Ray panel */}
+        {xrayVisible && (
+          <div className="w-[30%] transition-all duration-300">
+            <XRayPanel
+              character={characterState}
+              memories={memories}
+              relationship={relationship}
+              onSearchMemory={handleSearchMemory}
+              searchResults={searchResults}
+              searchLoading={searchLoading}
+            />
+          </div>
+        )}
       </div>
 
       <ProviderModal

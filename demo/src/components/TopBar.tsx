@@ -1,4 +1,4 @@
-import { BookOpen, Settings, Wifi, WifiOff } from 'lucide-react'
+import { BookOpen, Settings, Wifi, WifiOff, PanelRightOpen, PanelRightClose } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -10,9 +10,11 @@ interface TopBarProps {
   sessionId: string | null
   memoryCount: number
   onOpenProviderModal: () => void
+  xrayVisible: boolean
+  onToggleXray: () => void
 }
 
-export function TopBar({ character, provider, sessionId, memoryCount, onOpenProviderModal }: TopBarProps) {
+export function TopBar({ character, provider, sessionId, memoryCount, onOpenProviderModal, xrayVisible, onToggleXray }: TopBarProps) {
   return (
     <div className="flex h-14 items-center justify-between border-b border-border bg-card px-4">
       {/* Left: branding */}
@@ -55,7 +57,15 @@ export function TopBar({ character, provider, sessionId, memoryCount, onOpenProv
             <span className="text-foreground">{provider.model}</span>
           </div>
         )}
-        <Button variant="ghost" size="icon-sm" onClick={onOpenProviderModal}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onToggleXray}
+          title={xrayVisible ? 'Hide X-Ray panel' : 'Show X-Ray panel'}
+        >
+          {xrayVisible ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
+        </Button>
+        <Button variant="ghost" size="icon" onClick={onOpenProviderModal}>
           <Settings className="size-4" />
         </Button>
       </div>

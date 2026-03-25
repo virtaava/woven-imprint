@@ -71,7 +71,7 @@ woven-imprint demo
 
 Opens your default browser with chat, character management, migration, and settings.
 
-You can specify a browser: `woven-imprint demo --browser firefox`
+To skip opening and just print the URL: `woven-imprint demo --no-browser`
 
 ### Terminal REPL
 

@@ -105,11 +105,11 @@ woven-imprint demo
 This opens a browser tab with everything you need — chat, create characters,
 import existing ones, and see stats. No terminal needed after this.
 
-**WSL users**: If it opens Chromium instead of your Windows browser, specify it:
+**WSL users**: If it opens Chromium instead of your Windows browser, use `--no-browser`:
 ```
-woven-imprint demo --browser none
+woven-imprint demo --no-browser
 ```
-Then open `http://127.0.0.1:5173` in your Windows browser manually.
+Then open `http://127.0.0.1:7860` in your Windows browser manually.
 Or install wslu for automatic Windows browser support:
 ```
 sudo apt install wslu

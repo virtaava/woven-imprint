@@ -98,11 +98,9 @@ pip install woven-imprint[demo]
 woven-imprint demo
 ```
 
-Opens your default browser. Specify a different one:
+Opens your default browser. To skip opening and just print the URL:
 ```
-woven-imprint demo --browser firefox
-woven-imprint demo --browser chromium-browser
-woven-imprint demo --browser none    # just print URL, don't open
+woven-imprint demo --no-browser
 ```
 
 ### Terminal REPL

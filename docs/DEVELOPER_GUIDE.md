@@ -224,18 +224,27 @@ response = client.chat.completions.create(
 ### React Demo UI
 
 ```bash
-woven-imprint demo                      # auto-detect browser, localhost:5173
-woven-imprint demo --browser chrome     # specific browser
-woven-imprint demo --browser none       # don't open, just print URL
+woven-imprint demo                          # localhost:7860, auto-open browser
+woven-imprint demo --port 8080              # custom port
+woven-imprint demo --host 0.0.0.0           # expose on all interfaces (Tailscale, LAN)
+woven-imprint demo --no-browser             # don't open browser
 ```
 
-The demo server runs on `localhost:5173` by default. Configure in `~/.woven_imprint/config.yaml`:
+The demo server runs on `localhost:7860` by default. Configure in `~/.woven_imprint/config.yaml`:
 
 ```yaml
 server:
-  demo_port: 5173
-  demo_browser: auto
+  demo_port: 7860
+  demo_browser: true
 ```
+
+Features:
+- **Chat** with any character, with markdown rendering
+- **Character management** — create, delete, export, import (JSON/PNG/markdown), migrate from text
+- **X-Ray panel** — real-time memory feed, relationship radar chart, emotion indicator (collapsible)
+- **Provider configuration** — Ollama, OpenAI, Anthropic, DeepSeek, NVIDIA NIM, or any OpenAI-compatible API
+- **Live model discovery** — queries the actual provider API for available models
+- **Reflect** — trigger character self-reflection
 
 ## Configuration
 
@@ -274,8 +283,8 @@ woven-imprint migrate <path> -k f1 f2    # With knowledge files
 
 # Server
 woven-imprint serve --port 8650           # OpenAI-compatible API
-woven-imprint demo --port 5173            # React demo UI
-woven-imprint demo --browser chrome       # Specify browser
+woven-imprint demo --port 7860            # React demo UI (default)
+woven-imprint demo --host 0.0.0.0         # Network access
 
 # Maintenance
 woven-imprint update                      # Update to latest version

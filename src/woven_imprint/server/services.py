@@ -122,7 +122,9 @@ def export_character_service(engine, character_id):
 
 def import_character_service(engine, data: dict):
     """Import character from JSON dict. Returns character info."""
-    import tempfile, json, os
+    import tempfile
+    import json
+    import os
     # Write to temp file since engine.import_character expects a path
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         json.dump(data, f)

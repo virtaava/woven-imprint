@@ -10,7 +10,6 @@ from woven_imprint.server.services import (
     import_character_service,
     list_characters_service,
     get_character_state_service,
-    migrate_character_service,
     recall_memories_service,
     record_message_service,
     reflect_character_service,

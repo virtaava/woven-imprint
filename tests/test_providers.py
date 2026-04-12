@@ -57,6 +57,19 @@ class TestCreateLLM:
 
         assert isinstance(llm, AnthropicLLM)
 
+    def test_gemma_edge_provider(self):
+        cfg = WovenConfig(
+            llm=LLMConfig(
+                llm_provider="gemma_edge",
+                model="gemma-3n",
+                base_url="http://127.0.0.1:8766",
+            )
+        )
+        llm = create_llm(cfg)
+        from woven_imprint.llm.gemma_edge import GemmaEdgeLLM
+
+        assert isinstance(llm, GemmaEdgeLLM)
+
 
 class TestCreateEmbedding:
     def test_default_creates_ollama(self):

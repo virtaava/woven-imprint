@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 
 class LLMProvider(ABC):
@@ -24,5 +25,7 @@ class LLMProvider(ABC):
         """
 
     @abstractmethod
-    def generate_json(self, messages: list[dict[str, str]], temperature: float = 0.3) -> dict:
+    def generate_json(
+        self, messages: list[dict[str, str]], temperature: float = 0.3
+    ) -> dict[str, Any] | list[Any]:
         """Generate a JSON response. Must return valid parsed JSON."""

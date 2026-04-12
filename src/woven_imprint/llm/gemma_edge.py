@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 import requests
 
@@ -52,9 +53,7 @@ class GemmaEdgeLLM(LLMProvider):
             or os.environ.get("WOVEN_IMPRINT_BASE_URL")
         )
         if not self.base_url:
-            raise ValueError(
-                "GemmaEdgeLLM requires a base_url or WOVEN_IMPRINT_GEMMA_EDGE_URL."
-            )
+            raise ValueError("GemmaEdgeLLM requires a base_url or WOVEN_IMPRINT_GEMMA_EDGE_URL.")
         self.base_url = self.base_url.rstrip("/")
         self.timeout = timeout
 
@@ -87,7 +86,9 @@ class GemmaEdgeLLM(LLMProvider):
                 return data["text"].strip()
         raise ValueError("Gemma edge adapter returned no text content")
 
-    def generate_json(self, messages: list[dict[str, str]], temperature: float = 0.3) -> dict:
+    def generate_json(
+        self, messages: list[dict[str, str]], temperature: float = 0.3
+    ) -> dict[str, Any] | list[Any]:
         payload = {
             "model": self.model,
             "messages": messages,

@@ -198,6 +198,8 @@ class ArcTracker:
 
         try:
             result = self.llm.generate_json(messages)
+            if not isinstance(result, dict):
+                result = {}
 
             if not result.get("is_beat", False):
                 return None

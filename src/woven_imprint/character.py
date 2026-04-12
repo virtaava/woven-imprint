@@ -803,6 +803,8 @@ class Character:
 
         try:
             result = self.llm.generate_json(messages)
+            if not isinstance(result, dict):
+                result = {}
             deltas = {}
             for key in ("trust", "affection", "respect", "familiarity", "tension"):
                 val = result.get(key, 0.0)

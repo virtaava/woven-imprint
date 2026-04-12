@@ -128,6 +128,8 @@ class EmotionEngine:
 
         try:
             result = self.llm.generate_json(messages)
+            if not isinstance(result, dict):
+                result = {}
             mood = str(result.get("mood", "neutral")).lower().strip()
             if mood not in EMOTION_LABELS:
                 mood = "neutral"

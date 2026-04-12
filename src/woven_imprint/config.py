@@ -25,7 +25,7 @@ class LLMConfig:
     model: str = ""
     embedding_model: str = "nomic-embed-text"
     ollama_host: str = "http://127.0.0.1:11434"
-    llm_provider: str = "ollama"  # ollama, openai, anthropic
+    llm_provider: str = "ollama"  # ollama, openai, anthropic, gemma_edge
     embedding_provider: str = "ollama"  # ollama, openai
     api_key: str | None = None
     base_url: str | None = None

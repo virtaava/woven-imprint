@@ -14,4 +14,8 @@ def __getattr__(name: str):
         from .anthropic_llm import AnthropicLLM
 
         return AnthropicLLM
+    if name == "GemmaEdgeLLM":
+        from .gemma_edge import GemmaEdgeLLM
+
+        return GemmaEdgeLLM
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

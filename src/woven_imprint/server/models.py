@@ -30,7 +30,7 @@ class ChatCompletionRequest(BaseModel):
 
 class ProviderConfigRequest(BaseModel):
     # Extend this list as new providers are added
-    provider: str = Field(..., pattern="^(openai|anthropic|ollama|deepseek)$")
+    provider: str = Field(..., pattern="^(openai|anthropic|ollama|deepseek|gemma_edge)$")
     model: str = Field(..., max_length=200)
     api_key: str | None = Field(None, max_length=500)
     base_url: str | None = Field(None, max_length=500)

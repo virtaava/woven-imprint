@@ -48,9 +48,17 @@ def create_llm(cfg: WovenConfig | None = None) -> LLMProvider:
             model=cfg.llm.model,
             api_key=cfg.llm.api_key,
         )
+    elif provider == "gemma_edge":
+        from .llm.gemma_edge import GemmaEdgeLLM
+
+        return GemmaEdgeLLM(
+            model=cfg.llm.model,
+            base_url=cfg.llm.base_url,
+            timeout=cfg.llm.timeout,
+        )
     else:
         raise ValueError(
-            f"Unknown LLM provider: {provider!r}. Supported: ollama, openai, anthropic"
+            f"Unknown LLM provider: {provider!r}. Supported: ollama, openai, anthropic, gemma_edge"
         )
 
 

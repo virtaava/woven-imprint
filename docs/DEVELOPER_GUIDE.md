@@ -105,6 +105,28 @@ engine = Engine(
     llm=OpenAILLM(model="my-model", base_url="http://localhost:8000/v1", api_key="not-needed"),
     embedding=OllamaEmbedding(),
 )
+
+### Gemma edge adapter
+
+Use this when the actual Gemma runtime lives outside Python, for example behind a
+Google AI Edge / MediaPipe bridge that exposes local HTTP endpoints.
+
+```python
+from woven_imprint import Engine
+from woven_imprint.llm import GemmaEdgeLLM
+
+engine = Engine(
+    llm=GemmaEdgeLLM(
+        model="gemma-3n",
+        base_url="http://127.0.0.1:8788",
+    ),
+)
+```
+
+Expected adapter endpoints:
+
+- `POST /generate`
+- `POST /generate_json`
 ```
 
 ## Python API

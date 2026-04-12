@@ -52,10 +52,10 @@ llm:
 | `model` | `llama3.2` | `WOVEN_IMPRINT_MODEL` | Model name for chat generation. Any model your provider supports works. Larger models (30B+) produce better characters but are slower. |
 | `embedding_model` | `nomic-embed-text` | `WOVEN_IMPRINT_EMBEDDING_MODEL` | Model used for memory embeddings. Must be an embedding model, not a chat model. `nomic-embed-text` produces 768-dim vectors. |
 | `ollama_host` | `http://127.0.0.1:11434` | `OLLAMA_HOST` | URL of the Ollama server. Change if Ollama runs on a different machine or port. For Docker: `http://ollama:11434`. |
-| `llm_provider` | `ollama` | `WOVEN_IMPRINT_LLM_PROVIDER` | LLM provider backend. Supported: `ollama`, `openai`, `anthropic`. All entry points (CLI, UI, MCP, API server) use this setting. |
+| `llm_provider` | `ollama` | `WOVEN_IMPRINT_LLM_PROVIDER` | LLM provider backend. Supported: `ollama`, `openai`, `anthropic`, `gemma_edge`. All entry points (CLI, UI, MCP, API server) use this setting. |
 | `embedding_provider` | `ollama` | `WOVEN_IMPRINT_EMBEDDING_PROVIDER` | Embedding provider backend. Supported: `ollama`, `openai`. |
 | `api_key` | `null` | `WOVEN_IMPRINT_API_KEY_LLM` | API key for OpenAI or Anthropic providers. Not needed for Ollama. |
-| `base_url` | `null` | `WOVEN_IMPRINT_BASE_URL` | Custom base URL for the provider. Use for vLLM, llama.cpp, LiteLLM, or Azure endpoints. |
+| `base_url` | `null` | `WOVEN_IMPRINT_BASE_URL` | Custom base URL for the provider. Use for vLLM, llama.cpp, LiteLLM, Azure endpoints, or a Gemma edge adapter bridge. |
 | `num_ctx` | `8192` | `WOVEN_IMPRINT_NUM_CTX` | Context window size passed to Ollama. Higher = more conversation history but more VRAM. Most models support 4096-131072. |
 | `temperature` | `0.7` | — | Sampling temperature for character responses. Lower = more deterministic, higher = more creative. |
 | `temperature_json` | `0.3` | — | Temperature for JSON generation (fact extraction, relationship assessment). Lower for more reliable structured output. |

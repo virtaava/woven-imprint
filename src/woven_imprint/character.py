@@ -186,6 +186,11 @@ class Character:
         build_context_started = time.perf_counter()
         messages = self._build_context(message, memories, rel_context)
         metrics["build_context_ms"] = round((time.perf_counter() - build_context_started) * 1000.0, 2)
+        metrics["message_count"] = float(len(messages))
+        metrics["prompt_chars"] = float(sum(len(item.get("content", "")) for item in messages))
+        metrics["system_prompt_chars"] = float(sum(len(item.get("content", "")) for item in messages if item.get("role") == "system"))
+        metrics["user_prompt_chars"] = float(sum(len(item.get("content", "")) for item in messages if item.get("role") == "user"))
+        metrics["assistant_history_chars"] = float(sum(len(item.get("content", "")) for item in messages if item.get("role") == "assistant"))
 
         # 6. Generate response
         generate_started = time.perf_counter()

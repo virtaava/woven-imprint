@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -86,6 +87,7 @@ class Character:
         # Session tracking
         self._session_id: str | None = None
         self._turn_count: int = 0
+        self.last_chat_metrics: dict[str, float] = {}
 
         # Config — read from centralized config, can be overridden per-instance
         self.enforce_consistency: bool = _cfg.character.enforce_consistency
@@ -137,8 +139,13 @@ class Character:
         Returns:
             The character's response.
         """
+        metrics: dict[str, float] = {}
+        chat_started = time.perf_counter()
+
         if not self._session_id:
+            session_started = time.perf_counter()
             self.start_session()
+            metrics["start_session_ms"] = round((time.perf_counter() - session_started) * 1000.0, 2)
 
         # Input size limit
         from .config import get_config
@@ -148,6 +155,7 @@ class Character:
             message = message[: _cfg.memory.max_message_length]
 
         # 1. Store user message as buffer memory
+        store_user_started = time.perf_counter()
         self.memory.add(
             content=f"[User] {message}",
             tier="buffer",
@@ -155,42 +163,60 @@ class Character:
             session_id=self._session_id,
             importance=0.5,
         )
+        metrics["store_user_memory_ms"] = round((time.perf_counter() - store_user_started) * 1000.0, 2)
 
         # 2. Retrieve relevant memories
+        retrieve_started = time.perf_counter()
         memories = self.retriever.retrieve(
             query=message,
             limit=10,
             relationship_target=user_id,
         )
+        metrics["retrieve_memories_ms"] = round((time.perf_counter() - retrieve_started) * 1000.0, 2)
 
         # 3. Get relationship context
         rel_context = ""
+        relationship_context_started = time.perf_counter()
         if user_id:
             self.relationships.get_or_create(user_id)
             rel_context = self.relationships.describe(user_id)
+        metrics["relationship_context_ms"] = round((time.perf_counter() - relationship_context_started) * 1000.0, 2)
 
         # 4. Build the full prompt within context budget
+        build_context_started = time.perf_counter()
         messages = self._build_context(message, memories, rel_context)
+        metrics["build_context_ms"] = round((time.perf_counter() - build_context_started) * 1000.0, 2)
 
         # 6. Generate response
+        generate_started = time.perf_counter()
         try:
             response = self.llm.generate(messages, temperature=0.7)
         except Exception as e:
             logger.error("LLM generation failed: %s", e)
+            self.last_chat_metrics = {
+                **metrics,
+                "total_ms": round((time.perf_counter() - chat_started) * 1000.0, 2),
+            }
             raise
+        metrics["generate_ms"] = round((time.perf_counter() - generate_started) * 1000.0, 2)
 
         # 7. Consistency check (non-fatal — use response as-is if check fails)
+        consistency_started = time.perf_counter()
         if self.enforce_consistency:
             try:
                 response, _report = self.consistency.enforce(response, messages)
             except Exception as e:
                 logger.debug("Consistency check failed: %s", e)
+        metrics["consistency_ms"] = round((time.perf_counter() - consistency_started) * 1000.0, 2)
 
         # 8. Add both turns to conversation buffer
+        buffer_started = time.perf_counter()
         self._context.add_turn("user", message)
         self._context.add_turn("assistant", response)
+        metrics["conversation_buffer_ms"] = round((time.perf_counter() - buffer_started) * 1000.0, 2)
 
         # 9. Store character response as buffer memory
+        store_response_started = time.perf_counter()
         self.memory.add(
             content=f"[{self.name}] {response}",
             tier="buffer",
@@ -198,16 +224,20 @@ class Character:
             session_id=self._session_id,
             importance=0.5,
         )
+        metrics["store_response_memory_ms"] = round((time.perf_counter() - store_response_started) * 1000.0, 2)
 
         # Subsystem updates — all independent, all non-fatal
+        subsystem_started = time.perf_counter()
         if self.parallel and not self.lightweight:
             self._run_subsystems_parallel(message, response, user_id)
         else:
             self._run_subsystems_sequential(message, response, user_id)
+        metrics["subsystems_ms"] = round((time.perf_counter() - subsystem_started) * 1000.0, 2)
 
         self._turn_count += 1
 
         # Periodic maintenance
+        maintenance_started = time.perf_counter()
         if self._turn_count % _cfg.memory.state_save_interval == 0:
             try:
                 self._save_state()
@@ -222,7 +252,10 @@ class Character:
                     self.consolidator.consolidate()
                 except Exception as e:
                     logger.debug("Auto-consolidation failed: %s", e)
+        metrics["maintenance_ms"] = round((time.perf_counter() - maintenance_started) * 1000.0, 2)
 
+        metrics["total_ms"] = round((time.perf_counter() - chat_started) * 1000.0, 2)
+        self.last_chat_metrics = metrics
         return response
 
     def ingest(self, role: str, content: str, user_id: str | None = None) -> None:

@@ -88,6 +88,7 @@ class Character:
         self._session_id: str | None = None
         self._turn_count: int = 0
         self.last_chat_metrics: dict[str, float] = {}
+        self.last_chat_messages: list[dict[str, str]] = []
 
         # Config — read from centralized config, can be overridden per-instance
         self.enforce_consistency: bool = _cfg.character.enforce_consistency
@@ -185,6 +186,7 @@ class Character:
         # 4. Build the full prompt within context budget
         build_context_started = time.perf_counter()
         messages = self._build_context(message, memories, rel_context)
+        self.last_chat_messages = [dict(item) for item in messages]
         metrics["build_context_ms"] = round((time.perf_counter() - build_context_started) * 1000.0, 2)
         metrics["message_count"] = float(len(messages))
         metrics["prompt_chars"] = float(sum(len(item.get("content", "")) for item in messages))

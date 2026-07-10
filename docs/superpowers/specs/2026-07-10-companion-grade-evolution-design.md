@@ -106,7 +106,14 @@ Sources: unresolved threads (questions the user raised that never resolved), rel
 
 ## 4. Phase C — Edge (outline; detailed spec when the game build starts)
 
-Kotlin edge runtime reading/writing the same SQLite DB (storage, retrieval math — RRF+cosine are ~50 portable lines — prompt assembly, callback reads); on-device inference via MediaPipe-class runtime behind the gemma_edge contract, with a reference bridge implementation and resilience parity; batch jobs mapped to WorkManager charging-constrained tasks. The Python toolchain remains the authoring/debugging environment for any pet DB.
+Kotlin edge runtime reading/writing the same SQLite DB (storage, retrieval math — RRF+cosine are ~50 portable lines — prompt assembly, callback reads), with a reference bridge implementation and resilience parity; batch jobs mapped to WorkManager charging-constrained tasks. The Python toolchain remains the authoring/debugging environment for any pet DB.
+
+**Model/runtime decision (2026-07-11, full analysis in `research/2026-07-11-on-device-model/00-decision.md`):**
+- **Runtime: llama.cpp** (vendored, pinned, thin Kotlin/JNI) — the only runtime with Kotlin-usable constrained generation (dynamic GBNF for earned-vocabulary fragment speech; json-schema→GBNF for batch JSON). One .so serves chat + batch + embeddings. CPU-first; GPU/NPU strictly opt-in.
+- **Models: Qwen3 family** (Apache 2.0, Finnish) — 1.7B Q4 chat (always resident), 0.6B small-device tier, 4B-Instruct-2507 as optional 8 GB-gated batch model. **Embeddings: EmbeddingGemma-308M** GGUF.
+- **Device floor 6 GB RAM**; models delivered via Play AI packs/PAD + resumable download, never bundled.
+- **Watch list:** Gemma 4 edge (if Apache 2.0 verified + LiteRT-LM Kotlin constrained decoding lands, chat tier may migrate for NPU prefill); LFM2.5 for batch.
+- Stage-0 spike validates: grammar-constrained fragment speech quality/overhead on 1.7B, extraction JSON success rates 1.7B-with-retries vs 4B, EmbeddingGemma parity with Python reference, thermals/RAM on a real 6–8 GB device.
 
 ## 5. Testing & acceptance
 

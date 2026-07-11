@@ -40,6 +40,16 @@ class TestCharacterCRUD:
         storage.delete_character("c1")
         assert storage.load_character("c1") is None
 
+    def test_delete_character_removes_session_turns(self, storage):
+        storage.save_character("c1", "Alice", {})
+        storage.add_session_turn("s1", "c1", 1, "user", "hi")
+        storage.add_session_turn("s1", "c1", 2, "assistant", "hello")
+        assert storage.get_session_turns("s1") != []
+
+        storage.delete_character("c1")
+
+        assert storage.get_session_turns("s1") == []
+
     def test_upsert(self, storage):
         storage.save_character("c1", "Alice", {"v": 1})
         storage.save_character("c1", "Alice Updated", {"v": 2})

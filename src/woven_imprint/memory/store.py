@@ -80,7 +80,11 @@ class MemoryStore:
         return self.storage.count_memories(self.character_id, tier=tier)
 
     def touch(self, memory_id: str) -> None:
-        """Mark memory as recently accessed (for recency scoring)."""
+        """Mark memory as recently accessed.
+
+        Updates accessed_at for analytics; recency scoring is anchored on
+        created_at by default (see `memory.recency_anchor` config).
+        """
         self.storage.touch_memory(memory_id)
 
     def archive(self, memory_id: str) -> None:

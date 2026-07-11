@@ -78,6 +78,13 @@ public `Character`/`Engine` surface for the common case.
   differ from pre-Phase-A behavior; this was a deliberate correctness fix
   (see "seed-dominance bug" above), not a regression.
 
+### Fixed
+- `Engine.embedder` restored as a deprecated read-only alias for
+  `Engine.embedding`. The A3 content-hash embedding cache work renamed the
+  attribute without keeping a back-compat alias, which broke the
+  additive-only public-surface constraint for this phase; `embedder` now
+  returns `self.embedding` and callers should migrate to `embedding`.
+
 ## [0.5.0] - 2026-03-25
 
 ### Added

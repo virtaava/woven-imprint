@@ -55,9 +55,21 @@ class BackgroundWorker:
             time.sleep(0.01)
         return True
 
+    @property
+    def is_alive(self) -> bool:
+        """Whether the worker thread is still running.
+
+        True if a previous close()/join() timed out while a task was still
+        in flight — callers use this to decide whether it's safe to treat
+        the worker as fully stopped.
+        """
+        return self._thread.is_alive()
+
     def close(self, timeout: float | None = 5.0) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        self._queue.put(_STOP)
+        # Idempotent-safe: even on a repeated call (e.g. retrying after a
+        # prior close() timed out), still join with the given timeout —
+        # only the STOP sentinel is sent at most once.
+        if not self._closed:
+            self._closed = True
+            self._queue.put(_STOP)
         self._thread.join(timeout=timeout)

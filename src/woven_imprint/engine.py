@@ -43,6 +43,11 @@ class Engine:
             embedding = CachedEmbedder(embedding)
         self.embedding = embedding
 
+    @property
+    def embedder(self) -> EmbeddingProvider:
+        """Deprecated alias for `embedding`. Use `embedding` instead."""
+        return self.embedding
+
     def create_character(
         self,
         name: str,

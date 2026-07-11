@@ -211,6 +211,7 @@ class SQLiteStorage:
     def delete_character(self, char_id: str) -> None:
         self._conn.execute("DELETE FROM memories WHERE character_id = ?", (char_id,))
         self._conn.execute("DELETE FROM relationships WHERE character_id = ?", (char_id,))
+        self._conn.execute("DELETE FROM session_turns WHERE character_id = ?", (char_id,))
         self._conn.execute("DELETE FROM sessions WHERE character_id = ?", (char_id,))
         self._conn.execute("DELETE FROM characters WHERE id = ?", (char_id,))
         self._commit()

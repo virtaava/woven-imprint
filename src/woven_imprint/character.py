@@ -164,11 +164,28 @@ class Character:
             return True
         return self._worker.flush(timeout=timeout)
 
-    def close(self) -> None:
-        """Flush and stop the background worker."""
+    def close(self, timeout: float = 10.0) -> None:
+        """Flush and stop the background worker.
+
+        Args:
+            timeout: Max seconds to wait for queued bookkeeping to drain
+                (flush) and for the worker thread to join (close).
+
+        If the drain does not finish and/or the worker thread is still
+        alive after the join, a WARNING is logged and the worker is left
+        in place (``self._worker`` is not nulled) instead of being
+        silently dropped — a repeated call to ``close()`` can then retry
+        the drain rather than orphaning the still-running worker.
+        """
         if self._worker is not None:
-            self._worker.flush(timeout=10)
-            self._worker.close()
+            flushed = self._worker.flush(timeout=timeout)
+            self._worker.close(timeout=timeout)
+            if not flushed or self._worker.is_alive:
+                logger.warning(
+                    "background worker did not drain within timeout; "
+                    "pending bookkeeping may be lost"
+                )
+                return
             self._worker = None
 
     def chat(self, message: str, user_id: str | None = None) -> str:
@@ -340,6 +357,10 @@ class Character:
         `character.consistency_stream_mode`: "off" | "log", default "log").
 
         This is a generator: no side effects occur until the first chunk is requested.
+        If the caller abandons the generator mid-stream (stops iterating before
+        it's exhausted), the stored user message is left without a paired
+        assistant turn or the bookkeeping (buffer memory, conversation history,
+        emotion/arc/fact-extraction) that normally follows a completed response.
 
         Args:
             message: The user's message.

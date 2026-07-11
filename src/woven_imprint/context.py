@@ -90,6 +90,13 @@ class ContextManager:
         self._turns.clear()
         self._summary = ""
 
+    def load_turns(self, turns: list[dict]) -> None:
+        """Replace the buffer with persisted turns (oldest first)."""
+        self.clear()
+        for t in turns:
+            self._turns.append(ConversationTurn(role=t["role"], content=t["content"]))
+        self._enforce_limits()
+
     def compress(self, llm=None) -> str:
         """Compress older turns into a summary.
 

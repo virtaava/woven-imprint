@@ -54,6 +54,7 @@ def _make_character(storage, name, char_id):
     char = Character(char_id, storage, llm, embedder, persona)
     char.enforce_consistency = False
     char.parallel = False
+    char.background = False
     return char
 
 

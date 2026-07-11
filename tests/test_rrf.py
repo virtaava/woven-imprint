@@ -52,3 +52,24 @@ class TestRRF:
         result = reciprocal_rank_fusion([["a", "b", "c", "d"]])
         scores = [s for _, s in result]
         assert all(scores[i] >= scores[i + 1] for i in range(len(scores) - 1))
+
+
+def test_rrf_weights_bias_fusion():
+    from woven_imprint.utils.rrf import reciprocal_rank_fusion
+
+    # list A prefers "x", list B prefers "y"; weighting B 3x must flip the winner
+    lists = [["x", "y"], ["y", "x"]]
+    unweighted = reciprocal_rank_fusion(lists)
+    assert unweighted[0][1] == unweighted[1][1]  # tie without weights
+    weighted = reciprocal_rank_fusion(lists, weights=[1.0, 3.0])
+    assert weighted[0][0] == "y"
+
+
+def test_rrf_configurable_k():
+    from woven_imprint.utils.rrf import reciprocal_rank_fusion
+
+    lists = [["a", "b"]]
+    k10 = dict(reciprocal_rank_fusion(lists, k=10))
+    k60 = dict(reciprocal_rank_fusion(lists, k=60))
+    assert k10["a"] == 1 / 11
+    assert k60["a"] == 1 / 61

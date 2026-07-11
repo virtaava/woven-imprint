@@ -10,8 +10,8 @@ Wraps any callable with:
 from __future__ import annotations
 
 import random
+import threading
 import time
-from dataclasses import dataclass
 
 import requests
 
@@ -35,34 +35,48 @@ def _is_retryable(exc: Exception) -> bool:
         return True
     if isinstance(exc, requests.HTTPError) and exc.response is not None:
         return exc.response.status_code in _RETRYABLE_STATUS_CODES
+    # Duck-typed SDK errors (openai/anthropic APIStatusError expose .status_code)
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        return status in _RETRYABLE_STATUS_CODES
     return False
 
 
-@dataclass
 class CircuitBreaker:
-    """Tracks consecutive failures and trips after threshold."""
+    """Tracks consecutive failures and trips after threshold.
 
-    threshold: int = 5
-    cooldown: float = 30.0
-    _failures: int = 0
-    _tripped_at: float = 0.0
+    Thread-safe: an internal lock guards failure-count mutation so concurrent
+    callers (e.g. multiple request threads sharing a provider breaker) don't
+    race on trip/reset state.
+    """
+
+    def __init__(self, threshold: int = 5, cooldown: float = 30.0):
+        self.threshold = threshold
+        self.cooldown = cooldown
+        self._failures = 0
+        self._tripped_at = 0.0
+        self._lock = threading.Lock()
 
     @property
     def is_open(self) -> bool:
         """True if circuit is tripped and still in cooldown."""
-        if self._failures < self.threshold:
-            return False
-        elapsed = time.time() - self._tripped_at
-        if elapsed >= self.cooldown:
-            # Cooldown expired — reset
-            self._failures = 0
-            return False
-        return True
+        with self._lock:
+            if self._failures < self.threshold:
+                return False
+            elapsed = time.time() - self._tripped_at
+            if elapsed >= self.cooldown:
+                # Cooldown expired — reset
+                self._failures = 0
+                return False
+            return True
 
     def record_failure(self) -> None:
-        self._failures += 1
-        if self._failures >= self.threshold:
-            self._tripped_at = time.time()
+        with self._lock:
+            self._failures += 1
+            tripped = self._failures >= self.threshold
+            if tripped:
+                self._tripped_at = time.time()
+        if tripped:
             logger.warning(
                 "Circuit breaker tripped after %d failures. Cooldown: %.0fs",
                 self._failures,
@@ -70,28 +84,32 @@ class CircuitBreaker:
             )
 
     def record_success(self) -> None:
-        self._failures = 0
+        with self._lock:
+            self._failures = 0
 
 
 # Global circuit breakers per provider type
 _breakers: dict[str, CircuitBreaker] = {}
+_breakers_lock = threading.Lock()
 
 
 def _get_breaker(name: str) -> CircuitBreaker:
-    if name not in _breakers:
-        from ..config import get_config
+    with _breakers_lock:
+        if name not in _breakers:
+            from ..config import get_config
 
-        cfg = get_config()
-        _breakers[name] = CircuitBreaker(
-            threshold=cfg.llm.circuit_breaker_threshold,
-            cooldown=cfg.llm.circuit_breaker_cooldown,
-        )
-    return _breakers[name]
+            cfg = get_config()
+            _breakers[name] = CircuitBreaker(
+                threshold=cfg.llm.circuit_breaker_threshold,
+                cooldown=cfg.llm.circuit_breaker_cooldown,
+            )
+        return _breakers[name]
 
 
 def reset_breaker(name: str) -> None:
     """Reset the circuit breaker for a provider (e.g. after config change)."""
-    _breakers.pop(name, None)
+    with _breakers_lock:
+        _breakers.pop(name, None)
 
 
 def resilient_call(fn, *args, provider_name: str = "default", **kwargs):

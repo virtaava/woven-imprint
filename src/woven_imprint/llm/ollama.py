@@ -81,6 +81,58 @@ class OllamaLLM(LLMProvider):
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
         return content
 
+    def generate_stream(
+        self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
+    ):
+        """Stream chunks from Ollama's NDJSON /api/chat stream.
+
+        Note: <think> tags are NOT stripped in stream mode (can't strip
+        across chunk boundaries) — callers wanting stripped output use
+        generate().
+        """
+        resp = self._post_stream(
+            "/api/chat",
+            {
+                "model": self.model,
+                "messages": messages,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens,
+                    "num_ctx": self.num_ctx,
+                },
+                "stream": True,
+            },
+        )
+        try:
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                chunk = (data.get("message") or {}).get("content", "")
+                if chunk:
+                    yield chunk
+                if data.get("done"):
+                    break
+        finally:
+            resp.close()
+
+    def _post_stream(self, endpoint: str, payload: dict):
+        from .resilience import resilient_call
+
+        def _do_post():
+            resp = requests.post(
+                f"{self.base_url}{endpoint}", json=payload, timeout=self.timeout, stream=True
+            )
+            resp.raise_for_status()
+            return resp
+
+        return resilient_call(_do_post, provider_name="ollama")
+
     def generate_json(self, messages: list[dict[str, str]], temperature: float = 0.3) -> dict:
         # Add explicit JSON instruction
         if messages and messages[-1]["role"] == "user":

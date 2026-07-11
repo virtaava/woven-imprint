@@ -266,22 +266,106 @@ class TestRetrieval:
 
 
 class TestRecencyScore:
+    def test_recency_anchor_created_ignores_touches(self):
+        """Retrieval touching accessed_at must not make old memories look fresh."""
+        old_created = "2020-01-01 00:00:00"
+        fresh_touch = "2099-01-01 00:00:00"
+        mem = {"created_at": old_created, "accessed_at": fresh_touch}
+        score = _recency_score(mem, "buffer")
+        assert score < 0.01  # decayed to ~nothing despite the fresh touch
+
     def test_bedrock_decays_slowly(self):
         # 1 week ago
         from datetime import datetime, timezone, timedelta
 
         one_week_ago = (datetime.now(timezone.utc) - timedelta(hours=168)).isoformat()
-        bedrock = _recency_score(one_week_ago, "bedrock")
-        buffer = _recency_score(one_week_ago, "buffer")
+        mem_old = {"created_at": one_week_ago, "accessed_at": one_week_ago}
+        bedrock = _recency_score(mem_old, "bedrock")
+        buffer = _recency_score(mem_old, "buffer")
         assert bedrock > buffer  # bedrock should retain more
 
     def test_recent_scores_high(self):
         from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc).isoformat()
-        score = _recency_score(now, "core")
+        mem_now = {"created_at": now, "accessed_at": now}
+        score = _recency_score(mem_now, "core")
         assert score > 0.99
 
     def test_invalid_timestamp(self):
-        score = _recency_score("not-a-date", "core")
+        mem = {"created_at": "not-a-date", "accessed_at": "not-a-date"}
+        score = _recency_score(mem, "core")
         assert score == 0.5  # default fallback
+
+
+def test_personal_core_fact_beats_bedrock_seed_flood():
+    """Regression: many bedrock seeds must not drown a query-relevant core fact."""
+    from tests.helpers import make_test_engine
+
+    engine = make_test_engine()
+    char = engine.create_character("Meridian", persona={"backstory": "A wizard of the old tower."})
+    # Flood bedrock with irrelevant seeds
+    for i in range(30):
+        char.memory.add(
+            content=f"Ancient tower lore volume {i}: the stones hum at dusk.",
+            tier="bedrock",
+            role="observation",
+            importance=0.9,
+        )
+    # One personal core fact
+    char.memory.add(
+        content="The user's sister is named Anna and she loves rowing.",
+        tier="core",
+        role="observation",
+        importance=0.75,
+    )
+    results = char.retriever.retrieve("what is my sister's name", limit=5)
+    contents = [m["content"] for m in results]
+    assert any("Anna" in c for c in contents), contents
+
+
+def test_fts_search_carries_rowid():
+    """Regression: fts_search must include rowid so retrieval tiebreakers are sound.
+
+    When a memory is found via Phase-2 FTS (older than recency window),
+    it must carry rowid so that tiebreakers in retrieval._recency_score()
+    and retrieval.importance_scores work correctly.
+
+    This test creates >100 buffer memories to push an early distinctive memory
+    out of the Phase-1 recency window, then retrieves by FTS and verifies rowid.
+    """
+    from tests.helpers import make_test_engine
+
+    engine = make_test_engine()
+    char = engine.create_character("Zephyr", persona={"role": "scout"})
+
+    # Add the distinctive old memory that will be found via FTS
+    char.memory.add(
+        content="I saw zephyrblossom flowers blooming near the ancient grove.",
+        tier="buffer",
+        role="observation",
+        importance=0.6,
+    )
+
+    # Insert >100 buffer memories to push the old one out of Phase-1 window (limit=100)
+    for i in range(105):
+        char.memory.add(
+            content=f"Daily observation {i}: encountered unrelated event number {i}.",
+            tier="buffer",
+            role="observation",
+            importance=0.5,
+        )
+
+    # Retrieve by the distinctive keyword — must use FTS Phase-2
+    results = char.retriever.retrieve("zephyrblossom", limit=5)
+
+    # Assert: (a) old memory is found (proves FTS Phase-2 works)
+    assert any("zephyrblossom" in r["content"] for r in results), (
+        "FTS Phase-2 should find memory outside recency window"
+    )
+
+    # Assert: (b) rowid is in dict and is positive int (proves fts_search carries rowid)
+    old_mem = next(r for r in results if "zephyrblossom" in r["content"])
+    assert "rowid" in old_mem, "fts_search result must include rowid"
+    assert isinstance(old_mem["rowid"], int), "rowid must be an integer"
+    assert old_mem["rowid"] > 0, "rowid must be positive"

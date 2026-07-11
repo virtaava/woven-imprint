@@ -58,13 +58,14 @@ class GemmaEdgeLLM(LLMProvider):
         self.timeout = timeout
 
     def _post(self, endpoint: str, payload: dict) -> requests.Response:
-        resp = requests.post(
-            f"{self.base_url}{endpoint}",
-            json=payload,
-            timeout=self.timeout,
-        )
-        resp.raise_for_status()
-        return resp
+        from .resilience import resilient_call
+
+        def _do_post():
+            resp = requests.post(f"{self.base_url}{endpoint}", json=payload, timeout=self.timeout)
+            resp.raise_for_status()
+            return resp
+
+        return resilient_call(_do_post, provider_name="gemma_edge")
 
     def generate(
         self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048

@@ -181,7 +181,16 @@ def bench_cross_session_persistence(engine: Engine) -> BenchmarkResult:
 
 @timed
 def bench_memory_tier_separation(engine: Engine) -> BenchmarkResult:
-    """Verify that bedrock > core > buffer in retrieval importance."""
+    """Verify tier still influences ranking (via decay + importance boost)
+    without forcing a strict bedrock > core > buffer order.
+
+    A dedicated tier-priority ranked list used to force bedrock first
+    unconditionally — that was the seed-dominance bug (bedrock content could
+    drown out more query-relevant core/buffer memories). Post-fix, bedrock
+    should still generally outrank buffer (slower decay + tier boost), but a
+    more relevant core memory is allowed to outrank a less relevant bedrock
+    one.
+    """
     char = engine.create_character("TierTest", persona={"backstory": "A detective"})
 
     # All mention "investigation" but with different importance + tier
@@ -212,14 +221,16 @@ def bench_memory_tier_separation(engine: Engine) -> BenchmarkResult:
 
     tiers = [r["tier"] for r in results]
 
-    # Bedrock should rank first (highest importance + tier boost)
-    bedrock_first = tiers[0] == "bedrock"
+    # Bedrock should still generally outrank buffer (slower decay + tier
+    # boost) — but is NOT required to beat core; content relevance can
+    # legitimately put a more relevant core memory ahead of bedrock.
+    bedrock_beats_buffer = tiers.index("bedrock") < tiers.index("buffer")
     # Buffer should rank last (lowest importance, no tier boost)
     buffer_last = tiers[-1] == "buffer"
     # All three tiers should be present
     all_present = set(tiers) == {"bedrock", "core", "buffer"}
 
-    checks = [bedrock_first, buffer_last, all_present]
+    checks = [bedrock_beats_buffer, buffer_last, all_present]
     score = sum(checks) / len(checks)
 
     return BenchmarkResult(
@@ -228,7 +239,7 @@ def bench_memory_tier_separation(engine: Engine) -> BenchmarkResult:
         score=score,
         details={
             "tier_order": tiers,
-            "bedrock_first": bedrock_first,
+            "bedrock_beats_buffer": bedrock_beats_buffer,
             "buffer_last": buffer_last,
             "all_present": all_present,
         },

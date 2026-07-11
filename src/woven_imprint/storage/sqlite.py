@@ -82,6 +82,8 @@ END;
 
 CREATE INDEX IF NOT EXISTS idx_memories_character ON memories(character_id, tier, status);
 CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
+CREATE INDEX IF NOT EXISTS idx_memories_accessed ON memories(character_id, accessed_at);
+CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(character_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_relationships_character ON relationships(character_id);
 CREATE INDEX IF NOT EXISTS idx_relationships_pair ON relationships(character_id, target_id);
 
@@ -96,6 +98,18 @@ INSERT OR IGNORE INTO schema_version (version) VALUES (1);
 # Future migrations go here: version → SQL
 _MIGRATIONS: dict[int, str] = {
     2: "ALTER TABLE sessions ADD COLUMN alias TEXT;",
+    3: """
+CREATE TABLE IF NOT EXISTS session_turns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    character_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_session_turns_session ON session_turns(session_id, seq);
+""",
 }
 
 
@@ -197,6 +211,7 @@ class SQLiteStorage:
     def delete_character(self, char_id: str) -> None:
         self._conn.execute("DELETE FROM memories WHERE character_id = ?", (char_id,))
         self._conn.execute("DELETE FROM relationships WHERE character_id = ?", (char_id,))
+        self._conn.execute("DELETE FROM session_turns WHERE character_id = ?", (char_id,))
         self._conn.execute("DELETE FROM sessions WHERE character_id = ?", (char_id,))
         self._conn.execute("DELETE FROM characters WHERE id = ?", (char_id,))
         self._commit()
@@ -238,12 +253,12 @@ class SQLiteStorage:
         self, character_id: str, tier: str | None = None, status: str = "active", limit: int = 1000
     ) -> list[dict]:
         """Retrieve memories for a character, optionally filtered by tier."""
-        q = "SELECT * FROM memories WHERE character_id = ? AND status = ?"
+        q = "SELECT *, rowid FROM memories WHERE character_id = ? AND status = ?"
         params: list[Any] = [character_id, status]
         if tier:
             q += " AND tier = ?"
             params.append(tier)
-        q += " ORDER BY created_at DESC LIMIT ?"
+        q += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
         params.append(limit)
         rows = self._conn.execute(q, params).fetchall()
         return [self._row_to_memory(r) for r in rows]
@@ -322,7 +337,7 @@ class SQLiteStorage:
         safe_query = " OR ".join(f'"{w}"' for w in words[:20])
 
         rows = self._conn.execute(
-            """SELECT m.*, rank FROM memories_fts
+            """SELECT m.*, m.rowid AS rowid, rank FROM memories_fts
                JOIN memories m ON memories_fts.rowid = m.rowid
                WHERE memories_fts MATCH ? AND m.character_id = ? AND m.status = 'active'
                ORDER BY rank LIMIT ?""",
@@ -422,3 +437,26 @@ class SQLiteStorage:
             (session_id,),
         )
         self._commit()
+
+    # ── Session turns (durable conversation buffer) ────────────────
+
+    def add_session_turn(
+        self, session_id: str, character_id: str, seq: int, role: str, content: str
+    ) -> None:
+        self._conn.execute(
+            "INSERT INTO session_turns (session_id, character_id, seq, role, content) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (session_id, character_id, seq, role, content),
+        )
+        self._commit()
+
+    def get_session_turns(self, session_id: str, tail: int | None = None) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT seq, role, content, created_at FROM session_turns "
+            "WHERE session_id = ? ORDER BY seq",
+            (session_id,),
+        ).fetchall()
+        turns = [dict(r) for r in rows]
+        if tail is not None:
+            turns = turns[-tail:]
+        return turns

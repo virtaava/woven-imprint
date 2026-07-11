@@ -59,6 +59,13 @@ class MemoryConfig:
     tier_boost_bedrock: float = 0.35
     tier_boost_core: float = 0.2
     tier_boost_buffer: float = 0.0
+    rrf_k: int = 60
+    weight_semantic: float = 1.0
+    weight_keyword: float = 1.0
+    weight_recency: float = 1.0
+    weight_importance: float = 1.0
+    weight_relationship: float = 1.0
+    recency_anchor: str = "created"  # "created" | "accessed"
 
 
 @dataclass
@@ -94,6 +101,9 @@ class CharacterConfig:
     consistency_max_retries: int = 2
     consistency_temperature: float = 0.5
     consistency_fail_open_score: float = 0.8
+    consistency_stream_mode: str = "log"  # "off" | "log" — post-hoc check in chat_stream()
+    metrics_path: str | None = None
+    background: bool = True
 
 
 @dataclass
@@ -226,7 +236,10 @@ def _apply_env(cfg: WovenConfig) -> None:
         "WOVEN_IMPRINT_PARALLEL": ("character", "parallel"),
         "WOVEN_IMPRINT_LIGHTWEIGHT": ("character", "lightweight"),
         "WOVEN_IMPRINT_ENFORCE_CONSISTENCY": ("character", "enforce_consistency"),
+        "WOVEN_IMPRINT_CONSISTENCY_STREAM_MODE": ("character", "consistency_stream_mode"),
         "WOVEN_IMPRINT_MAX_FACTS": ("memory", "max_facts_per_extraction"),
+        "WOVEN_IMPRINT_METRICS_PATH": ("character", "metrics_path"),
+        "WOVEN_IMPRINT_BACKGROUND": ("character", "background"),
     }
 
     for env_var, (section, key) in env_map.items():
@@ -332,6 +345,13 @@ memory:
   tier_boost_bedrock: 0.35
   tier_boost_core: 0.2
   tier_boost_buffer: 0.0
+  rrf_k: 60
+  weight_semantic: 1.0
+  weight_keyword: 1.0
+  weight_recency: 1.0
+  weight_importance: 1.0
+  weight_relationship: 1.0
+  # recency_anchor: created        # "created" | "accessed"
 
 context:
   total_tokens: 6000
@@ -359,6 +379,9 @@ character:
   consistency_max_retries: 2
   consistency_temperature: 0.5
   consistency_fail_open_score: 0.8
+  # consistency_stream_mode: log  # "off" | "log" — post-hoc consistency check in chat_stream()
+  # metrics_path: null            # JSONL per-turn chat metrics (opt-in)
+  background: true               # run bookkeeping (emotion/arc/relationship/facts) off the hot path
 
 server:
   api_port: 8650

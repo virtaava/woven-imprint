@@ -5,6 +5,86 @@ All notable changes to Woven Imprint will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Phase A ("fast core") — moves per-turn bookkeeping off the hot path and
+fixes several retrieval/perf correctness issues, without changing the
+public `Character`/`Engine` surface for the common case.
+
+### Added
+- **Background bookkeeping queue** (`character.background`, default `true`):
+  emotion assessment, narrative-arc tracking, fact extraction, and
+  relationship updates now run on a per-character daemon thread after
+  `chat()` returns the response, instead of blocking the caller. Tasks for
+  one character run in submission order (DB writes stay ordered).
+  `Character.flush(timeout=None)` waits for queued bookkeeping to finish;
+  `Character.close()` flushes and stops the worker. Call `close()` before
+  tearing down shared resources (e.g. the DB connection) the worker still
+  writes through. `end_session()` calls `flush()` internally before reading
+  buffer memories for the session summary.
+- `Character.chat_stream()` — streams response chunks as they generate.
+  Consistency checking is post-hoc in stream mode (streamed text is never
+  retracted); violations are logged and counted in
+  `last_chat_metrics["stream_consistency_violations"]`, controlled by
+  `character.consistency_stream_mode` (`"off"` | `"log"`, default `"log"`).
+- `generate_stream()` on all `LLMProvider` implementations (native
+  streaming where the backend supports it; a safe one-chunk default
+  otherwise).
+- Weighted RRF retrieval ranking: `memory.rrf_k` and per-signal weights
+  (`memory.weight_semantic`, `weight_keyword`, `weight_recency`,
+  `weight_importance`, `weight_relationship`) replace the old
+  tier-priority strategy, which had a seed-dominance bug (early/seed
+  memories could permanently outrank more relevant later ones).
+- `memory.recency_anchor` (`"created"` | `"accessed"`, default `"created"`)
+  — controls whether recency decay is anchored on a memory's creation time
+  or its last-access time.
+- Content-hash LRU embedding cache (`CachedEmbedder`) wrapping any
+  `EmbeddingProvider` — identical text is embedded once. Thread-safe (the
+  background worker embeds too). `Engine` wraps any embedder passed to it
+  automatically.
+- Resilience (retry with backoff + circuit breaker) applied consistently
+  across all LLM and embedding providers, not just Ollama.
+- `session_turns` persistence (migration v3): conversation turns are
+  persisted per-session and rehydrated into context on
+  `Character.resume_session()`, so resuming a session restores recent
+  conversation history rather than starting with empty context.
+- Metrics sink: opt-in JSONL per-turn chat metrics
+  (`character.metrics_path` / `WOVEN_IMPRINT_METRICS_PATH`). Each `chat()`
+  (and `chat_stream()`) call appends one record with the full
+  `last_chat_metrics` phase breakdown.
+- `scripts/bench_chat.py` — scripted 12-turn chat benchmark that prints
+  per-phase p50/p95/max latency. Supports `--llm-base-url`/`--llm-model`/
+  `--embed-base-url`/`--embed-model`/`--api-key` to construct chat and
+  embedding providers explicitly against two different OpenAI-compatible
+  endpoints (config only supports one shared `base_url`).
+- Prompt split: the system prompt is now built as a stable persona prefix
+  (name/backstory/personality — byte-identical across turns) plus a
+  separate volatile block (emotion/arc/relationship/memories), which is
+  friendlier to providers that do prefix-caching.
+
+### Changed
+- **Bookkeeping is asynchronous by default.** `Character.chat()` now
+  returns after generation + consistency checking; emotion, arc, fact
+  extraction, and relationship updates land shortly after, on a background
+  thread. Set `character.background: false` (or `WOVEN_IMPRINT_BACKGROUND=false`)
+  to restore the previous fully-synchronous behavior.
+- **Auto-consolidation no longer runs mid-chat.** Buffer→core memory
+  consolidation now only runs at session end (`end_session()`, when the
+  buffer exceeds the threshold) or via an explicit `Character.consolidate()`
+  call — not as a periodic check inside `chat()`.
+- **Retrieval ranking changed.** Memory retrieval now uses weighted RRF
+  across semantic/keyword/recency/importance/relationship signals instead
+  of the old tier-priority strategy. Ranking order for a given query may
+  differ from pre-Phase-A behavior; this was a deliberate correctness fix
+  (see "seed-dominance bug" above), not a regression.
+
+### Fixed
+- `Engine.embedder` restored as a deprecated read-only alias for
+  `Engine.embedding`. The A3 content-hash embedding cache work renamed the
+  attribute without keeping a back-compat alias, which broke the
+  additive-only public-surface constraint for this phase; `embedder` now
+  returns `self.embedding` and callers should migrate to `embedding`.
+
 ## [0.5.0] - 2026-03-25
 
 ### Added

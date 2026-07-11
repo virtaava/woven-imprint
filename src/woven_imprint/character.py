@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -87,6 +88,7 @@ class Character:
         # Session tracking
         self._session_id: str | None = None
         self._turn_count: int = 0
+        self._turn_seq: int = 0
         self.last_chat_metrics: dict[str, float] = {}
         self.last_chat_messages: list[dict[str, str]] = []
 
@@ -94,6 +96,8 @@ class Character:
         self.enforce_consistency: bool = _cfg.character.enforce_consistency
         self.lightweight: bool = _cfg.character.lightweight
         self.parallel: bool = _cfg.character.parallel
+        self.background: bool = _cfg.character.background
+        self._worker = None  # lazily created BackgroundWorker
 
         # Restore persisted transient state (C3)
         self._restore_state()
@@ -106,6 +110,7 @@ class Character:
         """Start a new conversation session. Returns session ID."""
         self._session_id = generate_id("sess-")
         self._turn_count = 0
+        self._turn_seq = 0
         self._context.clear()
         self.storage.save_session(
             {
@@ -116,7 +121,7 @@ class Character:
         return self._session_id
 
     def resume_session(self, session_id: str) -> str:
-        """Resume a previous session. New messages will be tagged with that session ID.
+        """Resume a previous session, rehydrating recent turns into context.
 
         Args:
             session_id: The session ID to resume.
@@ -128,7 +133,60 @@ class Character:
         self._turn_count = 0
         self._context.clear()
         self.storage.reopen_session(session_id)
+        try:
+            turns = self.storage.get_session_turns(session_id, tail=self._context.max_turns)
+            if turns:
+                self._context.load_turns(turns)
+                self._turn_seq = turns[-1]["seq"]
+        except Exception as e:
+            logger.debug("Session rehydration failed: %s", e)
         return session_id
+
+    def _persist_turn(self, role: str, content: str) -> None:
+        if not self._session_id:
+            return
+        self._turn_seq += 1
+        try:
+            self.storage.add_session_turn(self._session_id, self.id, self._turn_seq, role, content)
+        except Exception as e:
+            logger.debug("Turn persistence failed: %s", e)
+
+    def _get_worker(self):
+        if self._worker is None:
+            from .background import BackgroundWorker
+
+            self._worker = BackgroundWorker(self.id)
+        return self._worker
+
+    def flush(self, timeout: float | None = None) -> bool:
+        """Wait for queued background bookkeeping to finish."""
+        if self._worker is None:
+            return True
+        return self._worker.flush(timeout=timeout)
+
+    def close(self, timeout: float = 10.0) -> None:
+        """Flush and stop the background worker.
+
+        Args:
+            timeout: Max seconds to wait for queued bookkeeping to drain
+                (flush) and for the worker thread to join (close).
+
+        If the drain does not finish and/or the worker thread is still
+        alive after the join, a WARNING is logged and the worker is left
+        in place (``self._worker`` is not nulled) instead of being
+        silently dropped — a repeated call to ``close()`` can then retry
+        the drain rather than orphaning the still-running worker.
+        """
+        if self._worker is not None:
+            flushed = self._worker.flush(timeout=timeout)
+            self._worker.close(timeout=timeout)
+            if not flushed or self._worker.is_alive:
+                logger.warning(
+                    "background worker did not drain within timeout; "
+                    "pending bookkeeping may be lost"
+                )
+                return
+            self._worker = None
 
     def chat(self, message: str, user_id: str | None = None) -> str:
         """Send a message and get an in-character response.
@@ -164,7 +222,9 @@ class Character:
             session_id=self._session_id,
             importance=0.5,
         )
-        metrics["store_user_memory_ms"] = round((time.perf_counter() - store_user_started) * 1000.0, 2)
+        metrics["store_user_memory_ms"] = round(
+            (time.perf_counter() - store_user_started) * 1000.0, 2
+        )
 
         # 2. Retrieve relevant memories
         retrieve_started = time.perf_counter()
@@ -173,7 +233,9 @@ class Character:
             limit=10,
             relationship_target=user_id,
         )
-        metrics["retrieve_memories_ms"] = round((time.perf_counter() - retrieve_started) * 1000.0, 2)
+        metrics["retrieve_memories_ms"] = round(
+            (time.perf_counter() - retrieve_started) * 1000.0, 2
+        )
 
         # 3. Get relationship context
         rel_context = ""
@@ -181,18 +243,30 @@ class Character:
         if user_id:
             self.relationships.get_or_create(user_id)
             rel_context = self.relationships.describe(user_id)
-        metrics["relationship_context_ms"] = round((time.perf_counter() - relationship_context_started) * 1000.0, 2)
+        metrics["relationship_context_ms"] = round(
+            (time.perf_counter() - relationship_context_started) * 1000.0, 2
+        )
 
         # 4. Build the full prompt within context budget
         build_context_started = time.perf_counter()
         messages = self._build_context(message, memories, rel_context)
         self.last_chat_messages = [dict(item) for item in messages]
-        metrics["build_context_ms"] = round((time.perf_counter() - build_context_started) * 1000.0, 2)
+        metrics["build_context_ms"] = round(
+            (time.perf_counter() - build_context_started) * 1000.0, 2
+        )
         metrics["message_count"] = float(len(messages))
         metrics["prompt_chars"] = float(sum(len(item.get("content", "")) for item in messages))
-        metrics["system_prompt_chars"] = float(sum(len(item.get("content", "")) for item in messages if item.get("role") == "system"))
-        metrics["user_prompt_chars"] = float(sum(len(item.get("content", "")) for item in messages if item.get("role") == "user"))
-        metrics["assistant_history_chars"] = float(sum(len(item.get("content", "")) for item in messages if item.get("role") == "assistant"))
+        metrics["system_prompt_chars"] = float(
+            sum(len(item.get("content", "")) for item in messages if item.get("role") == "system")
+        )
+        metrics["user_prompt_chars"] = float(
+            sum(len(item.get("content", "")) for item in messages if item.get("role") == "user")
+        )
+        metrics["assistant_history_chars"] = float(
+            sum(
+                len(item.get("content", "")) for item in messages if item.get("role") == "assistant"
+            )
+        )
 
         # 6. Generate response
         generate_started = time.perf_counter()
@@ -220,7 +294,11 @@ class Character:
         buffer_started = time.perf_counter()
         self._context.add_turn("user", message)
         self._context.add_turn("assistant", response)
-        metrics["conversation_buffer_ms"] = round((time.perf_counter() - buffer_started) * 1000.0, 2)
+        self._persist_turn("user", message)
+        self._persist_turn("assistant", response)
+        metrics["conversation_buffer_ms"] = round(
+            (time.perf_counter() - buffer_started) * 1000.0, 2
+        )
 
         # 9. Store character response as buffer memory
         store_response_started = time.perf_counter()
@@ -231,17 +309,30 @@ class Character:
             session_id=self._session_id,
             importance=0.5,
         )
-        metrics["store_response_memory_ms"] = round((time.perf_counter() - store_response_started) * 1000.0, 2)
+        metrics["store_response_memory_ms"] = round(
+            (time.perf_counter() - store_response_started) * 1000.0, 2
+        )
+
+        self._turn_count += 1
 
         # Subsystem updates — all independent, all non-fatal
         subsystem_started = time.perf_counter()
-        if self.parallel and not self.lightweight:
+        if self.background:
+            # Runs on the worker thread while the caller continues. GIL-benign:
+            # self.emotion is object-swapped on success (readers see old-or-new,
+            # never partial); self.arc and emotion-decay mutate their fields
+            # in place, so a concurrent reader may observe transient staleness
+            # but never a torn value. Caller must call Character.close() before
+            # tearing down shared resources (e.g. the DB connection) the
+            # worker still writes through.
+            self._get_worker().submit(
+                "bookkeeping", self._run_subsystems_sequential, message, response, user_id
+            )
+        elif self.parallel and not self.lightweight:
             self._run_subsystems_parallel(message, response, user_id)
         else:
             self._run_subsystems_sequential(message, response, user_id)
         metrics["subsystems_ms"] = round((time.perf_counter() - subsystem_started) * 1000.0, 2)
-
-        self._turn_count += 1
 
         # Periodic maintenance
         maintenance_started = time.perf_counter()
@@ -250,20 +341,159 @@ class Character:
                 self._save_state()
             except Exception as e:
                 logger.debug("Periodic state save failed: %s", e)
-
-            if (
-                self._turn_count % _cfg.memory.consolidation_interval == 0
-                and self.consolidator.needs_consolidation()
-            ):
-                try:
-                    self.consolidator.consolidate()
-                except Exception as e:
-                    logger.debug("Auto-consolidation failed: %s", e)
         metrics["maintenance_ms"] = round((time.perf_counter() - maintenance_started) * 1000.0, 2)
 
         metrics["total_ms"] = round((time.perf_counter() - chat_started) * 1000.0, 2)
         self.last_chat_metrics = metrics
+        self._emit_metrics(metrics)
         return response
+
+    def chat_stream(self, message: str, user_id: str | None = None) -> Iterator[str]:
+        """Like chat(), but yields response chunks as they generate.
+
+        Consistency checking is post-hoc in stream mode: streamed text is
+        never retracted. Violations are logged and counted in
+        last_chat_metrics["stream_consistency_violations"] (config
+        `character.consistency_stream_mode`: "off" | "log", default "log").
+
+        This is a generator: no side effects occur until the first chunk is requested.
+        If the caller abandons the generator mid-stream (stops iterating before
+        it's exhausted), the stored user message is left without a paired
+        assistant turn or the bookkeeping (buffer memory, conversation history,
+        emotion/arc/fact-extraction) that normally follows a completed response.
+
+        Args:
+            message: The user's message.
+            user_id: Optional user identifier for relationship tracking.
+
+        Yields:
+            Response text chunks, in order.
+        """
+        metrics: dict[str, float] = {}
+        chat_started = time.perf_counter()
+
+        if not self._session_id:
+            self.start_session()
+
+        # Input size limit
+        from .config import get_config
+
+        _cfg = get_config()
+        if len(message) > _cfg.memory.max_message_length:
+            message = message[: _cfg.memory.max_message_length]
+
+        # 1. Store user message as buffer memory
+        self.memory.add(
+            content=f"[User] {message}",
+            tier="buffer",
+            role="user",
+            session_id=self._session_id,
+            importance=0.5,
+        )
+
+        # 2. Retrieve relevant memories
+        memories = self.retriever.retrieve(
+            query=message,
+            limit=10,
+            relationship_target=user_id,
+        )
+
+        # 3. Get relationship context
+        rel_context = ""
+        if user_id:
+            self.relationships.get_or_create(user_id)
+            rel_context = self.relationships.describe(user_id)
+
+        # 4. Build the full prompt within context budget
+        messages = self._build_context(message, memories, rel_context)
+        self.last_chat_messages = [dict(item) for item in messages]
+
+        # 5. Stream the response
+        generate_started = time.perf_counter()
+        chunks: list[str] = []
+        try:
+            for chunk in self.llm.generate_stream(messages, temperature=0.7):
+                chunks.append(chunk)
+                yield chunk
+        except Exception as e:
+            logger.error("LLM stream generation failed: %s", e)
+            self.last_chat_metrics = {
+                **metrics,
+                "total_ms": round((time.perf_counter() - chat_started) * 1000.0, 2),
+            }
+            raise
+        response = "".join(chunks)
+        metrics["generate_ms"] = round((time.perf_counter() - generate_started) * 1000.0, 2)
+
+        # 6. Post-hoc consistency check — never retracts streamed text.
+        consistency_started = time.perf_counter()
+        if self.enforce_consistency and _cfg.character.consistency_stream_mode == "log":
+            try:
+                context_parts = []
+                non_system = [m for m in messages if m.get("role") != "system"]
+                for m in non_system[-6:]:  # last 3 pairs (user+assistant)
+                    role = m.get("role", "unknown")
+                    content = m.get("content", "")[:300]
+                    context_parts.append(f"{role}: {content}")
+                context = "\n".join(context_parts)
+
+                report = self.consistency.check(response, context=context)
+                violations = len(report.hard_violations)
+                metrics["stream_consistency_violations"] = float(violations)
+                if violations:
+                    logger.warning(
+                        "chat_stream: %d hard consistency violation(s) detected "
+                        "post-hoc (streamed text not retracted)",
+                        violations,
+                    )
+            except Exception as e:
+                logger.debug("Stream consistency check failed: %s", e)
+        metrics["consistency_ms"] = round((time.perf_counter() - consistency_started) * 1000.0, 2)
+
+        # 7. Add both turns to conversation buffer
+        self._context.add_turn("user", message)
+        self._context.add_turn("assistant", response)
+        self._persist_turn("user", message)
+        self._persist_turn("assistant", response)
+
+        # 8. Store character response as buffer memory
+        self.memory.add(
+            content=f"[{self.name}] {response}",
+            tier="buffer",
+            role="character",
+            session_id=self._session_id,
+            importance=0.5,
+        )
+
+        self._turn_count += 1
+
+        # Subsystem updates — all independent, all non-fatal
+        if self.background:
+            # Runs on the worker thread while the caller continues. GIL-benign:
+            # self.emotion is object-swapped on success (readers see old-or-new,
+            # never partial); self.arc and emotion-decay mutate their fields
+            # in place, so a concurrent reader may observe transient staleness
+            # but never a torn value. Caller must call Character.close() before
+            # tearing down shared resources (e.g. the DB connection) the
+            # worker still writes through.
+            self._get_worker().submit(
+                "bookkeeping", self._run_subsystems_sequential, message, response, user_id
+            )
+        elif self.parallel and not self.lightweight:
+            self._run_subsystems_parallel(message, response, user_id)
+        else:
+            self._run_subsystems_sequential(message, response, user_id)
+
+        # Periodic maintenance
+        if self._turn_count % _cfg.memory.state_save_interval == 0:
+            try:
+                self._save_state()
+            except Exception as e:
+                logger.debug("Periodic state save failed: %s", e)
+
+        metrics["total_ms"] = round((time.perf_counter() - chat_started) * 1000.0, 2)
+        self.last_chat_metrics = metrics
+        self._emit_metrics(metrics)
 
     def ingest(self, role: str, content: str, user_id: str | None = None) -> None:
         """Record an externally-generated message without calling the LLM.
@@ -294,6 +524,7 @@ class Character:
 
         # Store in conversation buffer
         self._context.add_turn(role, content)
+        self._persist_turn(role, content)
 
         # Store as buffer memory
         prefix = "[User]" if role == "user" else f"[{self.name}]"
@@ -330,15 +561,6 @@ class Character:
                 self._save_state()
             except Exception as e:
                 logger.debug("Periodic state save failed: %s", e)
-
-            if (
-                self._turn_count % _cfg.memory.consolidation_interval == 0
-                and self.consolidator.needs_consolidation()
-            ):
-                try:
-                    self.consolidator.consolidate()
-                except Exception as e:
-                    logger.debug("Auto-consolidation failed: %s", e)
 
     def _run_subsystems_parallel(self, message: str, response: str, user_id: str | None) -> None:
         """Run emotion, arc, and extraction in parallel threads."""
@@ -485,6 +707,9 @@ class Character:
         if not self._session_id:
             return None
 
+        # Bookkeeping must land before the summary reads buffer memories.
+        self.flush(timeout=30)
+
         # Get session memories
         session_memories = [
             m
@@ -553,6 +778,13 @@ class Character:
         self._save_state()
 
         return summary
+
+    def _emit_metrics(self, metrics: dict) -> None:
+        from .metrics import get_sink
+
+        sink = get_sink()
+        if sink:
+            sink.write(self.id, metrics)
 
     def _save_state(self) -> None:
         """Persist emotion and arc state to the characters.state column."""
@@ -650,8 +882,10 @@ class Character:
         arc_desc = self.arc.describe()
         memory_text = self._format_memories(memories)
 
-        # Start with core system prompt (always included)
-        full_system = system_prompt
+        # Volatile block (emotion/arc/relationship/memories) — kept separate
+        # from system_prompt so message 0 stays byte-identical across turns
+        # (provider prefix-caching friendly).
+        volatile = ""
 
         # Add optional components, tracking size
         optional_parts = []
@@ -678,7 +912,7 @@ class Character:
         if total <= budget_chars:
             # Everything fits — include all
             for _, part in optional_parts:
-                full_system += part
+                volatile += part
         else:
             # Need to shed. Try compression first.
             self._context.compress(self.llm)
@@ -689,30 +923,32 @@ class Character:
             if total <= budget_chars:
                 # Fits after compression
                 for _, part in optional_parts:
-                    full_system += part
+                    volatile += part
             else:
                 # Still too large — add optional parts by priority until budget
                 remaining = budget_chars - base_size - history_size
                 for name, part in optional_parts:
                     if len(part) <= remaining:
-                        full_system += part
+                        volatile += part
                         remaining -= len(part)
                     elif name == "memories" and remaining > 200:
                         # Partial memories — include as many as fit
                         truncated = self._format_memories(memories[: max(1, len(memories) // 2)])
                         mem_part = f"\n\nYour relevant memories:\n{truncated}"
                         if len(mem_part) <= remaining:
-                            full_system += mem_part
+                            volatile += mem_part
                             remaining -= len(mem_part)
 
                 # If STILL over after shedding optional parts, trim conversation
-                total = len(full_system) + history_size + len(user_message)
+                total = len(system_prompt) + len(volatile) + history_size + len(user_message)
                 if total > budget_chars and len(history) > 0:
                     self._context.compress(self.llm)
                     history = self._context.get_messages()
 
-        # Assemble final message list
-        messages = [{"role": "system", "content": full_system}]
+        # Assemble final message list: stable prefix first, volatile second
+        messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+        if volatile:
+            messages.append({"role": "system", "content": volatile.lstrip("\n")})
         messages.extend(history)
         messages.append({"role": "user", "content": user_message})
 

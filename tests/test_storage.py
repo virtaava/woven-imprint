@@ -1,8 +1,12 @@
 """Tests for SQLite storage backend."""
 
+import sqlite3
+import tempfile
+from pathlib import Path
+
 import pytest
 
-from woven_imprint.storage.sqlite import SQLiteStorage
+from woven_imprint.storage.sqlite import _SCHEMA, SQLiteStorage
 
 
 @pytest.fixture
@@ -35,6 +39,16 @@ class TestCharacterCRUD:
         storage.save_character("c1", "Alice", {})
         storage.delete_character("c1")
         assert storage.load_character("c1") is None
+
+    def test_delete_character_removes_session_turns(self, storage):
+        storage.save_character("c1", "Alice", {})
+        storage.add_session_turn("s1", "c1", 1, "user", "hi")
+        storage.add_session_turn("s1", "c1", 2, "assistant", "hello")
+        assert storage.get_session_turns("s1") != []
+
+        storage.delete_character("c1")
+
+        assert storage.get_session_turns("s1") == []
 
     def test_upsert(self, storage):
         storage.save_character("c1", "Alice", {"v": 1})
@@ -153,6 +167,41 @@ class TestMemoryCRUD:
         assert len(mem["embedding"]) == 4
         assert abs(mem["embedding"][0] - 0.1) < 0.001
 
+    def test_deterministic_memory_ordering(self, storage):
+        """Regression test: memories with same created_at should order by rowid DESC.
+
+        This ensures that when memories are inserted in rapid succession (same second),
+        the newest-inserted memory comes first, even though created_at is identical.
+        This is critical for deterministic ordering without relying on index fragmentation.
+        """
+        storage.save_character("c1", "Alice", {})
+
+        # Insert 5 memories in rapid succession (will have same created_at)
+        memory_ids = []
+        for i in range(5):
+            mem_id = f"m{i}"
+            memory_ids.append(mem_id)
+            storage.save_memory(
+                {
+                    "id": mem_id,
+                    "character_id": "c1",
+                    "tier": "buffer",
+                    "content": f"memory {i}",
+                }
+            )
+
+        # Get memories back and verify order is reverse-insertion (newest first)
+        mems = storage.get_memories("c1")
+        assert len(mems) == 5
+
+        # Order should be m4, m3, m2, m1, m0 (newest inserted first)
+        retrieved_ids = [m["id"] for m in mems]
+        expected_order = list(reversed(memory_ids))
+        assert retrieved_ids == expected_order, (
+            f"Expected order {expected_order}, got {retrieved_ids}. "
+            "Memories with identical created_at must order by rowid DESC."
+        )
+
 
 class TestRelationshipCRUD:
     def test_save_and_get(self, storage):
@@ -181,3 +230,57 @@ class TestRelationshipCRUD:
             )
         rels = storage.get_relationships("c1")
         assert len(rels) == 3
+
+
+class TestMigrations:
+    def test_v3_session_turns_applies_cleanly_on_v2_db(self):
+        """A DB pinned at schema version 2 (pre-session_turns) must pick up
+        the v3 migration — creating session_turns — the next time it's
+        opened via SQLiteStorage, without losing existing data."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "v2.db"
+
+            # Build a raw "v2" database: full base schema (includes the
+            # sessions.alias column added by migration 2) but pinned at
+            # schema_version=2, with no session_turns table yet.
+            conn = sqlite3.connect(str(db_path))
+            conn.executescript(_SCHEMA)
+            conn.execute("ALTER TABLE sessions ADD COLUMN alias TEXT;")
+            conn.execute("DELETE FROM schema_version")
+            conn.execute("INSERT INTO schema_version (version) VALUES (2)")
+            conn.execute(
+                "INSERT INTO characters (id, name, persona) VALUES (?, ?, ?)",
+                ("c1", "Alice", "{}"),
+            )
+            conn.commit()
+            conn.close()
+
+            # Confirm session_turns doesn't exist yet in the v2 DB.
+            conn = sqlite3.connect(str(db_path))
+            tables = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            assert "session_turns" not in tables
+            conn.close()
+
+            # Reopen via SQLiteStorage — migration 3 should apply cleanly.
+            storage = SQLiteStorage(str(db_path))
+            try:
+                version = storage._conn.execute(
+                    "SELECT MAX(version) FROM schema_version"
+                ).fetchone()[0]
+                assert version == 3
+
+                # Pre-existing data survived the migration.
+                assert storage.load_character("c1")["name"] == "Alice"
+
+                # session_turns is now usable.
+                storage.add_session_turn("s1", "c1", 1, "user", "hello")
+                turns = storage.get_session_turns("s1")
+                assert len(turns) == 1
+                assert turns[0]["content"] == "hello"
+            finally:
+                storage.close()

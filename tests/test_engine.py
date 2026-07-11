@@ -181,3 +181,10 @@ class TestContextManager:
             char = engine.create_character("Alice", persona={})
             assert char.name == "Alice"
         # engine.close() called automatically
+
+
+class TestEmbedderAlias:
+    def test_embedder_is_deprecated_alias_for_embedding(self):
+        engine = _engine()
+        assert engine.embedder is engine.embedding
+        engine.close()

@@ -173,18 +173,33 @@ def _get_character(character_id: str):
 async def _lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
     yield
-    # Shutdown: flush any open sessions, close engine
+    # Shutdown: flush any open sessions, close cached characters (stops their
+    # background workers), then close the engine.
     if _engine is not None:
         try:
             for char_info in _engine.list_characters():
                 try:
-                    char = _engine.get_character(char_info["id"])
+                    # Prefer the cached instance — it's the one with the live
+                    # session/buffers (and background worker), since the demo
+                    # server serves requests off _char_cache rather than
+                    # fresh get_character() calls.
+                    char = _char_cache.get(char_info["id"]) or _engine.get_character(
+                        char_info["id"]
+                    )
                     if getattr(char, "_session_id", None):
                         char.end_session()
                 except Exception:
                     pass
         except Exception:
             pass
+        # Close cached characters BEFORE closing the engine — a live
+        # background worker mid-write against a closed SQLite connection
+        # can segfault, not just raise.
+        for char in _char_cache.values():
+            try:
+                char.close()
+            except Exception:
+                logger.debug("Failed to close cached character during shutdown", exc_info=True)
         _engine.close()
 
 
@@ -372,7 +387,12 @@ def create_app(
             try:
                 delete_character_service(_engine, character_id)
                 _character_locks.pop(character_id, None)
-                _char_cache.pop(character_id, None)
+                cached = _char_cache.pop(character_id, None)
+                if cached is not None:
+                    try:
+                        cached.close()
+                    except Exception:
+                        logger.debug("Failed to close deleted character's worker", exc_info=True)
                 return {"ok": True}
             except KeyError:
                 raise HTTPException(404, f"Character '{character_id}' not found")

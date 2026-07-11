@@ -38,23 +38,28 @@ def _get_tier_boosts() -> dict:
     }
 
 
-def _recency_score(accessed_at: str, tier: str = "buffer") -> float:
-    """Exponential decay based on hours since last access.
+def _recency_score(memory: dict, tier: str = "buffer") -> float:
+    """Exponential decay based on hours since the anchor timestamp.
 
-    Different tiers decay at different rates:
-    - bedrock: nearly permanent (you don't forget who you are)
-    - core: slow decay (consolidated memories persist for months)
-    - buffer: fast decay (raw observations fade in days)
+    Anchor is `created_at` by default (config memory.recency_anchor).
+    Anchoring on `accessed_at` makes frequently-retrieved memories
+    self-reinforcing — kept only as an opt-in legacy mode.
     """
+    from ..config import get_config
+
+    anchor_field = (
+        "accessed_at" if get_config().memory.recency_anchor == "accessed" else "created_at"
+    )
     decay_rate = _get_decay_rates().get(tier, 0.995)
+    raw = memory.get(anchor_field) or memory.get("created_at") or ""
     try:
-        accessed = datetime.fromisoformat(accessed_at.replace("Z", "+00:00"))
+        anchored = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return 0.5
-    if accessed.tzinfo is None:
-        accessed = accessed.replace(tzinfo=timezone.utc)
+    if anchored.tzinfo is None:
+        anchored = anchored.replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
-    hours = max(0, (now - accessed).total_seconds() / 3600)
+    hours = max(0, (now - anchored).total_seconds() / 3600)
     return decay_rate**hours
 
 
@@ -67,6 +72,12 @@ class MemoryRetriever:
     3. Recency (tier-aware exponential decay)
     4. Importance (score × certainty + tier boost)
     5. Relationship boost (if target specified)
+
+    Strategies are fused via weighted Reciprocal Rank Fusion (configurable
+    per-strategy weights and k via MemoryConfig). Tier no longer contributes
+    its own ranked list — it only influences decay rate (recency) and the
+    importance tier boost, preventing bedrock seed floods from drowning out
+    query-relevant personal facts.
 
     Tier-aware scoring:
     - Bedrock memories decay extremely slowly and get importance boosts
@@ -106,6 +117,9 @@ class MemoryRetriever:
         if not all_memories:
             return []
 
+        # Sort by rowid for stable input order (ensures tiebreakers in rankings are deterministic)
+        all_memories.sort(key=lambda m: m.get("rowid", 0))
+
         # Strategy 1: Semantic ranking (skip if query empty)
         semantic_ranked = []
         if query.strip():
@@ -121,15 +135,16 @@ class MemoryRetriever:
         # Strategy 2: Keyword ranking (BM25 via FTS5) — uses pre-fetched candidates
         keyword_ranked = [m["id"] for m in fts_candidates]
 
-        # Strategy 3: Tier-aware recency ranking
+        # Strategy 3: Tier-aware recency ranking (with rowid tiebreaker for determinism)
         recency_scores = [
-            (m["id"], _recency_score(m.get("accessed_at", ""), m.get("tier", "buffer")))
+            (m["id"], _recency_score(m, m.get("tier", "buffer")), m.get("rowid", 0))
             for m in all_memories
         ]
-        recency_scores.sort(key=lambda x: x[1], reverse=True)
-        recency_ranked = [mid for mid, _ in recency_scores]
+        # Sort by score descending, then by rowid ascending (newer=higher rowid comes last in tie)
+        recency_scores.sort(key=lambda x: (-x[1], x[2]))
+        recency_ranked = [mid for mid, _, _ in recency_scores]
 
-        # Strategy 4: Importance with tier boost + user affinity
+        # Strategy 4: Importance with tier boost + user affinity (with rowid tiebreaker)
         importance_scores = []
         for m in all_memories:
             base = m.get("importance", 0.5) * m.get("certainty", 1.0)
@@ -139,23 +154,27 @@ class MemoryRetriever:
                 meta = m.get("metadata", {})
                 if meta.get("user_id") == relationship_target:
                     base += 0.2
-            importance_scores.append((m["id"], base + boost))
-        importance_scores.sort(key=lambda x: x[1], reverse=True)
-        importance_ranked = [mid for mid, _ in importance_scores]
+            importance_scores.append((m["id"], base + boost, m.get("rowid", 0)))
+        # Sort by score descending, then by rowid ascending (newer=higher rowid comes last in tie)
+        importance_scores.sort(key=lambda x: (-x[1], x[2]))
+        importance_ranked = [mid for mid, _, _ in importance_scores]
 
-        # Strategy 5: Tier priority ranking (bedrock > core > buffer)
-        _TIER_RANK = {"bedrock": 3, "core": 2, "buffer": 1}
-        tier_scores = [(m["id"], _TIER_RANK.get(m.get("tier", "buffer"), 0)) for m in all_memories]
-        tier_scores.sort(key=lambda x: x[1], reverse=True)
-        tier_ranked = [mid for mid, _ in tier_scores]
+        # Strategy 5: Relationship boost (if target specified)
+        from ..config import get_config
 
-        # Strategy 6: Relationship boost (if target specified)
+        mem_cfg = get_config().memory
+
         ranked_lists = [
             semantic_ranked,
             keyword_ranked,
             recency_ranked,
             importance_ranked,
-            tier_ranked,
+        ]
+        weights = [
+            mem_cfg.weight_semantic,
+            mem_cfg.weight_keyword,
+            mem_cfg.weight_recency,
+            mem_cfg.weight_importance,
         ]
 
         if relationship_target:
@@ -170,9 +189,10 @@ class MemoryRetriever:
                 rel_scores.append((m["id"], 1.0 if involves_target else 0.0))
             rel_scores.sort(key=lambda x: x[1], reverse=True)
             ranked_lists.append([mid for mid, _ in rel_scores])
+            weights.append(mem_cfg.weight_relationship)
 
-        # Fuse with RRF
-        fused = reciprocal_rank_fusion(ranked_lists)
+        # Fuse with weighted RRF
+        fused = reciprocal_rank_fusion(ranked_lists, k=mem_cfg.rrf_k, weights=weights)
 
         # Return top-N memories
         results = []

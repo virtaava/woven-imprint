@@ -94,6 +94,7 @@ class CharacterConfig:
     consistency_max_retries: int = 2
     consistency_temperature: float = 0.5
     consistency_fail_open_score: float = 0.8
+    metrics_path: str | None = None
 
 
 @dataclass
@@ -227,6 +228,7 @@ def _apply_env(cfg: WovenConfig) -> None:
         "WOVEN_IMPRINT_LIGHTWEIGHT": ("character", "lightweight"),
         "WOVEN_IMPRINT_ENFORCE_CONSISTENCY": ("character", "enforce_consistency"),
         "WOVEN_IMPRINT_MAX_FACTS": ("memory", "max_facts_per_extraction"),
+        "WOVEN_IMPRINT_METRICS_PATH": ("character", "metrics_path"),
     }
 
     for env_var, (section, key) in env_map.items():

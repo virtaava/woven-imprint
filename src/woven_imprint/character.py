@@ -263,6 +263,7 @@ class Character:
 
         metrics["total_ms"] = round((time.perf_counter() - chat_started) * 1000.0, 2)
         self.last_chat_metrics = metrics
+        self._emit_metrics(metrics)
         return response
 
     def ingest(self, role: str, content: str, user_id: str | None = None) -> None:
@@ -553,6 +554,13 @@ class Character:
         self._save_state()
 
         return summary
+
+    def _emit_metrics(self, metrics: dict) -> None:
+        from .metrics import get_sink
+
+        sink = get_sink()
+        if sink:
+            sink.write(self.id, metrics)
 
     def _save_state(self) -> None:
         """Persist emotion and arc state to the characters.state column."""

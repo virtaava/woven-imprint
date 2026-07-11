@@ -103,18 +103,23 @@ class OllamaLLM(LLMProvider):
                 "stream": True,
             },
         )
-        for line in resp.iter_lines():
-            if not line:
-                continue
-            try:
-                data = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            chunk = data.get("message", {}).get("content", "")
-            if chunk:
-                yield chunk
-            if data.get("done"):
-                break
+        try:
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                chunk = (data.get("message") or {}).get("content", "")
+                if chunk:
+                    yield chunk
+                if data.get("done"):
+                    break
+        finally:
+            resp.close()
 
     def _post_stream(self, endpoint: str, payload: dict):
         from .resilience import resilient_call

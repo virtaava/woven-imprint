@@ -280,6 +280,13 @@ class Character:
         # Subsystem updates — all independent, all non-fatal
         subsystem_started = time.perf_counter()
         if self.background:
+            # Runs on the worker thread while the caller continues. GIL-benign:
+            # self.emotion is object-swapped on success (readers see old-or-new,
+            # never partial); self.arc and emotion-decay mutate their fields
+            # in place, so a concurrent reader may observe transient staleness
+            # but never a torn value. Caller must call Character.close() before
+            # tearing down shared resources (e.g. the DB connection) the
+            # worker still writes through.
             self._get_worker().submit(
                 "bookkeeping", self._run_subsystems_sequential, message, response, user_id
             )

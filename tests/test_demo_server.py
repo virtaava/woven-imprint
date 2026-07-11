@@ -640,4 +640,58 @@ class TestSessionFlush:
         resp = stale_client.get("/api/characters")
         assert resp.status_code == 401
 
+
+# ---------------------------------------------------------------------------
+# TestLifespanShutdown
+# ---------------------------------------------------------------------------
+
+
+class TestLifespanShutdown:
+    def test_shutdown_closes_cached_character_workers(self):
+        """Regression test (review finding): production shutdown must close
+        cached characters' background workers BEFORE closing the shared
+        engine/DB connection. Previously _lifespan closed the engine while a
+        cached character's worker thread could still be mid-write, which can
+        segfault rather than merely raise.
+
+        This exercises the real _lifespan path via TestClient's context
+        manager (which runs FastAPI startup/shutdown), not the app_client
+        fixture's manual cleanup — that fixture closes characters itself so
+        it wouldn't catch a broken _lifespan.
+        """
+        from starlette.testclient import TestClient
+
+        engine = make_test_engine()
+        app, token = create_app(engine=engine, token="test-token-lifespan")
+
+        cached = None
+        with TestClient(app, base_url="http://127.0.0.1:7860") as client:
+            client.headers["Authorization"] = f"Bearer {token}"
+            created = _create_test_character(client, "LifespanChar")
+            char_id = created["id"]
+
+            # Chat via demo_mod._get_character() builds a fresh Character
+            # (bypassing make_test_engine's background=False wrapper), so
+            # this cached instance runs with background=True — a live
+            # worker thread, matching production behavior.
+            resp = client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "LifespanChar",
+                    "messages": [{"role": "user", "content": "Hello!"}],
+                },
+            )
+            assert resp.status_code == 200
+
+            cached = demo_mod._char_cache.get(char_id)
+            assert cached is not None
+            assert cached._worker is not None
+            assert cached._worker._thread.is_alive()
+
+        # __exit__ ran the app's shutdown lifespan (_lifespan), which must
+        # have closed the cached character's worker before closing the
+        # engine — no exception should have propagated out of the context
+        # manager, and the worker must now be torn down.
+        assert cached._worker is None
+
         engine.close()

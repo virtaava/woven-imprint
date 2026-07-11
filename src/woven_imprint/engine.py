@@ -33,10 +33,15 @@ class Engine:
             from .providers import create_llm, create_embedding
 
             self.llm = llm or create_llm()
-            self.embedder = embedding or create_embedding()
+            embedding = embedding or create_embedding()
         else:
             self.llm = llm
-            self.embedder = embedding
+
+        from .embedding.cache import CachedEmbedder
+
+        if not isinstance(embedding, CachedEmbedder):
+            embedding = CachedEmbedder(embedding)
+        self.embedding = embedding
 
     def create_character(
         self,
@@ -96,7 +101,7 @@ class Engine:
         )
 
         # Seed bedrock memories from persona definition
-        char = Character(char_id, self.storage, self.llm, self.embedder, persona_model)
+        char = Character(char_id, self.storage, self.llm, self.embedding, persona_model)
         self._seed_bedrock(char, normalized)
 
         return char
@@ -116,7 +121,7 @@ class Engine:
             data["id"],
             self.storage,
             self.llm,
-            self.embedder,
+            self.embedding,
             persona_model,
         )
 
@@ -161,7 +166,7 @@ class Engine:
         )
 
         persona_model = PersonaModel(persona, birthdate=birthdate)
-        char = Character(char_id, self.storage, self.llm, self.embedder, persona_model)
+        char = Character(char_id, self.storage, self.llm, self.embedding, persona_model)
 
         # Import memories (re-embed them)
         for tier_name in ("bedrock", "core", "buffer"):

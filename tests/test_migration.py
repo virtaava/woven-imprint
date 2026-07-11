@@ -212,7 +212,7 @@ class TestChunkedAnalysis:
         engine = object.__new__(Engine)
         engine.storage = FakeStorage()
         engine.llm = FakeLLM()
-        engine.embedder = FakeEmbedding()
+        engine.embedding = FakeEmbedding()
 
         importer = CharacterImporter(engine)
 

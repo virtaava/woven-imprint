@@ -82,6 +82,8 @@ END;
 
 CREATE INDEX IF NOT EXISTS idx_memories_character ON memories(character_id, tier, status);
 CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
+CREATE INDEX IF NOT EXISTS idx_memories_accessed ON memories(character_id, accessed_at);
+CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(character_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_relationships_character ON relationships(character_id);
 CREATE INDEX IF NOT EXISTS idx_relationships_pair ON relationships(character_id, target_id);
 

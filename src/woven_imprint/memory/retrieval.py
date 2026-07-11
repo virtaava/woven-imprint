@@ -68,6 +68,12 @@ class MemoryRetriever:
     4. Importance (score × certainty + tier boost)
     5. Relationship boost (if target specified)
 
+    Strategies are fused via weighted Reciprocal Rank Fusion (configurable
+    per-strategy weights and k via MemoryConfig). Tier no longer contributes
+    its own ranked list — it only influences decay rate (recency) and the
+    importance tier boost, preventing bedrock seed floods from drowning out
+    query-relevant personal facts.
+
     Tier-aware scoring:
     - Bedrock memories decay extremely slowly and get importance boosts
     - Core memories decay slowly
@@ -143,19 +149,22 @@ class MemoryRetriever:
         importance_scores.sort(key=lambda x: x[1], reverse=True)
         importance_ranked = [mid for mid, _ in importance_scores]
 
-        # Strategy 5: Tier priority ranking (bedrock > core > buffer)
-        _TIER_RANK = {"bedrock": 3, "core": 2, "buffer": 1}
-        tier_scores = [(m["id"], _TIER_RANK.get(m.get("tier", "buffer"), 0)) for m in all_memories]
-        tier_scores.sort(key=lambda x: x[1], reverse=True)
-        tier_ranked = [mid for mid, _ in tier_scores]
+        # Strategy 5: Relationship boost (if target specified)
+        from ..config import get_config
 
-        # Strategy 6: Relationship boost (if target specified)
+        mem_cfg = get_config().memory
+
         ranked_lists = [
             semantic_ranked,
             keyword_ranked,
             recency_ranked,
             importance_ranked,
-            tier_ranked,
+        ]
+        weights = [
+            mem_cfg.weight_semantic,
+            mem_cfg.weight_keyword,
+            mem_cfg.weight_recency,
+            mem_cfg.weight_importance,
         ]
 
         if relationship_target:
@@ -170,9 +179,10 @@ class MemoryRetriever:
                 rel_scores.append((m["id"], 1.0 if involves_target else 0.0))
             rel_scores.sort(key=lambda x: x[1], reverse=True)
             ranked_lists.append([mid for mid, _ in rel_scores])
+            weights.append(mem_cfg.weight_relationship)
 
-        # Fuse with RRF
-        fused = reciprocal_rank_fusion(ranked_lists)
+        # Fuse with weighted RRF
+        fused = reciprocal_rank_fusion(ranked_lists, k=mem_cfg.rrf_k, weights=weights)
 
         # Return top-N memories
         results = []

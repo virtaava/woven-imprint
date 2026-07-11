@@ -285,3 +285,29 @@ class TestRecencyScore:
     def test_invalid_timestamp(self):
         score = _recency_score("not-a-date", "core")
         assert score == 0.5  # default fallback
+
+
+def test_personal_core_fact_beats_bedrock_seed_flood():
+    """Regression: many bedrock seeds must not drown a query-relevant core fact."""
+    from tests.helpers import make_test_engine
+
+    engine = make_test_engine()
+    char = engine.create_character("Meridian", persona={"backstory": "A wizard of the old tower."})
+    # Flood bedrock with irrelevant seeds
+    for i in range(30):
+        char.memory.add(
+            content=f"Ancient tower lore volume {i}: the stones hum at dusk.",
+            tier="bedrock",
+            role="observation",
+            importance=0.9,
+        )
+    # One personal core fact
+    char.memory.add(
+        content="The user's sister is named Anna and she loves rowing.",
+        tier="core",
+        role="observation",
+        importance=0.75,
+    )
+    results = char.retriever.retrieve("what is my sister's name", limit=5)
+    contents = [m["content"] for m in results]
+    assert any("Anna" in c for c in contents), contents

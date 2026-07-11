@@ -59,6 +59,12 @@ class MemoryConfig:
     tier_boost_bedrock: float = 0.35
     tier_boost_core: float = 0.2
     tier_boost_buffer: float = 0.0
+    rrf_k: int = 60
+    weight_semantic: float = 1.0
+    weight_keyword: float = 1.0
+    weight_recency: float = 1.0
+    weight_importance: float = 1.0
+    weight_relationship: float = 1.0
 
 
 @dataclass
@@ -334,6 +340,12 @@ memory:
   tier_boost_bedrock: 0.35
   tier_boost_core: 0.2
   tier_boost_buffer: 0.0
+  rrf_k: 60
+  weight_semantic: 1.0
+  weight_keyword: 1.0
+  weight_recency: 1.0
+  weight_importance: 1.0
+  weight_relationship: 1.0
 
 context:
   total_tokens: 6000

@@ -88,6 +88,7 @@ class Character:
         # Session tracking
         self._session_id: str | None = None
         self._turn_count: int = 0
+        self._turn_seq: int = 0
         self.last_chat_metrics: dict[str, float] = {}
         self.last_chat_messages: list[dict[str, str]] = []
 
@@ -109,6 +110,7 @@ class Character:
         """Start a new conversation session. Returns session ID."""
         self._session_id = generate_id("sess-")
         self._turn_count = 0
+        self._turn_seq = 0
         self._context.clear()
         self.storage.save_session(
             {
@@ -119,7 +121,7 @@ class Character:
         return self._session_id
 
     def resume_session(self, session_id: str) -> str:
-        """Resume a previous session. New messages will be tagged with that session ID.
+        """Resume a previous session, rehydrating recent turns into context.
 
         Args:
             session_id: The session ID to resume.
@@ -131,7 +133,23 @@ class Character:
         self._turn_count = 0
         self._context.clear()
         self.storage.reopen_session(session_id)
+        try:
+            turns = self.storage.get_session_turns(session_id, tail=self._context.max_turns)
+            if turns:
+                self._context.load_turns(turns)
+                self._turn_seq = turns[-1]["seq"]
+        except Exception as e:
+            logger.debug("Session rehydration failed: %s", e)
         return session_id
+
+    def _persist_turn(self, role: str, content: str) -> None:
+        if not self._session_id:
+            return
+        self._turn_seq += 1
+        try:
+            self.storage.add_session_turn(self._session_id, self.id, self._turn_seq, role, content)
+        except Exception as e:
+            logger.debug("Turn persistence failed: %s", e)
 
     def _get_worker(self):
         if self._worker is None:
@@ -259,6 +277,8 @@ class Character:
         buffer_started = time.perf_counter()
         self._context.add_turn("user", message)
         self._context.add_turn("assistant", response)
+        self._persist_turn("user", message)
+        self._persist_turn("assistant", response)
         metrics["conversation_buffer_ms"] = round(
             (time.perf_counter() - buffer_started) * 1000.0, 2
         )
@@ -412,6 +432,8 @@ class Character:
         # 7. Add both turns to conversation buffer
         self._context.add_turn("user", message)
         self._context.add_turn("assistant", response)
+        self._persist_turn("user", message)
+        self._persist_turn("assistant", response)
 
         # 8. Store character response as buffer memory
         self.memory.add(
@@ -481,6 +503,7 @@ class Character:
 
         # Store in conversation buffer
         self._context.add_turn(role, content)
+        self._persist_turn(role, content)
 
         # Store as buffer memory
         prefix = "[User]" if role == "user" else f"[{self.name}]"

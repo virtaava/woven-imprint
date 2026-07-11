@@ -1,8 +1,12 @@
 """Tests for SQLite storage backend."""
 
+import sqlite3
+import tempfile
+from pathlib import Path
+
 import pytest
 
-from woven_imprint.storage.sqlite import SQLiteStorage
+from woven_imprint.storage.sqlite import _SCHEMA, SQLiteStorage
 
 
 @pytest.fixture
@@ -216,3 +220,57 @@ class TestRelationshipCRUD:
             )
         rels = storage.get_relationships("c1")
         assert len(rels) == 3
+
+
+class TestMigrations:
+    def test_v3_session_turns_applies_cleanly_on_v2_db(self):
+        """A DB pinned at schema version 2 (pre-session_turns) must pick up
+        the v3 migration — creating session_turns — the next time it's
+        opened via SQLiteStorage, without losing existing data."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "v2.db"
+
+            # Build a raw "v2" database: full base schema (includes the
+            # sessions.alias column added by migration 2) but pinned at
+            # schema_version=2, with no session_turns table yet.
+            conn = sqlite3.connect(str(db_path))
+            conn.executescript(_SCHEMA)
+            conn.execute("ALTER TABLE sessions ADD COLUMN alias TEXT;")
+            conn.execute("DELETE FROM schema_version")
+            conn.execute("INSERT INTO schema_version (version) VALUES (2)")
+            conn.execute(
+                "INSERT INTO characters (id, name, persona) VALUES (?, ?, ?)",
+                ("c1", "Alice", "{}"),
+            )
+            conn.commit()
+            conn.close()
+
+            # Confirm session_turns doesn't exist yet in the v2 DB.
+            conn = sqlite3.connect(str(db_path))
+            tables = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            assert "session_turns" not in tables
+            conn.close()
+
+            # Reopen via SQLiteStorage — migration 3 should apply cleanly.
+            storage = SQLiteStorage(str(db_path))
+            try:
+                version = storage._conn.execute(
+                    "SELECT MAX(version) FROM schema_version"
+                ).fetchone()[0]
+                assert version == 3
+
+                # Pre-existing data survived the migration.
+                assert storage.load_character("c1")["name"] == "Alice"
+
+                # session_turns is now usable.
+                storage.add_session_turn("s1", "c1", 1, "user", "hello")
+                turns = storage.get_session_turns("s1")
+                assert len(turns) == 1
+                assert turns[0]["content"] == "hello"
+            finally:
+                storage.close()

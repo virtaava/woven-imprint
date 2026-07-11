@@ -112,8 +112,15 @@ class MaintenanceConfig:
     max_llm_calls_per_run: int = 50
     consolidate_chunk_size: int = 500
     buffer_ttl_days: int = 14
+    buffer_hygiene_max_importance: float = 0.55
+    importance_scoring_batch: int = 30
+    dedup_scan_limit: int = 200
     dedup_similarity: float = 0.92
+    reinforce_similarity: float = 0.85
+    contradiction_candidate_similarity: float = 0.70
+    contradiction_max_pairs: int = 10
     reflect_importance_sum: float = 12.0
+    callbacks_refresh_limit: int = 5
     callbacks_ready_cap: int = 10
     callbacks_refresh_on_session_end: bool = True
 
@@ -422,8 +429,15 @@ maintenance:
   max_llm_calls_per_run: 50
   consolidate_chunk_size: 500
   buffer_ttl_days: 14
+  buffer_hygiene_max_importance: 0.55
+  importance_scoring_batch: 30
+  dedup_scan_limit: 200
   dedup_similarity: 0.92
+  reinforce_similarity: 0.85
+  contradiction_candidate_similarity: 0.70
+  contradiction_max_pairs: 10
   reflect_importance_sum: 12.0
+  callbacks_refresh_limit: 5
   callbacks_ready_cap: 10
   callbacks_refresh_on_session_end: true
 """

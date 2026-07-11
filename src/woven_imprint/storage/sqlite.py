@@ -240,12 +240,12 @@ class SQLiteStorage:
         self, character_id: str, tier: str | None = None, status: str = "active", limit: int = 1000
     ) -> list[dict]:
         """Retrieve memories for a character, optionally filtered by tier."""
-        q = "SELECT * FROM memories WHERE character_id = ? AND status = ?"
+        q = "SELECT *, rowid FROM memories WHERE character_id = ? AND status = ?"
         params: list[Any] = [character_id, status]
         if tier:
             q += " AND tier = ?"
             params.append(tier)
-        q += " ORDER BY created_at DESC LIMIT ?"
+        q += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
         params.append(limit)
         rows = self._conn.execute(q, params).fetchall()
         return [self._row_to_memory(r) for r in rows]

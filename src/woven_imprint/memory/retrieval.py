@@ -117,6 +117,9 @@ class MemoryRetriever:
         if not all_memories:
             return []
 
+        # Sort by rowid for stable input order (ensures tiebreakers in rankings are deterministic)
+        all_memories.sort(key=lambda m: m.get("rowid", 0))
+
         # Strategy 1: Semantic ranking (skip if query empty)
         semantic_ranked = []
         if query.strip():
@@ -132,14 +135,16 @@ class MemoryRetriever:
         # Strategy 2: Keyword ranking (BM25 via FTS5) — uses pre-fetched candidates
         keyword_ranked = [m["id"] for m in fts_candidates]
 
-        # Strategy 3: Tier-aware recency ranking
+        # Strategy 3: Tier-aware recency ranking (with rowid tiebreaker for determinism)
         recency_scores = [
-            (m["id"], _recency_score(m, m.get("tier", "buffer"))) for m in all_memories
+            (m["id"], _recency_score(m, m.get("tier", "buffer")), m.get("rowid", 0))
+            for m in all_memories
         ]
-        recency_scores.sort(key=lambda x: x[1], reverse=True)
-        recency_ranked = [mid for mid, _ in recency_scores]
+        # Sort by score descending, then by rowid ascending (newer=higher rowid comes last in tie)
+        recency_scores.sort(key=lambda x: (-x[1], x[2]))
+        recency_ranked = [mid for mid, _, _ in recency_scores]
 
-        # Strategy 4: Importance with tier boost + user affinity
+        # Strategy 4: Importance with tier boost + user affinity (with rowid tiebreaker)
         importance_scores = []
         for m in all_memories:
             base = m.get("importance", 0.5) * m.get("certainty", 1.0)
@@ -149,9 +154,10 @@ class MemoryRetriever:
                 meta = m.get("metadata", {})
                 if meta.get("user_id") == relationship_target:
                     base += 0.2
-            importance_scores.append((m["id"], base + boost))
-        importance_scores.sort(key=lambda x: x[1], reverse=True)
-        importance_ranked = [mid for mid, _ in importance_scores]
+            importance_scores.append((m["id"], base + boost, m.get("rowid", 0)))
+        # Sort by score descending, then by rowid ascending (newer=higher rowid comes last in tie)
+        importance_scores.sort(key=lambda x: (-x[1], x[2]))
+        importance_ranked = [mid for mid, _, _ in importance_scores]
 
         # Strategy 5: Relationship boost (if target specified)
         from ..config import get_config

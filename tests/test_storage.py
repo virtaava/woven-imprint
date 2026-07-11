@@ -153,6 +153,41 @@ class TestMemoryCRUD:
         assert len(mem["embedding"]) == 4
         assert abs(mem["embedding"][0] - 0.1) < 0.001
 
+    def test_deterministic_memory_ordering(self, storage):
+        """Regression test: memories with same created_at should order by rowid DESC.
+
+        This ensures that when memories are inserted in rapid succession (same second),
+        the newest-inserted memory comes first, even though created_at is identical.
+        This is critical for deterministic ordering without relying on index fragmentation.
+        """
+        storage.save_character("c1", "Alice", {})
+
+        # Insert 5 memories in rapid succession (will have same created_at)
+        memory_ids = []
+        for i in range(5):
+            mem_id = f"m{i}"
+            memory_ids.append(mem_id)
+            storage.save_memory(
+                {
+                    "id": mem_id,
+                    "character_id": "c1",
+                    "tier": "buffer",
+                    "content": f"memory {i}",
+                }
+            )
+
+        # Get memories back and verify order is reverse-insertion (newest first)
+        mems = storage.get_memories("c1")
+        assert len(mems) == 5
+
+        # Order should be m4, m3, m2, m1, m0 (newest inserted first)
+        retrieved_ids = [m["id"] for m in mems]
+        expected_order = list(reversed(memory_ids))
+        assert retrieved_ids == expected_order, (
+            f"Expected order {expected_order}, got {retrieved_ids}. "
+            "Memories with identical created_at must order by rowid DESC."
+        )
+
 
 class TestRelationshipCRUD:
     def test_save_and_get(self, storage):

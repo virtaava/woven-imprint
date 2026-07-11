@@ -92,7 +92,7 @@ def create_embedding(cfg: WovenConfig | None = None) -> EmbeddingProvider:
         return OpenAIEmbedding(
             model=cfg.llm.embedding_model,
             api_key=cfg.llm.api_key,
-            base_url=cfg.llm.base_url,
+            base_url=cfg.llm.embedding_base_url or cfg.llm.base_url,
         )
     else:
         raise ValueError(f"Unknown embedding provider: {provider!r}. Supported: ollama, openai")

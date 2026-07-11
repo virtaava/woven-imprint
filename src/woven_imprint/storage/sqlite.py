@@ -110,6 +110,24 @@ CREATE TABLE IF NOT EXISTS session_turns (
 );
 CREATE INDEX IF NOT EXISTS idx_session_turns_session ON session_turns(session_id, seq);
 """,
+    4: """
+CREATE TABLE IF NOT EXISTS callbacks (
+    id TEXT PRIMARY KEY,
+    character_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('open_thread', 'callback', 'milestone', 'curiosity')),
+    hook TEXT NOT NULL,
+    source_memory_ids JSON DEFAULT '[]',
+    salience REAL DEFAULT 0.5,
+    status TEXT DEFAULT 'ready' CHECK(status IN ('ready', 'consumed', 'expired')),
+    created_at DATETIME DEFAULT (datetime('now')),
+    consumed_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_callbacks_character ON callbacks(character_id, status, salience);
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+""",
 }
 
 
@@ -212,6 +230,7 @@ class SQLiteStorage:
         self._conn.execute("DELETE FROM memories WHERE character_id = ?", (char_id,))
         self._conn.execute("DELETE FROM relationships WHERE character_id = ?", (char_id,))
         self._conn.execute("DELETE FROM session_turns WHERE character_id = ?", (char_id,))
+        self._conn.execute("DELETE FROM callbacks WHERE character_id = ?", (char_id,))
         self._conn.execute("DELETE FROM sessions WHERE character_id = ?", (char_id,))
         self._conn.execute("DELETE FROM characters WHERE id = ?", (char_id,))
         self._commit()
@@ -460,3 +479,78 @@ class SQLiteStorage:
         if tail is not None:
             turns = turns[-tail:]
         return turns
+
+    # ── Callbacks ─────────────────────────────────────────────
+
+    def save_callback(self, cb: dict) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO callbacks "
+            "(id, character_id, kind, hook, source_memory_ids, salience, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                cb["id"],
+                cb["character_id"],
+                cb["kind"],
+                cb["hook"],
+                json.dumps(cb.get("source_memory_ids", [])),
+                cb.get("salience", 0.5),
+                cb.get("status", "ready"),
+            ),
+        )
+        self._commit()
+
+    def get_callbacks(
+        self, character_id: str, status: str = "ready", limit: int = 10
+    ) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM callbacks WHERE character_id = ? AND status = ? "
+            "ORDER BY salience DESC, created_at DESC LIMIT ?",
+            (character_id, status, limit),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["source_memory_ids"] = json.loads(d.get("source_memory_ids") or "[]")
+            out.append(d)
+        return out
+
+    def mark_callback(self, callback_id: str, status: str) -> None:
+        self._conn.execute(
+            "UPDATE callbacks SET status = ?, "
+            "consumed_at = CASE WHEN ? = 'consumed' THEN datetime('now') ELSE consumed_at END "
+            "WHERE id = ?",
+            (status, status, callback_id),
+        )
+        self._commit()
+
+    # ── Meta ──────────────────────────────────────────────────
+
+    def meta_get(self, key: str) -> str | None:
+        row = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+    def meta_set(self, key: str, value: str) -> None:
+        self._conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, str(value)),
+        )
+        self._commit()
+
+    # ── Memory maintenance helpers ────────────────────────────
+
+    def set_memory_importance(self, memory_id: str, importance: float) -> None:
+        self._conn.execute(
+            "UPDATE memories SET importance = ? WHERE id = ?",
+            (max(0.0, min(1.0, importance)), memory_id),
+        )
+        self._commit()
+
+    def archive_memories_batch(self, memory_ids: list[str]) -> None:
+        if not memory_ids:
+            return
+        self._conn.executemany(
+            "UPDATE memories SET status = 'archived' WHERE id = ?",
+            [(mid,) for mid in memory_ids],
+        )
+        self._commit()

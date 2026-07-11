@@ -27,6 +27,22 @@ class MemoryStore:
     ) -> dict:
         """Add a new memory entry."""
         embedding = self.embedder.embed(content)
+
+        # Guard against mixed embedding models corrupting cosine math (meta contract)
+        if embedding:
+            known = self.storage.meta_get("embedding_dimensions")
+            if known is None:
+                self.storage.meta_set("embedding_dimensions", str(len(embedding)))
+                from ..config import get_config
+
+                self.storage.meta_set("embedding_model", get_config().llm.embedding_model)
+            elif int(known) != len(embedding):
+                raise ValueError(
+                    f"Embedding dimension mismatch: DB stores {known}-d vectors, "
+                    f"got {len(embedding)}-d. Mixed embedding models corrupt retrieval — "
+                    f"re-embed the database or restore the original embedding model."
+                )
+
         memory = {
             "id": generate_id("mem-"),
             "character_id": self.character_id,

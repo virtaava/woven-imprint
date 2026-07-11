@@ -50,6 +50,17 @@ class TestCharacterCRUD:
 
         assert storage.get_session_turns("s1") == []
 
+    def test_delete_character_removes_callbacks(self, storage):
+        storage.save_character("c1", "Alice", {})
+        storage.save_callback(
+            {"id": "cb-1", "character_id": "c1", "kind": "curiosity", "hook": "h"}
+        )
+        assert storage.get_callbacks("c1") != []
+
+        storage.delete_character("c1")
+
+        assert storage.get_callbacks("c1") == []
+
     def test_upsert(self, storage):
         storage.save_character("c1", "Alice", {"v": 1})
         storage.save_character("c1", "Alice Updated", {"v": 2})
@@ -266,13 +277,14 @@ class TestMigrations:
             assert "session_turns" not in tables
             conn.close()
 
-            # Reopen via SQLiteStorage — migration 3 should apply cleanly.
+            # Reopen via SQLiteStorage — migration 3 (and any later ones) should
+            # apply cleanly, advancing to the current schema version.
             storage = SQLiteStorage(str(db_path))
             try:
                 version = storage._conn.execute(
                     "SELECT MAX(version) FROM schema_version"
                 ).fetchone()[0]
-                assert version == 3
+                assert version == 4
 
                 # Pre-existing data survived the migration.
                 assert storage.load_character("c1")["name"] == "Alice"
@@ -284,3 +296,69 @@ class TestMigrations:
                 assert turns[0]["content"] == "hello"
             finally:
                 storage.close()
+
+
+class TestCallbacksTable:
+    def test_callback_roundtrip(self):
+        s = SQLiteStorage(":memory:")
+        s.save_character("c1", "Cara", {})
+        s.save_callback(
+            {
+                "id": "cb-1",
+                "character_id": "c1",
+                "kind": "open_thread",
+                "hook": "You mentioned an interview coming up — how did it go?",
+                "source_memory_ids": ["m1", "m2"],
+                "salience": 0.8,
+            }
+        )
+        ready = s.get_callbacks("c1")
+        assert len(ready) == 1
+        cb = ready[0]
+        assert cb["kind"] == "open_thread"
+        assert cb["source_memory_ids"] == ["m1", "m2"]
+        assert cb["status"] == "ready"
+
+    def test_mark_and_filter_status(self):
+        s = SQLiteStorage(":memory:")
+        s.save_character("c1", "Cara", {})
+        for i, sal in enumerate([0.3, 0.9]):
+            s.save_callback(
+                {
+                    "id": f"cb-{i}",
+                    "character_id": "c1",
+                    "kind": "curiosity",
+                    "hook": f"hook {i}",
+                    "salience": sal,
+                }
+            )
+        ready = s.get_callbacks("c1")
+        assert [c["id"] for c in ready] == ["cb-1", "cb-0"]  # salience DESC
+        s.mark_callback("cb-1", "consumed")
+        assert [c["id"] for c in s.get_callbacks("c1")] == ["cb-0"]
+
+    def test_meta_roundtrip(self):
+        s = SQLiteStorage(":memory:")
+        assert s.meta_get("embedding_model") is None
+        s.meta_set("embedding_model", "nomic-embed-text")
+        s.meta_set("embedding_model", "other")  # upsert
+        assert s.meta_get("embedding_model") == "other"
+
+    def test_set_importance_and_batch_archive(self):
+        s = SQLiteStorage(":memory:")
+        s.save_character("c1", "Cara", {})
+        for i in range(3):
+            s.save_memory(
+                {
+                    "id": f"m{i}",
+                    "character_id": "c1",
+                    "tier": "buffer",
+                    "content": f"mem {i}",
+                    "importance": 0.5,
+                }
+            )
+        s.set_memory_importance("m0", 0.9)
+        assert s.get_memory("m0")["importance"] == 0.9
+        s.archive_memories_batch(["m1", "m2"])
+        active = s.get_memories("c1", tier="buffer")
+        assert [m["id"] for m in active] == ["m0"]

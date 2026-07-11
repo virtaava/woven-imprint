@@ -678,8 +678,10 @@ class Character:
         arc_desc = self.arc.describe()
         memory_text = self._format_memories(memories)
 
-        # Start with core system prompt (always included)
-        full_system = system_prompt
+        # Volatile block (emotion/arc/relationship/memories) — kept separate
+        # from system_prompt so message 0 stays byte-identical across turns
+        # (provider prefix-caching friendly).
+        volatile = ""
 
         # Add optional components, tracking size
         optional_parts = []
@@ -706,7 +708,7 @@ class Character:
         if total <= budget_chars:
             # Everything fits — include all
             for _, part in optional_parts:
-                full_system += part
+                volatile += part
         else:
             # Need to shed. Try compression first.
             self._context.compress(self.llm)
@@ -717,30 +719,32 @@ class Character:
             if total <= budget_chars:
                 # Fits after compression
                 for _, part in optional_parts:
-                    full_system += part
+                    volatile += part
             else:
                 # Still too large — add optional parts by priority until budget
                 remaining = budget_chars - base_size - history_size
                 for name, part in optional_parts:
                     if len(part) <= remaining:
-                        full_system += part
+                        volatile += part
                         remaining -= len(part)
                     elif name == "memories" and remaining > 200:
                         # Partial memories — include as many as fit
                         truncated = self._format_memories(memories[: max(1, len(memories) // 2)])
                         mem_part = f"\n\nYour relevant memories:\n{truncated}"
                         if len(mem_part) <= remaining:
-                            full_system += mem_part
+                            volatile += mem_part
                             remaining -= len(mem_part)
 
                 # If STILL over after shedding optional parts, trim conversation
-                total = len(full_system) + history_size + len(user_message)
+                total = len(system_prompt) + len(volatile) + history_size + len(user_message)
                 if total > budget_chars and len(history) > 0:
                     self._context.compress(self.llm)
                     history = self._context.get_messages()
 
-        # Assemble final message list
-        messages = [{"role": "system", "content": full_system}]
+        # Assemble final message list: stable prefix first, volatile second
+        messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+        if volatile:
+            messages.append({"role": "system", "content": volatile.lstrip("\n")})
         messages.extend(history)
         messages.append({"role": "user", "content": user_message})
 

@@ -31,51 +31,29 @@ from woven_imprint import Engine
 from woven_imprint.llm.base import LLMProvider
 
 
-class _SystemMergingLLM(LLMProvider):
-    """Wraps an LLMProvider, coalescing multiple system-role messages into one,
-    and optionally capping max_tokens on generation calls.
+class _MaxTokensCapLLM(LLMProvider):
+    """Wraps an LLMProvider, optionally capping max_tokens on generation calls.
 
-    `Character._build_context` sends a stable persona system message plus a
-    second, volatile system message (emotion/arc/relationship/memories) —
-    intentional, for provider prefix-caching (see A4). Some OpenAI-compatible
-    servers (observed: vLLM's OpenAI shim in front of Qwen3.5-35B-A3B-FP8)
-    reject any request with more than one system-role message with a 400
-    ("System message must be at the beginning.").
-
-    Separately, Qwen3.5-35B-A3B-FP8 emits long "thinking" prose inline in
-    the response content (no reasoning-parser separation configured on this
-    deployment), which at the default max_tokens=2048 can produce responses
-    long enough to overflow the embedding server's physical batch size when
-    the response is stored as a memory. `max_tokens_cap` bounds generation
+    Qwen3.5-35B-A3B-FP8 emits long "thinking" prose inline in the response
+    content (no reasoning-parser separation configured on this deployment),
+    which at the default max_tokens=2048 can produce responses long enough
+    to overflow the embedding server's physical batch size when the
+    response is stored as a memory. `max_tokens_cap` bounds generation
     length to keep the pipeline exercised realistically without that
     downstream failure.
 
-    This is a bench-only compatibility shim — production message
-    construction and token limits are untouched.
+    System-message merging (multiple leading system-role messages coalesced
+    into one, required by strict OpenAI-compatible servers like vLLM's
+    chat template) now happens inside the production provider itself — see
+    `woven_imprint.llm.openai_llm._merge_system_messages` — so this bench
+    talks to the same message-construction path production does. This shim
+    only handles the max_tokens cap, which is bench/model-specific and
+    doesn't belong in production generation.
     """
 
     def __init__(self, inner, max_tokens_cap: int | None = None):
         self.inner = inner
         self.max_tokens_cap = max_tokens_cap
-
-    @staticmethod
-    def _merge_system(messages: list[dict[str, str]]) -> list[dict[str, str]]:
-        out: list[dict[str, str]] = []
-        merged: dict[str, str] | None = None
-        for m in messages:
-            if m.get("role") == "system":
-                if merged is None:
-                    merged = dict(m)
-                else:
-                    merged["content"] = f"{merged.get('content', '')}\n\n{m.get('content', '')}"
-            else:
-                if merged is not None:
-                    out.append(merged)
-                    merged = None
-                out.append(m)
-        if merged is not None:
-            out.append(merged)
-        return out
 
     def _cap(self, max_tokens: int) -> int:
         if self.max_tokens_cap is None:
@@ -84,16 +62,16 @@ class _SystemMergingLLM(LLMProvider):
 
     def generate(self, messages, temperature: float = 0.7, max_tokens: int = 2048) -> str:
         return self.inner.generate(
-            self._merge_system(messages), temperature=temperature, max_tokens=self._cap(max_tokens)
+            messages, temperature=temperature, max_tokens=self._cap(max_tokens)
         )
 
     def generate_stream(self, messages, temperature: float = 0.7, max_tokens: int = 2048):
         return self.inner.generate_stream(
-            self._merge_system(messages), temperature=temperature, max_tokens=self._cap(max_tokens)
+            messages, temperature=temperature, max_tokens=self._cap(max_tokens)
         )
 
     def generate_json(self, messages, temperature: float = 0.3):
-        return self.inner.generate_json(self._merge_system(messages), temperature=temperature)
+        return self.inner.generate_json(messages, temperature=temperature)
 
 
 SCRIPTED_TURNS = [
@@ -153,7 +131,7 @@ def main() -> None:
     if args.llm_base_url and args.llm_model:
         from woven_imprint.llm.openai_llm import OpenAILLM
 
-        llm = _SystemMergingLLM(
+        llm = _MaxTokensCapLLM(
             OpenAILLM(model=args.llm_model, base_url=args.llm_base_url, api_key=args.api_key),
             max_tokens_cap=args.max_tokens_cap or None,
         )

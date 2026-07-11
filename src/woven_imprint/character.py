@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -309,6 +310,137 @@ class Character:
         self.last_chat_metrics = metrics
         self._emit_metrics(metrics)
         return response
+
+    def chat_stream(self, message: str, user_id: str | None = None) -> Iterator[str]:
+        """Like chat(), but yields response chunks as they generate.
+
+        Consistency checking is post-hoc in stream mode: streamed text is
+        never retracted. Violations are logged and counted in
+        last_chat_metrics["stream_consistency_violations"] (config
+        `character.consistency_stream_mode`: "off" | "log", default "log").
+
+        Args:
+            message: The user's message.
+            user_id: Optional user identifier for relationship tracking.
+
+        Yields:
+            Response text chunks, in order.
+        """
+        metrics: dict[str, float] = {}
+        chat_started = time.perf_counter()
+
+        if not self._session_id:
+            self.start_session()
+
+        # Input size limit
+        from .config import get_config
+
+        _cfg = get_config()
+        if len(message) > _cfg.memory.max_message_length:
+            message = message[: _cfg.memory.max_message_length]
+
+        # 1. Store user message as buffer memory
+        self.memory.add(
+            content=f"[User] {message}",
+            tier="buffer",
+            role="user",
+            session_id=self._session_id,
+            importance=0.5,
+        )
+
+        # 2. Retrieve relevant memories
+        memories = self.retriever.retrieve(
+            query=message,
+            limit=10,
+            relationship_target=user_id,
+        )
+
+        # 3. Get relationship context
+        rel_context = ""
+        if user_id:
+            self.relationships.get_or_create(user_id)
+            rel_context = self.relationships.describe(user_id)
+
+        # 4. Build the full prompt within context budget
+        messages = self._build_context(message, memories, rel_context)
+        self.last_chat_messages = [dict(item) for item in messages]
+
+        # 5. Stream the response
+        generate_started = time.perf_counter()
+        chunks: list[str] = []
+        for chunk in self.llm.generate_stream(messages, temperature=0.7):
+            chunks.append(chunk)
+            yield chunk
+        response = "".join(chunks)
+        metrics["generate_ms"] = round((time.perf_counter() - generate_started) * 1000.0, 2)
+
+        # 6. Post-hoc consistency check — never retracts streamed text.
+        consistency_started = time.perf_counter()
+        if self.enforce_consistency and _cfg.character.consistency_stream_mode == "log":
+            try:
+                context_parts = []
+                non_system = [m for m in messages if m.get("role") != "system"]
+                for m in non_system[-6:]:  # last 3 pairs (user+assistant)
+                    role = m.get("role", "unknown")
+                    content = m.get("content", "")[:300]
+                    context_parts.append(f"{role}: {content}")
+                context = "\n".join(context_parts)
+
+                report = self.consistency.check(response, context=context)
+                violations = len(report.hard_violations)
+                metrics["stream_consistency_violations"] = float(violations)
+                if violations:
+                    logger.warning(
+                        "chat_stream: %d hard consistency violation(s) detected "
+                        "post-hoc (streamed text not retracted)",
+                        violations,
+                    )
+            except Exception as e:
+                logger.debug("Stream consistency check failed: %s", e)
+        metrics["consistency_ms"] = round((time.perf_counter() - consistency_started) * 1000.0, 2)
+
+        # 7. Add both turns to conversation buffer
+        self._context.add_turn("user", message)
+        self._context.add_turn("assistant", response)
+
+        # 8. Store character response as buffer memory
+        self.memory.add(
+            content=f"[{self.name}] {response}",
+            tier="buffer",
+            role="character",
+            session_id=self._session_id,
+            importance=0.5,
+        )
+
+        self._turn_count += 1
+
+        # Subsystem updates — all independent, all non-fatal
+        if self.background:
+            # Runs on the worker thread while the caller continues. GIL-benign:
+            # self.emotion is object-swapped on success (readers see old-or-new,
+            # never partial); self.arc and emotion-decay mutate their fields
+            # in place, so a concurrent reader may observe transient staleness
+            # but never a torn value. Caller must call Character.close() before
+            # tearing down shared resources (e.g. the DB connection) the
+            # worker still writes through.
+            self._get_worker().submit(
+                "bookkeeping", self._run_subsystems_sequential, message, response, user_id
+            )
+        elif self.parallel and not self.lightweight:
+            self._run_subsystems_parallel(message, response, user_id)
+        else:
+            self._run_subsystems_sequential(message, response, user_id)
+
+        # Periodic maintenance
+        if self._turn_count % _cfg.memory.state_save_interval == 0:
+            try:
+                self._save_state()
+            except Exception as e:
+                logger.debug("Periodic state save failed: %s", e)
+
+        metrics["total_ms"] = round((time.perf_counter() - chat_started) * 1000.0, 2)
+        self.last_chat_metrics = metrics
+        self._emit_metrics(metrics)
 
     def ingest(self, role: str, content: str, user_id: str | None = None) -> None:
         """Record an externally-generated message without calling the LLM.

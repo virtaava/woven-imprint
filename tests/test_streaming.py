@@ -76,3 +76,27 @@ def test_ollama_stream_closes_response_on_abandonment(monkeypatch):
     gc.collect()
 
     assert close_called, "resp.close() should have been called"
+
+
+class StreamingFakeLLM(FakeLLM):
+    def generate_stream(self, messages, **kw):
+        for chunk in ["I ", "hear ", "you."]:
+            yield chunk
+
+
+def test_chat_stream_yields_and_bookkeeps():
+    from tests.helpers import FakeEmbedder
+    from woven_imprint.engine import Engine
+
+    engine = Engine(db_path=":memory:", llm=StreamingFakeLLM(), embedding=FakeEmbedder())
+    char = engine.create_character("Streamy")
+    char.background = False  # sync bookkeeping for deterministic assertions
+    char.parallel = False
+
+    chunks = list(char.chat_stream("hello", user_id="u1"))
+    assert "".join(chunks) == "I hear you."
+    # Same post-processing as chat(): buffers + memory + relationship
+    assert char.get_relationship("u1") is not None
+    buffer = char.memory.get_all(tier="buffer", limit=10)
+    assert any("I hear you." in m["content"] for m in buffer)
+    assert char._context.turn_count == 2

@@ -101,6 +101,7 @@ class CharacterConfig:
     consistency_max_retries: int = 2
     consistency_temperature: float = 0.5
     consistency_fail_open_score: float = 0.8
+    consistency_stream_mode: str = "log"  # "off" | "log" — post-hoc check in chat_stream()
     metrics_path: str | None = None
     background: bool = True
 
@@ -235,6 +236,7 @@ def _apply_env(cfg: WovenConfig) -> None:
         "WOVEN_IMPRINT_PARALLEL": ("character", "parallel"),
         "WOVEN_IMPRINT_LIGHTWEIGHT": ("character", "lightweight"),
         "WOVEN_IMPRINT_ENFORCE_CONSISTENCY": ("character", "enforce_consistency"),
+        "WOVEN_IMPRINT_CONSISTENCY_STREAM_MODE": ("character", "consistency_stream_mode"),
         "WOVEN_IMPRINT_MAX_FACTS": ("memory", "max_facts_per_extraction"),
         "WOVEN_IMPRINT_METRICS_PATH": ("character", "metrics_path"),
         "WOVEN_IMPRINT_BACKGROUND": ("character", "background"),
@@ -377,6 +379,7 @@ character:
   consistency_max_retries: 2
   consistency_temperature: 0.5
   consistency_fail_open_score: 0.8
+  # consistency_stream_mode: log  # "off" | "log" — post-hoc consistency check in chat_stream()
   # metrics_path: null            # JSONL per-turn chat metrics (opt-in)
   background: true               # run bookkeeping (emotion/arc/relationship/facts) off the hot path
 

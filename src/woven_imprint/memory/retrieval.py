@@ -38,23 +38,28 @@ def _get_tier_boosts() -> dict:
     }
 
 
-def _recency_score(accessed_at: str, tier: str = "buffer") -> float:
-    """Exponential decay based on hours since last access.
+def _recency_score(memory: dict, tier: str = "buffer") -> float:
+    """Exponential decay based on hours since the anchor timestamp.
 
-    Different tiers decay at different rates:
-    - bedrock: nearly permanent (you don't forget who you are)
-    - core: slow decay (consolidated memories persist for months)
-    - buffer: fast decay (raw observations fade in days)
+    Anchor is `created_at` by default (config memory.recency_anchor).
+    Anchoring on `accessed_at` makes frequently-retrieved memories
+    self-reinforcing — kept only as an opt-in legacy mode.
     """
+    from ..config import get_config
+
+    anchor_field = (
+        "accessed_at" if get_config().memory.recency_anchor == "accessed" else "created_at"
+    )
     decay_rate = _get_decay_rates().get(tier, 0.995)
+    raw = memory.get(anchor_field) or memory.get("created_at") or ""
     try:
-        accessed = datetime.fromisoformat(accessed_at.replace("Z", "+00:00"))
+        anchored = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return 0.5
-    if accessed.tzinfo is None:
-        accessed = accessed.replace(tzinfo=timezone.utc)
+    if anchored.tzinfo is None:
+        anchored = anchored.replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
-    hours = max(0, (now - accessed).total_seconds() / 3600)
+    hours = max(0, (now - anchored).total_seconds() / 3600)
     return decay_rate**hours
 
 
@@ -129,8 +134,7 @@ class MemoryRetriever:
 
         # Strategy 3: Tier-aware recency ranking
         recency_scores = [
-            (m["id"], _recency_score(m.get("accessed_at", ""), m.get("tier", "buffer")))
-            for m in all_memories
+            (m["id"], _recency_score(m, m.get("tier", "buffer"))) for m in all_memories
         ]
         recency_scores.sort(key=lambda x: x[1], reverse=True)
         recency_ranked = [mid for mid, _ in recency_scores]

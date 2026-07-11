@@ -266,24 +266,35 @@ class TestRetrieval:
 
 
 class TestRecencyScore:
+    def test_recency_anchor_created_ignores_touches(self):
+        """Retrieval touching accessed_at must not make old memories look fresh."""
+        old_created = "2020-01-01 00:00:00"
+        fresh_touch = "2099-01-01 00:00:00"
+        mem = {"created_at": old_created, "accessed_at": fresh_touch}
+        score = _recency_score(mem, "buffer")
+        assert score < 0.01  # decayed to ~nothing despite the fresh touch
+
     def test_bedrock_decays_slowly(self):
         # 1 week ago
         from datetime import datetime, timezone, timedelta
 
         one_week_ago = (datetime.now(timezone.utc) - timedelta(hours=168)).isoformat()
-        bedrock = _recency_score(one_week_ago, "bedrock")
-        buffer = _recency_score(one_week_ago, "buffer")
+        mem_old = {"created_at": one_week_ago, "accessed_at": one_week_ago}
+        bedrock = _recency_score(mem_old, "bedrock")
+        buffer = _recency_score(mem_old, "buffer")
         assert bedrock > buffer  # bedrock should retain more
 
     def test_recent_scores_high(self):
         from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc).isoformat()
-        score = _recency_score(now, "core")
+        mem_now = {"created_at": now, "accessed_at": now}
+        score = _recency_score(mem_now, "core")
         assert score > 0.99
 
     def test_invalid_timestamp(self):
-        score = _recency_score("not-a-date", "core")
+        mem = {"created_at": "not-a-date", "accessed_at": "not-a-date"}
+        score = _recency_score(mem, "core")
         assert score == 0.5  # default fallback
 
 

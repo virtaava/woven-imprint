@@ -65,6 +65,7 @@ class MemoryConfig:
     weight_recency: float = 1.0
     weight_importance: float = 1.0
     weight_relationship: float = 1.0
+    recency_anchor: str = "created"  # "created" | "accessed"
 
 
 @dataclass
@@ -346,6 +347,7 @@ memory:
   weight_recency: 1.0
   weight_importance: 1.0
   weight_relationship: 1.0
+  # recency_anchor: created        # "created" | "accessed"
 
 context:
   total_tokens: 6000

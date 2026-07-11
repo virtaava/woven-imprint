@@ -105,6 +105,7 @@ def _setup():
     def _create_sequential(*args, **kwargs):
         char = _orig_create(*args, **kwargs)
         char.parallel = False
+        char.background = False
         return char
 
     engine.create_character = _create_sequential

@@ -69,6 +69,7 @@ def make_test_engine(db_path=":memory:"):
     def _create_seq(*a, **kw):
         c = orig(*a, **kw)
         c.parallel = False
+        c.background = False
         return c
 
     engine.create_character = _create_seq

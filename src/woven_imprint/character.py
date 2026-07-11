@@ -94,6 +94,8 @@ class Character:
         self.enforce_consistency: bool = _cfg.character.enforce_consistency
         self.lightweight: bool = _cfg.character.lightweight
         self.parallel: bool = _cfg.character.parallel
+        self.background: bool = _cfg.character.background
+        self._worker = None  # lazily created BackgroundWorker
 
         # Restore persisted transient state (C3)
         self._restore_state()
@@ -129,6 +131,26 @@ class Character:
         self._context.clear()
         self.storage.reopen_session(session_id)
         return session_id
+
+    def _get_worker(self):
+        if self._worker is None:
+            from .background import BackgroundWorker
+
+            self._worker = BackgroundWorker(self.id)
+        return self._worker
+
+    def flush(self, timeout: float | None = None) -> bool:
+        """Wait for queued background bookkeeping to finish."""
+        if self._worker is None:
+            return True
+        return self._worker.flush(timeout=timeout)
+
+    def close(self) -> None:
+        """Flush and stop the background worker."""
+        if self._worker is not None:
+            self._worker.flush(timeout=10)
+            self._worker.close()
+            self._worker = None
 
     def chat(self, message: str, user_id: str | None = None) -> str:
         """Send a message and get an in-character response.
@@ -253,15 +275,19 @@ class Character:
             (time.perf_counter() - store_response_started) * 1000.0, 2
         )
 
+        self._turn_count += 1
+
         # Subsystem updates — all independent, all non-fatal
         subsystem_started = time.perf_counter()
-        if self.parallel and not self.lightweight:
+        if self.background:
+            self._get_worker().submit(
+                "bookkeeping", self._run_subsystems_sequential, message, response, user_id
+            )
+        elif self.parallel and not self.lightweight:
             self._run_subsystems_parallel(message, response, user_id)
         else:
             self._run_subsystems_sequential(message, response, user_id)
         metrics["subsystems_ms"] = round((time.perf_counter() - subsystem_started) * 1000.0, 2)
-
-        self._turn_count += 1
 
         # Periodic maintenance
         maintenance_started = time.perf_counter()
@@ -270,15 +296,6 @@ class Character:
                 self._save_state()
             except Exception as e:
                 logger.debug("Periodic state save failed: %s", e)
-
-            if (
-                self._turn_count % _cfg.memory.consolidation_interval == 0
-                and self.consolidator.needs_consolidation()
-            ):
-                try:
-                    self.consolidator.consolidate()
-                except Exception as e:
-                    logger.debug("Auto-consolidation failed: %s", e)
         metrics["maintenance_ms"] = round((time.perf_counter() - maintenance_started) * 1000.0, 2)
 
         metrics["total_ms"] = round((time.perf_counter() - chat_started) * 1000.0, 2)
@@ -351,15 +368,6 @@ class Character:
                 self._save_state()
             except Exception as e:
                 logger.debug("Periodic state save failed: %s", e)
-
-            if (
-                self._turn_count % _cfg.memory.consolidation_interval == 0
-                and self.consolidator.needs_consolidation()
-            ):
-                try:
-                    self.consolidator.consolidate()
-                except Exception as e:
-                    logger.debug("Auto-consolidation failed: %s", e)
 
     def _run_subsystems_parallel(self, message: str, response: str, user_id: str | None) -> None:
         """Run emotion, arc, and extraction in parallel threads."""
@@ -505,6 +513,9 @@ class Character:
         """
         if not self._session_id:
             return None
+
+        # Bookkeeping must land before the summary reads buffer memories.
+        self.flush(timeout=30)
 
         # Get session memories
         session_memories = [

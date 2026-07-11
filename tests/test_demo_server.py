@@ -38,6 +38,14 @@ def app_client():
     client = TestClient(app, base_url="http://127.0.0.1:7860")
     client.headers["Authorization"] = f"Bearer {token}"
     yield client, token, engine
+    # demo_mod._get_character() builds Characters via engine.get_character(),
+    # bypassing make_test_engine's create_character wrapper — those cached
+    # instances default to background=True (production behavior). Flush/close
+    # them before closing storage so no background thread writes to a closed
+    # connection.
+    for char in demo_mod._char_cache.values():
+        char.close()
+    demo_mod._char_cache.clear()
     engine.close()
 
 

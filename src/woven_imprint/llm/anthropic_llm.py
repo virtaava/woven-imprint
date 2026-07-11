@@ -56,20 +56,29 @@ class AnthropicLLM(LLMProvider):
     def generate(
         self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
     ) -> str:
+        from .resilience import resilient_call
+
         system, chat_messages = self._split_messages(messages)
 
-        response = self.client.messages.create(
+        response = resilient_call(
+            self.client.messages.create,
             model=self.model,
             system=system or "You are a helpful assistant.",
             messages=chat_messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            provider_name="anthropic",
         )
         return response.content[0].text
 
     def generate_stream(
         self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
     ):
+        # Note: not wrapped in resilient_call — client.messages.stream() returns
+        # a context manager, not a plain callable result, which doesn't compose
+        # cleanly with resilient_call's retry-on-call semantics. The Anthropic
+        # SDK retries transient errors internally. Parity for streaming can be
+        # revisited if we need circuit-breaker coverage on the streaming path.
         system, chat_messages = self._split_messages(messages)
         with self.client.messages.stream(
             model=self.model,

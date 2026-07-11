@@ -164,7 +164,9 @@ class Character:
             session_id=self._session_id,
             importance=0.5,
         )
-        metrics["store_user_memory_ms"] = round((time.perf_counter() - store_user_started) * 1000.0, 2)
+        metrics["store_user_memory_ms"] = round(
+            (time.perf_counter() - store_user_started) * 1000.0, 2
+        )
 
         # 2. Retrieve relevant memories
         retrieve_started = time.perf_counter()
@@ -173,7 +175,9 @@ class Character:
             limit=10,
             relationship_target=user_id,
         )
-        metrics["retrieve_memories_ms"] = round((time.perf_counter() - retrieve_started) * 1000.0, 2)
+        metrics["retrieve_memories_ms"] = round(
+            (time.perf_counter() - retrieve_started) * 1000.0, 2
+        )
 
         # 3. Get relationship context
         rel_context = ""
@@ -181,18 +185,30 @@ class Character:
         if user_id:
             self.relationships.get_or_create(user_id)
             rel_context = self.relationships.describe(user_id)
-        metrics["relationship_context_ms"] = round((time.perf_counter() - relationship_context_started) * 1000.0, 2)
+        metrics["relationship_context_ms"] = round(
+            (time.perf_counter() - relationship_context_started) * 1000.0, 2
+        )
 
         # 4. Build the full prompt within context budget
         build_context_started = time.perf_counter()
         messages = self._build_context(message, memories, rel_context)
         self.last_chat_messages = [dict(item) for item in messages]
-        metrics["build_context_ms"] = round((time.perf_counter() - build_context_started) * 1000.0, 2)
+        metrics["build_context_ms"] = round(
+            (time.perf_counter() - build_context_started) * 1000.0, 2
+        )
         metrics["message_count"] = float(len(messages))
         metrics["prompt_chars"] = float(sum(len(item.get("content", "")) for item in messages))
-        metrics["system_prompt_chars"] = float(sum(len(item.get("content", "")) for item in messages if item.get("role") == "system"))
-        metrics["user_prompt_chars"] = float(sum(len(item.get("content", "")) for item in messages if item.get("role") == "user"))
-        metrics["assistant_history_chars"] = float(sum(len(item.get("content", "")) for item in messages if item.get("role") == "assistant"))
+        metrics["system_prompt_chars"] = float(
+            sum(len(item.get("content", "")) for item in messages if item.get("role") == "system")
+        )
+        metrics["user_prompt_chars"] = float(
+            sum(len(item.get("content", "")) for item in messages if item.get("role") == "user")
+        )
+        metrics["assistant_history_chars"] = float(
+            sum(
+                len(item.get("content", "")) for item in messages if item.get("role") == "assistant"
+            )
+        )
 
         # 6. Generate response
         generate_started = time.perf_counter()
@@ -220,7 +236,9 @@ class Character:
         buffer_started = time.perf_counter()
         self._context.add_turn("user", message)
         self._context.add_turn("assistant", response)
-        metrics["conversation_buffer_ms"] = round((time.perf_counter() - buffer_started) * 1000.0, 2)
+        metrics["conversation_buffer_ms"] = round(
+            (time.perf_counter() - buffer_started) * 1000.0, 2
+        )
 
         # 9. Store character response as buffer memory
         store_response_started = time.perf_counter()
@@ -231,7 +249,9 @@ class Character:
             session_id=self._session_id,
             importance=0.5,
         )
-        metrics["store_response_memory_ms"] = round((time.perf_counter() - store_response_started) * 1000.0, 2)
+        metrics["store_response_memory_ms"] = round(
+            (time.perf_counter() - store_response_started) * 1000.0, 2
+        )
 
         # Subsystem updates — all independent, all non-fatal
         subsystem_started = time.perf_counter()

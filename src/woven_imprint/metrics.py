@@ -34,7 +34,7 @@ class MetricsSink:
         try:
             with self._write_lock, open(self.path, "a") as f:
                 f.write(json.dumps(record) + "\n")
-        except OSError as e:
+        except Exception as e:
             logger.debug("Metrics write failed: %s", e)
 
 
@@ -46,7 +46,14 @@ def get_sink() -> MetricsSink | None:
             from .config import get_config
 
             path = get_config().character.metrics_path
-            _sink = MetricsSink(path) if path else None
+            if path:
+                try:
+                    _sink = MetricsSink(path)
+                except Exception as e:
+                    logger.debug("Failed to create metrics sink at %s: %s", path, e)
+                    _sink = None
+            else:
+                _sink = None
         return _sink  # type: ignore[return-value]
 
 

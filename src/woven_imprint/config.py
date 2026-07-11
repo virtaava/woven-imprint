@@ -361,6 +361,7 @@ character:
   consistency_max_retries: 2
   consistency_temperature: 0.5
   consistency_fail_open_score: 0.8
+  # metrics_path: null            # JSONL per-turn chat metrics (opt-in)
 
 server:
   api_port: 8650

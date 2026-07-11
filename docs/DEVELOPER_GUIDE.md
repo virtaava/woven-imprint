@@ -171,6 +171,138 @@ with Engine("characters.db") as engine:
     char.export("marcus.json")        # full portable export
 ```
 
+## Background Bookkeeping — `flush()` / `close()` discipline
+
+Since Phase A, `character.background` defaults to `true`: `chat()` and
+`chat_stream()` return as soon as generation (and consistency checking) is
+done. Emotion assessment, narrative-arc tracking, fact extraction, and
+relationship updates run afterward on a per-character daemon thread, so the
+caller isn't blocked on 3-4 extra LLM calls it doesn't need the result of
+immediately.
+
+This means state that bookkeeping writes — `char.emotion`, extracted core
+memories, relationship deltas — may not be visible **immediately** after
+`chat()` returns. Two methods manage this:
+
+```python
+char.flush(timeout=None)   # block until queued bookkeeping finishes
+char.close()               # flush(timeout=10), then stop the worker thread
+```
+
+Call `flush()` before reading anything bookkeeping writes to, if you need
+it up to date right now — e.g. before `char.recall(...)`, before printing
+`char.emotion.mood`, or in tests that assert on post-chat state:
+
+```python
+char.chat("I got the job!", user_id="toni")
+char.flush()                       # ensure emotion/relationship updates landed
+print(char.emotion.mood)           # now reliably reflects this turn
+```
+
+`Character.end_session()` calls `flush(timeout=30)` internally before it
+reads buffer memories to build the session summary — you don't need to
+flush before `end_session()` yourself.
+
+**Always call `close()` before tearing down shared resources** the worker
+still writes through — most importantly the storage connection. If you
+close the DB (or exit the process) while bookkeeping is still queued, the
+in-flight write can fail. `Engine` does not currently call `close()` on
+your characters for you when you drop the last reference; call it
+explicitly at the end of a character's lifetime (e.g. in a `finally` block,
+an MCP-server shutdown hook, or when evicting a cached character):
+
+```python
+char = engine.create_character("Marcus", persona={...})
+try:
+    char.chat("...")
+finally:
+    char.close()
+```
+
+If you don't need this async behavior — e.g. deterministic tests, or a
+batch job that shouldn't overlap LLM calls across turns — set
+`character.background: false` in config, or `WOVEN_IMPRINT_BACKGROUND=false`.
+`chat()` then blocks until bookkeeping finishes, same as pre-Phase-A.
+
+## Streaming — `chat_stream()`
+
+```python
+for chunk in char.chat_stream("Tell me about the boathouse.", user_id="toni"):
+    print(chunk, end="", flush=True)
+```
+
+`chat_stream()` yields response text chunks as the LLM generates them
+(native streaming where the provider supports it — see `generate_stream()`
+below). It's a generator: nothing happens until you request the first
+chunk.
+
+**Consistency-check tradeoff:** `chat()` enforces persona consistency
+*before* returning — if the LLM produces a hard violation (e.g. contradicts
+a hard-constraint fact), it retries with a different sampling seed and only
+returns once it has a consistent response (or exhausts retries). Streaming
+makes that impossible: by the time a violation could be detected, the
+violating text is already in the caller's hands. So `chat_stream()` checks
+**post-hoc** — after the full response has streamed, it runs the same
+consistency check and records the result rather than blocking or retracting
+anything:
+
+```python
+for chunk in char.chat_stream("..."):
+    ...
+violations = char.last_chat_metrics.get("stream_consistency_violations", 0)
+if violations:
+    # streamed text already shown to the user — log/flag, don't retry silently
+    ...
+```
+
+Controlled by `character.consistency_stream_mode`:
+- `"log"` (default) — run the post-hoc check, count violations, log a
+  warning if any are found.
+- `"off"` — skip the check entirely for streamed responses (saves one LLM
+  call per turn if you don't need the signal).
+
+If you need guaranteed-consistent responses and can tolerate the latency,
+use `chat()` instead of `chat_stream()`.
+
+### Provider streaming (`generate_stream`)
+
+All `LLMProvider` implementations expose `generate_stream(messages, ...)`,
+yielding text chunks. Providers with native streaming support (OpenAI,
+Ollama) override it; providers without native support fall back to the
+`LLMProvider` base default (call `generate()`, yield the whole response as
+one chunk) — same external interface either way, just without the
+incremental latency benefit.
+
+## Metrics Sink
+
+Every `chat()` / `chat_stream()` call populates `char.last_chat_metrics` —
+a dict of per-phase timings in milliseconds (`generate_ms`,
+`consistency_ms`, `retrieve_memories_ms`, `total_ms`, etc.) plus a few
+non-timing fields (`message_count`, `prompt_chars`, ...). Read it directly
+after any call:
+
+```python
+response = char.chat("Hello!", user_id="toni")
+print(char.last_chat_metrics["total_ms"], char.last_chat_metrics["generate_ms"])
+```
+
+For continuous monitoring instead of per-call inspection, set
+`character.metrics_path` (or `WOVEN_IMPRINT_METRICS_PATH`) to a file path.
+Every `chat()`/`chat_stream()` call then appends one JSON line to that file:
+
+```json
+{"ts": "2026-07-11T18:40:00+00:00", "character_id": "char-abc123", "metrics": {"generate_ms": 8406.1, "consistency_ms": 4646.2, "total_ms": 12999.0, ...}}
+```
+
+It's opt-in and off by default (`metrics_path: null`) — no disk writes
+unless you configure a path. Writes are best-effort: a failed write is
+logged at debug level and does not raise or interrupt `chat()`.
+
+`scripts/bench_chat.py` uses `last_chat_metrics` directly (not the sink) to
+print p50/p95/max latency per phase over a scripted 12-turn conversation —
+see [PERFORMANCE.md](PERFORMANCE.md) for how to run it and the current
+numbers.
+
 ## Persona Structure
 
 ```python

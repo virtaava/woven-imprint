@@ -91,26 +91,40 @@ memory:
   tier_boost_bedrock: 0.35
   tier_boost_core: 0.2
   tier_boost_buffer: 0.0
+  rrf_k: 60
+  weight_semantic: 1.0
+  weight_keyword: 1.0
+  weight_recency: 1.0
+  weight_importance: 1.0
+  weight_relationship: 1.0
+  # recency_anchor: created        # "created" | "accessed"
 ```
 
 | Setting | Default | Env Var | Description |
 |---------|---------|---------|-------------|
-| `consolidation_threshold` | `100` | — | Number of buffer memories that triggers consolidation. When buffer exceeds this count, similar memories are clustered and summarized into core memories. |
-| `consolidation_interval` | `20` | — | Check for consolidation every N chat turns. Lower = more frequent checks, slightly more overhead. |
+| `consolidation_threshold` | `100` | — | Number of buffer memories that triggers consolidation. When buffer exceeds this count, similar memories are clustered and summarized into core memories. Checked at session end (`end_session()`) and via explicit `Character.consolidate()` — no longer polled mid-chat. |
+| `consolidation_interval` | `20` | — | **Unused as of Phase A.** Previously: check for consolidation every N chat turns. Consolidation checks moved to session end (`end_session()`) / explicit `Character.consolidate()` only — see Changelog "Auto-consolidation no longer runs mid-chat." Kept in config for backward-compatible file parsing; has no effect. |
 | `state_save_interval` | `10` | — | Save emotion and narrative arc state to database every N turns. Protects against mid-session data loss. Lower = safer but more DB writes. |
 | `fact_extraction_interval` | `3` | — | Extract notable facts from conversation every N turns. Every turn = comprehensive but expensive (1 LLM call per extraction). |
 | `max_message_length` | `50000` | — | Maximum characters per user message. Messages exceeding this are silently truncated. ~12,500 tokens. |
 | `max_facts_per_extraction` | `5` | `WOVEN_IMPRINT_MAX_FACTS` | Base maximum facts extracted per turn. With `fact_density_scaling` enabled, this scales up for long exchanges (2x for >2000 chars, max 15) and down for short ones (half, min 2). |
 | `fact_density_scaling` | `true` | — | Scale fact extraction cap based on exchange length. Long exchanges produce more facts, short ones fewer. Disable for a fixed cap. |
 | `fact_importance` | `0.75` | — | Importance score assigned to extracted facts. Higher = facts rank better in retrieval. Range: 0.0–1.0. |
-| `session_summary_importance` | `0.85` | Importance score for session summaries. Higher than facts because summaries capture the essence of entire sessions. Range: 0.0–1.0. |
-| `clustering_similarity` | `0.75` | Cosine similarity threshold for memory clustering during consolidation. Lower = more aggressive clustering (fewer, broader summaries). Higher = tighter clusters. Range: 0.0–1.0. |
-| `decay_bedrock` | `0.9999` | Recency decay rate for bedrock memories (per hour). Half-life: ~290 days. Bedrock memories are nearly permanent — your character's core identity doesn't fade. |
-| `decay_core` | `0.999` | Recency decay rate for core memories (per hour). Half-life: ~29 days. Session summaries and extracted facts fade over months. |
-| `decay_buffer` | `0.995` | Recency decay rate for buffer memories (per hour). Half-life: ~5.8 days. Raw conversation observations fade within a week. |
-| `tier_boost_bedrock` | `0.35` | Importance bonus added to bedrock memories during retrieval. Ensures identity-defining memories always surface. |
-| `tier_boost_core` | `0.2` | Importance bonus for core memories. Ensures session summaries and facts outrank ephemeral buffer entries. |
-| `tier_boost_buffer` | `0.0` | Importance bonus for buffer memories. Zero by default — buffer entries compete on content relevance alone. |
+| `session_summary_importance` | `0.85` | — | Importance score for session summaries. Higher than facts because summaries capture the essence of entire sessions. Range: 0.0–1.0. |
+| `clustering_similarity` | `0.75` | — | Cosine similarity threshold for memory clustering during consolidation. Lower = more aggressive clustering (fewer, broader summaries). Higher = tighter clusters. Range: 0.0–1.0. |
+| `decay_bedrock` | `0.9999` | — | Recency decay rate for bedrock memories (per hour). Half-life: ~290 days. Bedrock memories are nearly permanent — your character's core identity doesn't fade. |
+| `decay_core` | `0.999` | — | Recency decay rate for core memories (per hour). Half-life: ~29 days. Session summaries and extracted facts fade over months. |
+| `decay_buffer` | `0.995` | — | Recency decay rate for buffer memories (per hour). Half-life: ~5.8 days. Raw conversation observations fade within a week. |
+| `tier_boost_bedrock` | `0.35` | — | Importance bonus added to bedrock memories during retrieval. Ensures identity-defining memories always surface. |
+| `tier_boost_core` | `0.2` | — | Importance bonus for core memories. Ensures session summaries and facts outrank ephemeral buffer entries. |
+| `tier_boost_buffer` | `0.0` | — | Importance bonus for buffer memories. Zero by default — buffer entries compete on content relevance alone. |
+| `rrf_k` | `60` | — | Reciprocal Rank Fusion constant. Combines semantic/keyword/recency/importance/relationship rankings into one score: `1 / (rrf_k + rank)` per signal. Higher = flatter fusion (rank position matters less); lower = top ranks dominate more. Replaces the old tier-priority retrieval strategy (which had a seed-dominance bug — see Changelog). |
+| `weight_semantic` | `1.0` | — | Weight applied to the semantic (embedding cosine similarity) signal in weighted RRF. Higher = semantic relevance matters more relative to other signals. |
+| `weight_keyword` | `1.0` | — | Weight applied to the keyword (FTS) signal in weighted RRF. |
+| `weight_recency` | `1.0` | — | Weight applied to the recency-decay signal in weighted RRF. |
+| `weight_importance` | `1.0` | — | Weight applied to the stored importance score (plus tier boost) in weighted RRF. |
+| `weight_relationship` | `1.0` | — | Weight applied to the relationship-target-match signal in weighted RRF (only relevant when a `relationship_target`/`user_id` is passed to retrieval). |
+| `recency_anchor` | `created` | — | Which timestamp recency decay is anchored on: `created` (memory's creation time — decay is a fixed clock, independent of retrieval activity) or `accessed` (last-access time — frequently-recalled memories stay "fresh"). |
 
 ---
 
@@ -197,16 +211,22 @@ character:
   consistency_max_retries: 2
   consistency_temperature: 0.5
   consistency_fail_open_score: 0.8
+  # consistency_stream_mode: log  # "off" | "log" — post-hoc consistency check in chat_stream()
+  # metrics_path: null            # JSONL per-turn chat metrics (opt-in)
+  background: true               # run bookkeeping (emotion/arc/relationship/facts) off the hot path
 ```
 
 | Setting | Default | Env Var | Description |
 |---------|---------|---------|-------------|
-| `parallel` | `false` | `WOVEN_IMPRINT_PARALLEL` | Run subsystem updates (emotion, arc, fact extraction) in parallel threads. Set `true` for 3-4x faster turns with real LLMs. Keep `false` for testing or if you experience threading issues. |
+| `parallel` | `false` | `WOVEN_IMPRINT_PARALLEL` | Run subsystem updates (emotion, arc, fact extraction) in parallel threads. Set `true` for 3-4x faster turns with real LLMs. Keep `false` for testing or if you experience threading issues. Only takes effect when `background: false` — with `background: true` (the default), subsystem updates always run on the background worker thread instead. |
 | `lightweight` | `false` | `WOVEN_IMPRINT_LIGHTWEIGHT` | Skip emotion tracking and narrative arc analysis. Reduces LLM calls from 5-7 to 2-3 per turn. Useful for slower models or batch operations. |
 | `enforce_consistency` | `true` | `WOVEN_IMPRINT_ENFORCE_CONSISTENCY` | Run NLI-style consistency check on every response. Catches hard constraint violations (wrong name, contradicted backstory). Adds 1 LLM call per turn. |
 | `consistency_max_retries` | `2` | — | Maximum regeneration attempts when a hard violation is detected. Higher = more likely to produce a consistent response, but slower. |
 | `consistency_temperature` | `0.5` | — | Temperature for regeneration attempts after a consistency violation. Lower = more deterministic retry. |
 | `consistency_fail_open_score` | `0.8` | — | Score returned when the consistency check itself fails (e.g., LLM returns unparseable JSON). 0.8 = optimistic fail-open. Lower if you want stricter behavior on check failures. |
+| `consistency_stream_mode` | `log` | `WOVEN_IMPRINT_CONSISTENCY_STREAM_MODE` | Consistency-check behavior for `Character.chat_stream()`, where retraction is impossible (text is already streamed to the caller). `"log"` runs the check after the full response is streamed and records violations in `last_chat_metrics["stream_consistency_violations"]` plus a warning log; `"off"` skips the check entirely for streamed responses. `Character.chat()` (non-streaming) always enforces and retries — this setting only affects `chat_stream()`. |
+| `metrics_path` | `null` | `WOVEN_IMPRINT_METRICS_PATH` | Path to a JSONL file that receives one record per `chat()`/`chat_stream()` call: `{"ts", "character_id", "metrics"}`, where `metrics` is the full `last_chat_metrics` phase breakdown. Opt-in — `null` disables the sink. Used by `scripts/bench_chat.py` and useful for production latency monitoring. |
+| `background` | `true` | `WOVEN_IMPRINT_BACKGROUND` | Run bookkeeping (emotion assessment, arc tracking, fact extraction, relationship updates) on a per-character background thread after `chat()` returns, instead of blocking the caller. `Character.flush()` waits for pending work; `Character.close()` flushes and stops the worker. Set `false` to restore fully-synchronous pre-Phase-A behavior (bookkeeping completes before `chat()`/`chat_stream()` returns). |
 
 ---
 
@@ -292,7 +312,10 @@ All environment variables that Woven Imprint reads:
 | `WOVEN_IMPRINT_PARALLEL` | `character.parallel` | `export WOVEN_IMPRINT_PARALLEL=true` |
 | `WOVEN_IMPRINT_LIGHTWEIGHT` | `character.lightweight` | `export WOVEN_IMPRINT_LIGHTWEIGHT=true` |
 | `WOVEN_IMPRINT_ENFORCE_CONSISTENCY` | `character.enforce_consistency` | `export WOVEN_IMPRINT_ENFORCE_CONSISTENCY=false` |
+| `WOVEN_IMPRINT_CONSISTENCY_STREAM_MODE` | `character.consistency_stream_mode` | `export WOVEN_IMPRINT_CONSISTENCY_STREAM_MODE=off` |
 | `WOVEN_IMPRINT_MAX_FACTS` | `memory.max_facts_per_extraction` | `export WOVEN_IMPRINT_MAX_FACTS=10` |
+| `WOVEN_IMPRINT_METRICS_PATH` | `character.metrics_path` | `export WOVEN_IMPRINT_METRICS_PATH=~/.woven_imprint/metrics.jsonl` |
+| `WOVEN_IMPRINT_BACKGROUND` | `character.background` | `export WOVEN_IMPRINT_BACKGROUND=false` |
 
 ---
 

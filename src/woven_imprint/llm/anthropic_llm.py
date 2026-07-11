@@ -33,10 +33,12 @@ class AnthropicLLM(LLMProvider):
         self.model = model
         self.default_max_tokens = max_tokens
 
-    def generate(
-        self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
-    ) -> str:
-        # Anthropic uses system param separately
+    def _split_messages(self, messages: list[dict[str, str]]) -> tuple[str, list]:
+        """Split a message list into (system_prompt, chat_messages) for the Anthropic API.
+
+        Anthropic uses a separate `system` param rather than a system role in
+        `messages`, and requires the first chat message to be from the user.
+        """
         system = ""
         chat_messages = []
         for msg in messages:
@@ -49,14 +51,35 @@ class AnthropicLLM(LLMProvider):
         if not chat_messages or chat_messages[0]["role"] != "user":
             chat_messages.insert(0, {"role": "user", "content": "Hello."})
 
+        return system.strip(), chat_messages
+
+    def generate(
+        self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
+    ) -> str:
+        system, chat_messages = self._split_messages(messages)
+
         response = self.client.messages.create(
             model=self.model,
-            system=system.strip() or "You are a helpful assistant.",
+            system=system or "You are a helpful assistant.",
             messages=chat_messages,
             temperature=temperature,
             max_tokens=max_tokens,
         )
         return response.content[0].text
+
+    def generate_stream(
+        self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
+    ):
+        system, chat_messages = self._split_messages(messages)
+        with self.client.messages.stream(
+            model=self.model,
+            system=system or "You are a helpful assistant.",
+            messages=chat_messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
 
     def generate_json(self, messages: list[dict[str, str]], temperature: float = 0.3) -> dict:
         # Add JSON instruction

@@ -48,6 +48,21 @@ class OpenAILLM(LLMProvider):
         )
         return response.choices[0].message.content or ""
 
+    def generate_stream(
+        self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
+    ):
+        stream = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        for event in stream:
+            delta = event.choices[0].delta.content if event.choices else None
+            if delta:
+                yield delta
+
     def generate_json(self, messages: list[dict[str, str]], temperature: float = 0.3) -> dict:
         # Use JSON mode if model supports it
         try:

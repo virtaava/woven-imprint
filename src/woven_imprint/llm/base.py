@@ -29,3 +29,14 @@ class LLMProvider(ABC):
         self, messages: list[dict[str, str]], temperature: float = 0.3
     ) -> dict[str, Any] | list[Any]:
         """Generate a JSON response. Must return valid parsed JSON."""
+
+    def generate_stream(
+        self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
+    ):
+        """Yield response text chunks. Default: one chunk via generate().
+
+        Providers with native streaming override this. Note: providers that
+        post-process whole responses (e.g. think-tag stripping) may behave
+        differently in stream mode — document per provider.
+        """
+        yield self.generate(messages, temperature=temperature, max_tokens=max_tokens)

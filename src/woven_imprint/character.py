@@ -319,6 +319,8 @@ class Character:
         last_chat_metrics["stream_consistency_violations"] (config
         `character.consistency_stream_mode`: "off" | "log", default "log").
 
+        This is a generator: no side effects occur until the first chunk is requested.
+
         Args:
             message: The user's message.
             user_id: Optional user identifier for relationship tracking.
@@ -368,9 +370,17 @@ class Character:
         # 5. Stream the response
         generate_started = time.perf_counter()
         chunks: list[str] = []
-        for chunk in self.llm.generate_stream(messages, temperature=0.7):
-            chunks.append(chunk)
-            yield chunk
+        try:
+            for chunk in self.llm.generate_stream(messages, temperature=0.7):
+                chunks.append(chunk)
+                yield chunk
+        except Exception as e:
+            logger.error("LLM stream generation failed: %s", e)
+            self.last_chat_metrics = {
+                **metrics,
+                "total_ms": round((time.perf_counter() - chat_started) * 1000.0, 2),
+            }
+            raise
         response = "".join(chunks)
         metrics["generate_ms"] = round((time.perf_counter() - generate_started) * 1000.0, 2)
 

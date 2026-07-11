@@ -100,3 +100,32 @@ def test_chat_stream_yields_and_bookkeeps():
     buffer = char.memory.get_all(tier="buffer", limit=10)
     assert any("I hear you." in m["content"] for m in buffer)
     assert char._context.turn_count == 2
+
+
+class FailingStreamFakeLLM(FakeLLM):
+    """LLM that yields one chunk then raises RuntimeError."""
+
+    def generate_stream(self, messages, **kw):
+        yield "Partial"
+        raise RuntimeError("Stream generation failed")
+
+
+def test_chat_stream_records_metrics_on_failure():
+    """Verify that metrics are recorded when stream generation fails."""
+    import pytest
+
+    from tests.helpers import FakeEmbedder
+    from woven_imprint.engine import Engine
+
+    engine = Engine(db_path=":memory:", llm=FailingStreamFakeLLM(), embedding=FakeEmbedder())
+    char = engine.create_character("Failing")
+    char.background = False
+    char.enforce_consistency = False
+
+    # Consume the generator with pytest.raises
+    with pytest.raises(RuntimeError, match="Stream generation failed"):
+        list(char.chat_stream("hello"))
+
+    # Verify metrics were recorded despite the failure
+    assert "total_ms" in char.last_chat_metrics
+    assert char.last_chat_metrics["total_ms"] > 0

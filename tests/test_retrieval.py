@@ -322,3 +322,50 @@ def test_personal_core_fact_beats_bedrock_seed_flood():
     results = char.retriever.retrieve("what is my sister's name", limit=5)
     contents = [m["content"] for m in results]
     assert any("Anna" in c for c in contents), contents
+
+
+def test_fts_search_carries_rowid():
+    """Regression: fts_search must include rowid so retrieval tiebreakers are sound.
+
+    When a memory is found via Phase-2 FTS (older than recency window),
+    it must carry rowid so that tiebreakers in retrieval._recency_score()
+    and retrieval.importance_scores work correctly.
+
+    This test creates >100 buffer memories to push an early distinctive memory
+    out of the Phase-1 recency window, then retrieves by FTS and verifies rowid.
+    """
+    from tests.helpers import make_test_engine
+
+    engine = make_test_engine()
+    char = engine.create_character("Zephyr", persona={"role": "scout"})
+
+    # Add the distinctive old memory that will be found via FTS
+    char.memory.add(
+        content="I saw zephyrblossom flowers blooming near the ancient grove.",
+        tier="buffer",
+        role="observation",
+        importance=0.6,
+    )
+
+    # Insert >100 buffer memories to push the old one out of Phase-1 window (limit=100)
+    for i in range(105):
+        char.memory.add(
+            content=f"Daily observation {i}: encountered unrelated event number {i}.",
+            tier="buffer",
+            role="observation",
+            importance=0.5,
+        )
+
+    # Retrieve by the distinctive keyword — must use FTS Phase-2
+    results = char.retriever.retrieve("zephyrblossom", limit=5)
+
+    # Assert: (a) old memory is found (proves FTS Phase-2 works)
+    assert any("zephyrblossom" in r["content"] for r in results), (
+        "FTS Phase-2 should find memory outside recency window"
+    )
+
+    # Assert: (b) rowid is in dict and is positive int (proves fts_search carries rowid)
+    old_mem = next(r for r in results if "zephyrblossom" in r["content"])
+    assert "rowid" in old_mem, "fts_search result must include rowid"
+    assert isinstance(old_mem["rowid"], int), "rowid must be an integer"
+    assert old_mem["rowid"] > 0, "rowid must be positive"

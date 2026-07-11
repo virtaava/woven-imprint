@@ -324,7 +324,7 @@ class SQLiteStorage:
         safe_query = " OR ".join(f'"{w}"' for w in words[:20])
 
         rows = self._conn.execute(
-            """SELECT m.*, rank FROM memories_fts
+            """SELECT m.*, m.rowid AS rowid, rank FROM memories_fts
                JOIN memories m ON memories_fts.rowid = m.rowid
                WHERE memories_fts MATCH ? AND m.character_id = ? AND m.status = 'active'
                ORDER BY rank LIMIT ?""",

@@ -333,6 +333,83 @@ class TestRelationship:
         assert status == 404
 
 
+class TestObserve:
+    def test_observe_returns_memory_id(self, sidecar_url):
+        _, d = _post(f"{sidecar_url}/characters", {"name": "Jasper"})
+        cid = d["id"]
+
+        status, data = _post(
+            f"{sidecar_url}/observe",
+            {"character_id": cid, "event": "Keeper fed you", "source": "sim"},
+        )
+        assert status == 200
+        assert data["memory_id"]
+        assert "Keeper fed you" in data["content"]
+
+    def test_observe_default_source(self, sidecar_url):
+        _, d = _post(f"{sidecar_url}/characters", {"name": "Kara"})
+        cid = d["id"]
+
+        status, data = _post(
+            f"{sidecar_url}/observe",
+            {"character_id": cid, "event": "It rained all day"},
+        )
+        assert status == 200
+        assert data["memory_id"]
+
+    def test_observe_missing_body(self, sidecar_url):
+        status, data = _post_empty(f"{sidecar_url}/observe")
+        assert status == 400
+        assert "error" in data
+
+    def test_observe_missing_fields(self, sidecar_url):
+        status, data = _post(f"{sidecar_url}/observe", {"character_id": "x"})
+        assert status == 400
+
+    def test_observe_nonexistent_character(self, sidecar_url):
+        status, data = _post(
+            f"{sidecar_url}/observe",
+            {"character_id": "nope", "event": "something happened"},
+        )
+        assert status == 404
+
+
+class TestCallbacks:
+    def test_callbacks_returns_list(self, sidecar_url):
+        _, d = _post(f"{sidecar_url}/characters", {"name": "Liam"})
+        cid = d["id"]
+
+        status, data = _get(f"{sidecar_url}/characters/{cid}/callbacks")
+        assert status == 200
+        assert isinstance(data["callbacks"], list)
+
+    def test_callbacks_respects_limit_param(self, sidecar_url):
+        _, d = _post(f"{sidecar_url}/characters", {"name": "Mona"})
+        cid = d["id"]
+
+        status, data = _get(f"{sidecar_url}/characters/{cid}/callbacks?limit=1")
+        assert status == 200
+        assert isinstance(data["callbacks"], list)
+
+    def test_callbacks_nonexistent_character(self, sidecar_url):
+        status, data = _get(f"{sidecar_url}/characters/nope/callbacks")
+        assert status == 404
+
+
+class TestSidecarHealth:
+    def test_character_health_returns_subsystems(self, sidecar_url):
+        _, d = _post(f"{sidecar_url}/characters", {"name": "Nadia"})
+        cid = d["id"]
+
+        status, data = _get(f"{sidecar_url}/characters/{cid}/health")
+        assert status == 200
+        assert "subsystems" in data
+
+    def test_character_health_nonexistent_character(self, sidecar_url):
+        status, data = _get(f"{sidecar_url}/characters/nope/health")
+        assert status == 404
+
+
 class TestCORS:
     def test_cors_header_on_json_response(self, sidecar_url):
         req = urllib.request.Request(f"{sidecar_url}/health")

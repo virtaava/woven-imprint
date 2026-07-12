@@ -197,3 +197,32 @@ def resume_session_service(engine, character_id, session_id):
     char = engine.get_character(character_id)
     char.resume_session(session_id)
     return {"session_id": session_id}
+
+
+def get_callbacks_service(engine, character_id, limit=3):
+    """Get ready-to-use paraphrased conversation hooks. Raises KeyError if not found."""
+    char = engine.get_character(character_id)
+    return char.get_callbacks(limit)
+
+
+def observe_service(engine, character_id, event, source="world", importance=None, user_id=None):
+    """Record a world event as a memory (no dialogue pair, no generation).
+    Raises KeyError if not found."""
+    char = engine.get_character(character_id)
+    mem = char.observe(event, source=source, importance=importance, user_id=user_id)
+    return {"memory_id": mem["id"], "content": mem["content"]}
+
+
+def health_service(engine, character_id):
+    """Per-subsystem success/failure counters. Raises KeyError if not found."""
+    char = engine.get_character(character_id)
+    return char.health()
+
+
+def maintain_service(engine, character_id, jobs=None, budget=None):
+    """Run offline maintenance jobs for a single character.
+    Raises KeyError if not found."""
+    reports = engine.run_maintenance(character_id=character_id, jobs=jobs, budget=budget)
+    if not reports:
+        raise KeyError(f"Character not found: {character_id}")
+    return reports[0]

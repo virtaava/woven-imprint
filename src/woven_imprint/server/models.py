@@ -28,6 +28,19 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = None
 
 
+class ObserveRequest(BaseModel):
+    character_id: str
+    event: str = Field(..., max_length=50_000)
+    source: str = "world"
+    importance: float | None = None
+    user_id: str | None = None
+
+
+class MaintainRequest(BaseModel):
+    jobs: list[str] | None = None
+    budget: int | None = None
+
+
 class ProviderConfigRequest(BaseModel):
     # Extend this list as new providers are added
     provider: str = Field(..., pattern="^(openai|anthropic|ollama|deepseek|gemma_edge)$")

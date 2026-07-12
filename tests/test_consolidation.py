@@ -2,8 +2,11 @@
 
 import pytest
 
+from woven_imprint.config import get_config
 from woven_imprint.storage.sqlite import SQLiteStorage
 from woven_imprint.memory.consolidation import ConsolidationEngine, _cluster_memories
+
+from tests.helpers import make_test_engine
 
 
 class FakeEmbedder:
@@ -143,3 +146,38 @@ class TestConsolidationEngine:
         # Nothing should be written in dry run
         active = storage.get_memories("c1", tier="buffer", status="active")
         assert len(active) == 15
+
+
+@pytest.fixture
+def consolidation_setup():
+    """A live Character (with call-counting FakeLLM) wired through Engine,
+    so drain()/dry_run behavior can be exercised end-to-end."""
+    engine = make_test_engine()
+    char = engine.create_character("Watcher")
+    char.consolidator.threshold = 10
+    return engine, char
+
+
+def test_dry_run_makes_no_llm_calls(consolidation_setup):
+    engine, char = consolidation_setup
+    for i in range(30):
+        char.memory.add(f"the lake was calm on day {i}", tier="buffer")
+    before = char.llm.call_count
+    result = char.consolidator.consolidate(dry_run=True)
+    assert char.llm.call_count == before
+    assert result["clusters"] >= 1
+    # nothing archived under dry_run
+    assert engine.storage.count_memories(char.id, tier="buffer") == 30
+
+
+def test_drain_processes_beyond_single_chunk(consolidation_setup, monkeypatch):
+    engine, char = consolidation_setup
+    # Force a small chunk_size so 60 buffer rows require multiple consolidate()
+    # passes to fully drain — this is the behavior drain() adds over the old
+    # hardcoded single-pass 500-row cap.
+    monkeypatch.setattr(get_config().maintenance, "consolidate_chunk_size", 20)
+    for i in range(60):
+        char.memory.add(f"note {i} about the {'lake' if i % 2 else 'forest'}", tier="buffer")
+    result = char.consolidator.drain(max_chunks=10)
+    assert result["passes"] >= 1
+    assert not char.consolidator.needs_consolidation()

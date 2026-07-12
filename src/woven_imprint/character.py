@@ -846,6 +846,18 @@ class Character:
             for e in events
         ]
 
+    def get_callbacks(self, limit: int = 3) -> list[dict]:
+        """Ready-to-use paraphrased conversation hooks (instant DB read)."""
+        from .callbacks import CallbackEngine
+
+        return CallbackEngine(self).get(limit=limit)
+
+    def refresh_callbacks(self, budget=None) -> int:
+        """Regenerate the callback queue (one LLM call — batch/offline use)."""
+        from .callbacks import CallbackEngine
+
+        return CallbackEngine(self).refresh(budget=budget)
+
     def get_relationship(self, target_id: str) -> dict | None:
         """Get the relationship with another entity.
 
@@ -926,6 +938,16 @@ class Character:
 
         self._session_id = None
         self._turn_count = 0
+
+        from .config import get_config as _gc
+
+        if _gc().maintenance.callbacks_refresh_on_session_end:
+            try:
+                self.refresh_callbacks()
+                self._note_success("callbacks")
+            except Exception as e:
+                logger.debug("Session-end callback refresh failed: %s", e)
+                self._note_failure("callbacks", e)
 
         # Auto-consolidate at session end if buffer is large
         if self.consolidator.needs_consolidation():

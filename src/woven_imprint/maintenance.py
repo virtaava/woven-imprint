@@ -35,9 +35,8 @@ class Budget:
 
 class MaintenanceRunner:
     # Task 7 shipped the non-LLM-heavy-dependency-free core three jobs;
-    # Task 8 added dedup/reinforce/contradictions; Task 9 added reflect/evolve.
-    # callbacks arrives in Task 10 — that job handler gets appended to
-    # DEFAULT_JOBS once it lands.
+    # Task 8 added dedup/reinforce/contradictions; Task 9 added reflect/evolve;
+    # Task 10 added callbacks.
     DEFAULT_JOBS = [
         "consolidate",
         "buffer_hygiene",
@@ -47,6 +46,7 @@ class MaintenanceRunner:
         "contradictions",
         "reflect",
         "evolve",
+        "callbacks",
     ]
 
     def __init__(self, character, budget: Budget | None = None):
@@ -289,3 +289,9 @@ class MaintenanceRunner:
             threshold=persona_cfg.growth_threshold,
         )
         return {"growth_events": len(events)}
+
+    def _job_callbacks(self) -> dict:
+        created = self.character.refresh_callbacks(budget=self.budget)
+        if created == 0 and (self.budget.remaining == 0):
+            return {"_status": "skipped", "reason": "budget exhausted", "created": 0}
+        return {"created": created}

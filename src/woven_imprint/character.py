@@ -661,6 +661,7 @@ class Character:
                 self._note_failure("observe", e)
         try:
             self._update_relationship_event(event, user_id)
+            self._note_success("observe")
         except Exception as e:
             logger.debug("Event relationship assessment failed: %s", e)
             self._note_failure("observe", e)

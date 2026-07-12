@@ -12,6 +12,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from .log import logger
+from .memory.retrieval import _cosine_similarity
 
 
 class Budget:
@@ -41,6 +42,9 @@ class MaintenanceRunner:
         "consolidate",
         "buffer_hygiene",
         "score_importance",
+        "dedup",
+        "reinforce",
+        "contradictions",
     ]
 
     def __init__(self, character, budget: Budget | None = None):
@@ -135,3 +139,112 @@ class MaintenanceRunner:
                 char.storage.set_memory_importance(m["id"], max(0.1, min(0.9, float(s) / 10)))
                 scored += 1
         return {"scored": scored, "candidates": len(candidates), **extra}
+
+    def _active_core_observations(self, limit: int) -> list[dict]:
+        return [
+            m
+            for m in self.character.storage.get_memories(
+                self.character.id, tier="core", limit=limit
+            )
+            if m.get("role") == "observation" and m.get("embedding")
+        ]
+
+    def _job_dedup(self) -> dict:
+        mems = self._active_core_observations(self.cfg.dedup_scan_limit)
+        archived: list[str] = []
+        archived_set: set[str] = set()
+        for i in range(len(mems)):
+            if mems[i]["id"] in archived_set:
+                continue
+            for j in range(i + 1, len(mems)):
+                if mems[j]["id"] in archived_set:
+                    continue
+                sim = _cosine_similarity(mems[i]["embedding"], mems[j]["embedding"])
+                if sim >= self.cfg.dedup_similarity:
+                    keep, drop = (
+                        (mems[i], mems[j])
+                        if mems[i].get("importance", 0) >= mems[j].get("importance", 0)
+                        else (mems[j], mems[i])
+                    )
+                    archived.append(drop["id"])
+                    archived_set.add(drop["id"])
+                    self.character.belief.reinforce(keep["id"])
+        self.character.storage.archive_memories_batch(archived)
+        return {"archived": len(archived), "scanned": len(mems)}
+
+    def _job_reinforce(self) -> dict:
+        char = self.character
+        cores = self._active_core_observations(self.cfg.dedup_scan_limit)
+        buffers = [
+            m
+            for m in char.storage.get_memories(char.id, tier="buffer", limit=200)
+            if m.get("embedding")
+        ]
+        reinforced: set[str] = set()
+        for b in buffers:
+            for c in cores:
+                if c["id"] in reinforced:
+                    continue
+                if (
+                    _cosine_similarity(b["embedding"], c["embedding"])
+                    >= self.cfg.reinforce_similarity
+                ):
+                    char.belief.reinforce(c["id"])
+                    reinforced.add(c["id"])
+        return {"reinforced": len(reinforced), "buffer_scanned": len(buffers)}
+
+    def _job_contradictions(self) -> dict:
+        char = self.character
+        # _active_core_observations is newest-first by default (correct for
+        # dedup/reinforce scan priority). For contradiction pairing, sort a
+        # local copy chronologically so "first"/"second" in the LLM prompt
+        # consistently mean older/newer — the verdict's superseded/current
+        # resolution below depends on that ordering.
+        mems = sorted(
+            self._active_core_observations(self.cfg.dedup_scan_limit),
+            key=lambda m: (m.get("created_at") or "", m.get("rowid", 0)),
+        )
+        pairs = []
+        for i in range(len(mems)):
+            for j in range(i + 1, len(mems)):
+                sim = _cosine_similarity(mems[i]["embedding"], mems[j]["embedding"])
+                if self.cfg.contradiction_candidate_similarity <= sim < self.cfg.dedup_similarity:
+                    pairs.append((sim, mems[i], mems[j]))
+        pairs.sort(key=lambda p: p[0], reverse=True)
+        contradicted = 0
+        checked = 0
+        for _sim, a, b in pairs[: self.cfg.contradiction_max_pairs]:
+            if not self.budget.take(1):
+                break
+            checked += 1
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You check whether two remembered facts contradict each other. "
+                        'Return JSON: {"contradictory": true|false, '
+                        '"current": "first"|"second"|"unclear"} — "current" is the fact '
+                        "that reflects the present state if they contradict."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"First: {a['content'][:300]}\nSecond: {b['content'][:300]}",
+                },
+            ]
+            try:
+                verdict = char.llm.generate_json_robust(messages)
+            except ValueError:
+                continue
+            if not isinstance(verdict, dict) or not verdict.get("contradictory"):
+                continue
+            current = verdict.get("current")
+            if current == "first":
+                superseded = b
+            elif current == "second":
+                superseded = a
+            else:
+                continue  # unclear — leave both, low certainty is belief revision's job
+            char.storage.update_memory_status(superseded["id"], "contradicted", certainty=0.0)
+            contradicted += 1
+        return {"contradicted": contradicted, "pairs_checked": checked, "candidates": len(pairs)}

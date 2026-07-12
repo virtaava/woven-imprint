@@ -185,3 +185,76 @@ def test_buffer_hygiene_scale_exceeds_fetch_limit():
         assert old_id not in active_ids, f"Stale memory {old_id} should have been archived"
     for fresh_id in fresh_ids:
         assert fresh_id in active_ids, f"Fresh memory {fresh_id} should still be active"
+
+
+def test_dedup_archives_near_duplicates_and_reinforces_kept():
+    engine = make_test_engine()
+    char = engine.create_character("Dedup")
+    a = char.memory.add(
+        "the user's sister anna loves rowing", tier="core", role="observation", importance=0.8
+    )
+    b = char.memory.add(
+        "the user's sister anna loves rowing", tier="core", role="observation", importance=0.7
+    )
+    unrelated = char.memory.add(
+        "the moon rises over the lake", tier="core", role="observation", importance=0.7
+    )
+    runner = MaintenanceRunner(char)
+    report = runner.run(jobs=["dedup"])
+    assert report["jobs"]["dedup"]["archived"] == 1
+    active = {m["id"] for m in char.memory.get_all(tier="core")}
+    assert a["id"] in active and unrelated["id"] in active and b["id"] not in active
+    kept = engine.storage.get_memory(a["id"])
+    assert kept["certainty"] > 1.0 - 1e-9 or kept["certainty"] == 1.0  # reinforced (clamped at 1.0)
+
+
+def test_dedup_idempotent():
+    engine = make_test_engine()
+    char = engine.create_character("Dedup2")
+    char.memory.add("fact one about cats", tier="core", role="observation")
+    char.memory.add("fact one about cats", tier="core", role="observation")
+    runner = MaintenanceRunner(char)
+    first = runner.run(jobs=["dedup"])["jobs"]["dedup"]["archived"]
+    second = runner.run(jobs=["dedup"])["jobs"]["dedup"]["archived"]
+    assert first == 1 and second == 0
+
+
+def test_reinforce_strengthens_reencountered_fact():
+    engine = make_test_engine()
+    char = engine.create_character("Rein")
+    core = char.memory.add("keeper works as a software developer", tier="core", role="observation")
+    engine.storage.update_memory_certainty(core["id"], -0.4)  # certainty 0.6
+    char.memory.add("keeper works as a software developer", tier="buffer", role="user")
+    runner = MaintenanceRunner(char)
+    report = runner.run(jobs=["reinforce"])
+    assert report["jobs"]["reinforce"]["reinforced"] == 1
+    assert engine.storage.get_memory(core["id"])["certainty"] > 0.6
+
+
+class ContradictionLLM(FakeLLM):
+    def generate_json(self, messages, temperature=0.3, **kw):
+        system = messages[0].get("content", "")
+        if "contradict" in system.lower():
+            return {"contradictory": True, "current": "second"}
+        return super().generate_json(messages, temperature=temperature, **kw)
+
+    def generate_json_robust(self, messages, temperature=0.3, **kw):
+        return self.generate_json(messages, temperature=temperature, **kw)
+
+
+def test_contradiction_sweep_marks_superseded(monkeypatch):
+    engine = Engine(db_path=":memory:", llm=ContradictionLLM(), embedding=FakeEmbedder())
+    char = engine.create_character("Contra")
+    char.background = False
+    old = char.memory.add(
+        "keeper lives in the city near the harbor", tier="core", role="observation"
+    )
+    new = char.memory.add(
+        "keeper lives in the country near the lake", tier="core", role="observation"
+    )
+    # FakeEmbedder bag-of-words: these share enough tokens to be candidates
+    runner = MaintenanceRunner(char)
+    report = runner.run(jobs=["contradictions"])
+    assert report["jobs"]["contradictions"]["contradicted"] == 1
+    assert engine.storage.get_memory(old["id"])["status"] == "contradicted"
+    assert engine.storage.get_memory(new["id"])["status"] == "active"

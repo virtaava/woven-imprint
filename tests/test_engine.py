@@ -187,4 +187,15 @@ class TestEmbedderAlias:
     def test_embedder_is_deprecated_alias_for_embedding(self):
         engine = _engine()
         assert engine.embedder is engine.embedding
-        engine.close()
+
+
+def test_run_maintenance_all_characters():
+    from tests.helpers import make_test_engine
+
+    engine = make_test_engine()
+    engine.create_character("A")
+    engine.create_character("B")
+    reports = engine.run_maintenance(jobs=["buffer_hygiene"])
+    assert len(reports) == 2
+    assert all(r["jobs"]["buffer_hygiene"]["status"] == "ok" for r in reports)
+    engine.close()

@@ -34,10 +34,10 @@ class Budget:
 
 
 class MaintenanceRunner:
-    # Task 7 ships only the non-LLM-heavy-dependency-free core three jobs.
-    # dedup/reinforce/contradictions/reflect/evolve arrive in Tasks 8-9,
-    # callbacks in Task 10 — those job handlers get appended to DEFAULT_JOBS
-    # as they land.
+    # Task 7 shipped the non-LLM-heavy-dependency-free core three jobs;
+    # Task 8 added dedup/reinforce/contradictions; Task 9 added reflect/evolve.
+    # callbacks arrives in Task 10 — that job handler gets appended to
+    # DEFAULT_JOBS once it lands.
     DEFAULT_JOBS = [
         "consolidate",
         "buffer_hygiene",
@@ -45,6 +45,8 @@ class MaintenanceRunner:
         "dedup",
         "reinforce",
         "contradictions",
+        "reflect",
+        "evolve",
     ]
 
     def __init__(self, character, budget: Budget | None = None):
@@ -252,3 +254,38 @@ class MaintenanceRunner:
             char.storage.update_memory_status(superseded["id"], "contradicted", certainty=0.0)
             contradicted += 1
         return {"contradicted": contradicted, "pairs_checked": checked, "candidates": len(pairs)}
+
+    def _job_reflect(self) -> dict:
+        char = self.character
+        reflections = [
+            m
+            for m in char.storage.get_memories(char.id, tier="core", limit=1000)
+            if m["content"].startswith("[Reflection]")
+        ]
+        last_ts = max((m.get("created_at") or "" for m in reflections), default="")
+        buffer = char.storage.get_memories(char.id, tier="buffer", limit=1000)
+        pending = sum(
+            m.get("importance", 0.5) for m in buffer if (m.get("created_at") or "") > last_ts
+        )
+        if pending < self.cfg.reflect_importance_sum:
+            return {"_status": "skipped", "reason": f"importance sum {pending:.1f} below threshold"}
+        if not self.budget.take(1):
+            return {"_status": "skipped", "reason": "budget exhausted"}
+        char.reflect()
+        return {"triggered_at_sum": round(pending, 1)}
+
+    def _job_evolve(self) -> dict:
+        from .config import get_config
+
+        persona_cfg = get_config().persona
+        char = self.character
+        core_count = char.storage.count_memories(char.id, tier="core")
+        if core_count < persona_cfg.growth_min_memories:
+            return {"_status": "skipped", "reason": f"{core_count} core memories < min"}
+        if not self.budget.take(1):
+            return {"_status": "skipped", "reason": "budget exhausted"}
+        events = char.evolve(
+            min_memories=persona_cfg.growth_min_memories,
+            threshold=persona_cfg.growth_threshold,
+        )
+        return {"growth_events": len(events)}

@@ -334,6 +334,46 @@ def cmd_config(args):
         print(f"  Lightweight: {cfg.character.lightweight}")
 
 
+def cmd_maintain(args):
+    """Run offline maintenance jobs (nightly batch)."""
+    import json
+
+    engine = _get_engine(args.db, args.model)
+
+    jobs = args.jobs.split(",") if args.jobs else None
+    reports = engine.run_maintenance(
+        character_id=args.character,
+        jobs=jobs,
+        budget=args.budget,
+    )
+
+    if args.json:
+        print(json.dumps(reports, indent=2))
+    else:
+        if not reports:
+            print("No characters to run maintenance on.")
+        chars = engine.list_characters()
+        for report in reports:
+            name = next(
+                (c["name"] for c in chars if c["id"] == report["character_id"]),
+                report["character_id"],
+            )
+            print(
+                f"\n  {name} ({report['character_id'][:12]}) — llm_calls: {report['llm_calls_used']}"
+            )
+            for job_name, entry in report["jobs"].items():
+                status = entry["status"]
+                extras = {
+                    k: v
+                    for k, v in entry.items()
+                    if k not in ("status", "llm_calls", "duration_ms")
+                }
+                extras_str = f" {extras}" if extras else ""
+                print(f"    {job_name:<15} {status:<8}{extras_str}")
+
+    engine.close()
+
+
 def cmd_serve(args):
     """Start the OpenAI-compatible API server."""
     from .server.api import run_server
@@ -539,6 +579,13 @@ def main():
     p_serve.add_argument("--port", type=int, default=8650)
     p_serve.add_argument("--api-key", default=None, help="Require this API key for all requests")
 
+    # maintain
+    p_maintain = sub.add_parser("maintain", help="Run offline maintenance jobs (nightly batch)")
+    p_maintain.add_argument("--character", default=None, help="Character ID (default: all)")
+    p_maintain.add_argument("--jobs", default=None, help="Comma-separated job list")
+    p_maintain.add_argument("--budget", type=int, default=None, help="Max LLM calls")
+    p_maintain.add_argument("--json", action="store_true", help="Machine-readable output")
+
     args = parser.parse_args()
 
     commands = {
@@ -554,6 +601,7 @@ def main():
         "config": cmd_config,
         "update": cmd_update,
         "serve": cmd_serve,
+        "maintain": cmd_maintain,
     }
 
     if args.command in commands:

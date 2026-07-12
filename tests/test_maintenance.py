@@ -287,3 +287,26 @@ def test_contradiction_sweep_marks_superseded(monkeypatch):
     assert report["jobs"]["contradictions"]["contradicted"] == 1
     assert engine.storage.get_memory(old["id"])["status"] == "contradicted"
     assert engine.storage.get_memory(new["id"])["status"] == "active"
+
+
+def test_reflect_triggers_on_importance_sum():
+    engine = make_test_engine()
+    char = engine.create_character("Ref")
+    for i in range(20):
+        char.memory.add(f"noteworthy event {i}", tier="buffer", importance=0.7)  # sum 14 > 12
+    report = MaintenanceRunner(char).run(jobs=["reflect"])
+    assert report["jobs"]["reflect"]["status"] == "ok"
+    reflections = [
+        m for m in char.memory.get_all(tier="core") if m["content"].startswith("[Reflection]")
+    ]
+    assert len(reflections) == 1
+    # second run: importance since last reflection is now ~0 → skipped
+    report2 = MaintenanceRunner(char).run(jobs=["reflect"])
+    assert report2["jobs"]["reflect"]["status"] == "skipped"
+
+
+def test_evolve_skips_below_min_memories():
+    engine = make_test_engine()
+    char = engine.create_character("Evo")
+    report = MaintenanceRunner(char).run(jobs=["evolve"])
+    assert report["jobs"]["evolve"]["status"] == "skipped"

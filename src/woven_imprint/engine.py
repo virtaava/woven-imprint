@@ -190,6 +190,35 @@ class Engine:
 
         return char
 
+    def run_maintenance(
+        self,
+        character_id: str | None = None,
+        jobs: list[str] | None = None,
+        budget: int | None = None,
+    ) -> list[dict]:
+        """Run offline maintenance jobs (the nightly-batch primitive).
+
+        Args:
+            character_id: One character, or None for all.
+            jobs: Subset of MaintenanceRunner.DEFAULT_JOBS, or None for all.
+            budget: Max LLM calls for the whole run (shared across characters);
+                    None uses config maintenance.max_llm_calls_per_run.
+        """
+        from .config import get_config
+        from .maintenance import Budget, MaintenanceRunner
+
+        limit = budget if budget is not None else get_config().maintenance.max_llm_calls_per_run
+        shared = Budget(limit)
+        ids = [character_id] if character_id else [c["id"] for c in self.list_characters()]
+        reports = []
+        for cid in ids:
+            char = self.load_character(cid)
+            if char is None:
+                continue
+            reports.append(MaintenanceRunner(char, budget=shared).run(jobs=jobs))
+            char.close()
+        return reports
+
     def close(self) -> None:
         """Close the database connection."""
         self.storage.close()

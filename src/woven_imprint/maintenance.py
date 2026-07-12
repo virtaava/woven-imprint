@@ -78,19 +78,19 @@ class MaintenanceRunner:
         char = self.character
         if not char.consolidator.needs_consolidation():
             return {"_status": "skipped", "reason": "buffer below threshold"}
-        if not self.budget.take(1):  # coarse: at least one summary call likely
+        if self.budget.remaining == 0:
             return {"_status": "skipped", "reason": "budget exhausted"}
-        result = char.consolidator.drain()
-        # account for actual summary calls beyond the coarse reservation
-        extra = max(0, result.get("summarized", 0) - 1)
-        self.budget.take(extra)
-        return result
+        return char.consolidator.drain(budget=self.budget)
 
     def _job_buffer_hygiene(self) -> dict:
         char = self.character
         cutoff = datetime.now(timezone.utc) - timedelta(days=self.cfg.buffer_ttl_days)
         cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
-        candidates = char.storage.get_memories(char.id, tier="buffer", limit=1000)
+        limit = 1000
+        candidates = char.storage.get_memories(char.id, tier="buffer", limit=limit)
+        # get_memories returns newest-first; the TTL sweep cares about the
+        # oldest rows, so sort ascending before filtering/capping.
+        candidates.sort(key=lambda m: m.get("created_at") or "")
         stale = [
             m["id"]
             for m in candidates
@@ -98,19 +98,26 @@ class MaintenanceRunner:
             and m.get("importance", 0.5) <= self.cfg.buffer_hygiene_max_importance
         ]
         char.storage.archive_memories_batch(stale)
-        return {"archived": len(stale)}
+        result = {"archived": len(stale)}
+        if len(candidates) == limit:
+            result["truncated"] = True
+        return result
 
     def _job_score_importance(self) -> dict:
         char = self.character
-        candidates = [
-            m
-            for m in char.storage.get_memories(char.id, tier="buffer", limit=500)
-            if m.get("importance") == 0.5
-        ][: self.cfg.importance_scoring_batch]
+        limit = 500
+        fetched = char.storage.get_memories(char.id, tier="buffer", limit=limit)
+        # get_memories returns newest-first; the scoring sweep cares about the
+        # oldest rows, so sort ascending before filtering/capping.
+        fetched.sort(key=lambda m: m.get("created_at") or "")
+        extra = {"truncated": True} if len(fetched) == limit else {}
+        candidates = [m for m in fetched if m.get("importance") == 0.5][
+            : self.cfg.importance_scoring_batch
+        ]
         if not candidates:
-            return {"_status": "skipped", "reason": "nothing to score"}
+            return {"_status": "skipped", "reason": "nothing to score", **extra}
         if not self.budget.take(1):
-            return {"_status": "skipped", "reason": "budget exhausted"}
+            return {"_status": "skipped", "reason": "budget exhausted", **extra}
         numbered = "\n".join(f"{i + 1}. {m['content'][:200]}" for i, m in enumerate(candidates))
         messages = [
             {
@@ -125,10 +132,10 @@ class MaintenanceRunner:
         ]
         scores = char.llm.generate_json_robust(messages)
         if not isinstance(scores, list):
-            return {"_status": "failed", "error": "non-list score response"}
+            return {"_status": "failed", "error": "non-list score response", **extra}
         scored = 0
         for m, s in zip(candidates, scores):
             if isinstance(s, (int, float)):
                 char.storage.set_memory_importance(m["id"], max(0.1, min(0.9, float(s) / 10)))
                 scored += 1
-        return {"scored": scored, "candidates": len(candidates)}
+        return {"scored": scored, "candidates": len(candidates), **extra}

@@ -83,7 +83,9 @@ class ConsolidationEngine:
         count = self.storage.count_memories(self.character_id, tier="buffer")
         return count >= self.threshold
 
-    def consolidate(self, dry_run: bool = False, chunk_size: int | None = None) -> dict:
+    def consolidate(
+        self, dry_run: bool = False, chunk_size: int | None = None, budget=None
+    ) -> dict:
         """Run one bounded consolidation pass. Returns stats.
 
         Args:
@@ -92,24 +94,39 @@ class ConsolidationEngine:
             chunk_size: Max buffer rows to pull for this pass. Defaults to
                 ``get_config().maintenance.consolidate_chunk_size``. Use
                 `drain()` to fully clear a buffer larger than one chunk.
+            budget: Optional duck-typed budget object with ``take(n: int = 1)
+                -> bool``. Checked once per multi-member cluster, immediately
+                before the LLM call that summarizes it (singleton promotions
+                make no LLM call and are never budget-checked). None means
+                unlimited. When the budget is exhausted, processing of
+                remaining clusters stops and ``budget_exhausted`` is set on
+                the returned stats.
 
         Returns:
-            Dict with keys: clusters, summarized, created, archived.
+            Dict with keys: clusters, summarized, created, archived,
+            llm_calls, and (only when it happened) budget_exhausted=True.
         """
         from ..config import get_config
 
         chunk_size = chunk_size or get_config().maintenance.consolidate_chunk_size
         buffer = self.storage.get_memories(self.character_id, tier="buffer", limit=chunk_size)
         if len(buffer) < 10:
-            return {"clusters": 0, "summarized": 0, "created": 0, "archived": 0}
+            return {"clusters": 0, "summarized": 0, "created": 0, "archived": 0, "llm_calls": 0}
 
         clusters = _cluster_memories(buffer, self.similarity)
 
-        stats = {"clusters": len(clusters), "summarized": 0, "created": 0, "archived": 0}
+        stats = {
+            "clusters": len(clusters),
+            "summarized": 0,
+            "created": 0,
+            "archived": 0,
+            "llm_calls": 0,
+        }
 
         for cluster in clusters:
             if len(cluster) < 2:
-                # Singleton — promote directly to core if important enough
+                # Singleton — promote directly to core if important enough.
+                # No LLM call involved, so no budget check here.
                 mem = cluster[0]
                 if mem.get("importance", 0) >= 0.6:
                     if not dry_run:
@@ -128,15 +145,20 @@ class ConsolidationEngine:
 
             # Multi-memory cluster — summarize
             if dry_run:
-                # Count only: no LLM call, no writes.
+                # Count only: no LLM call, no writes, no budget consumed.
                 stats["summarized"] += len(cluster)
                 stats["created"] += 1
                 continue
+
+            if budget is not None and not budget.take(1):
+                stats["budget_exhausted"] = True
+                break
 
             content_texts = [m["content"][:300] for m in cluster]
             cluster_text = "\n".join(f"- {t}" for t in content_texts)
 
             summary = self._summarize_cluster(cluster_text)
+            stats["llm_calls"] += 1
             if not summary:
                 continue
 
@@ -174,20 +196,33 @@ class ConsolidationEngine:
 
         return stats
 
-    def drain(self, max_chunks: int = 10, dry_run: bool = False) -> dict:
+    def drain(self, max_chunks: int = 10, dry_run: bool = False, budget=None) -> dict:
         """Run consolidation passes until the buffer is below threshold.
 
         Replaces the old single-pass 500-row cap: a heavy day fully drains
-        across multiple bounded passes.
+        across multiple bounded passes. ``budget`` (see `consolidate()`) is
+        threaded through every pass; once a pass reports budget_exhausted,
+        draining stops even if the buffer is still above threshold.
         """
-        totals = {"passes": 0, "clusters": 0, "summarized": 0, "created": 0, "archived": 0}
+        totals = {
+            "passes": 0,
+            "clusters": 0,
+            "summarized": 0,
+            "created": 0,
+            "archived": 0,
+            "llm_calls": 0,
+            "budget_exhausted": False,
+        }
         for _ in range(max_chunks):
             if not self.needs_consolidation():
                 break
-            result = self.consolidate(dry_run=dry_run)
+            result = self.consolidate(dry_run=dry_run, budget=budget)
             totals["passes"] += 1
-            for key in ("clusters", "summarized", "created", "archived"):
+            for key in ("clusters", "summarized", "created", "archived", "llm_calls"):
                 totals[key] += result.get(key, 0)
+            if result.get("budget_exhausted"):
+                totals["budget_exhausted"] = True
+                break
             if dry_run:
                 break  # dry_run archives nothing → would loop forever
         return totals

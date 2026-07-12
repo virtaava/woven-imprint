@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from tests.helpers import FakeEmbedder, FakeLLM, make_test_engine
+from woven_imprint.config import get_config
 from woven_imprint.engine import Engine
 from woven_imprint.maintenance import Budget, MaintenanceRunner
 
@@ -73,6 +74,65 @@ def test_budget_exhaustion_skips_llm_jobs():
     report = runner.run(jobs=["score_importance"])
     assert report["jobs"]["score_importance"]["status"] == "skipped"
     assert report["llm_calls_used"] == 0
+
+
+def test_job_consolidate_happy_path(monkeypatch):
+    # Mirrors tests/test_consolidation.py's seeding style: many buffer
+    # memories with near-identical wording so they cluster and force a
+    # real _summarize_cluster (LLM) call.
+    engine = make_test_engine()
+    char = engine.create_character("Piper")
+    char.consolidator.threshold = 10
+    for i in range(20):
+        char.memory.add(f"the lake was calm on day {i}", tier="buffer")
+
+    captured = {}
+    orig_drain = char.consolidator.drain
+
+    def spy_drain(*a, **kw):
+        result = orig_drain(*a, **kw)
+        captured["result"] = result
+        return result
+
+    monkeypatch.setattr(char.consolidator, "drain", spy_drain)
+
+    runner = MaintenanceRunner(char)
+    report = runner.run(jobs=["consolidate"])
+    entry = report["jobs"]["consolidate"]
+
+    assert entry["status"] == "ok"
+    assert entry["archived"] > 0
+    assert entry["llm_calls"] == captured["result"]["llm_calls"]
+
+
+def test_job_consolidate_skips_below_threshold():
+    engine = make_test_engine()
+    char = engine.create_character("Sparse")
+    char.memory.add("just one note", tier="buffer")
+
+    runner = MaintenanceRunner(char)
+    report = runner.run(jobs=["consolidate"])
+    assert report["jobs"]["consolidate"]["status"] == "skipped"
+
+
+def test_job_consolidate_budget_cap(monkeypatch):
+    # Two well-separated content groups so clustering produces 2+
+    # multi-member clusters within a single low-chunk_size pass; a
+    # Budget(1) should allow the first cluster's LLM call and deny the rest.
+    engine = make_test_engine()
+    char = engine.create_character("Capped")
+    char.consolidator.threshold = 10
+    monkeypatch.setattr(get_config().maintenance, "consolidate_chunk_size", 20)
+    for i in range(20):
+        topic = "lake" if i % 2 == 0 else "forest"
+        char.memory.add(f"note {i} about the {topic}", tier="buffer")
+
+    runner = MaintenanceRunner(char, budget=Budget(1))
+    report = runner.run(jobs=["consolidate"])
+    entry = report["jobs"]["consolidate"]
+
+    assert entry.get("budget_exhausted") is True
+    assert report["llm_calls_used"] <= 1
 
 
 def test_unknown_job_fails_loudly():

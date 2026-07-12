@@ -170,6 +170,24 @@ def test_dry_run_makes_no_llm_calls(consolidation_setup):
     assert engine.storage.count_memories(char.id, tier="buffer") == 30
 
 
+class _ExhaustedBudget:
+    """Fake budget whose take() always denies — for asserting zero LLM calls."""
+
+    def take(self, n: int = 1) -> bool:
+        return False
+
+
+def test_consolidate_budget_exhausted_makes_no_llm_calls(consolidation_setup):
+    engine, char = consolidation_setup
+    for i in range(15):
+        char.memory.add(f"the lake was calm on day {i}", tier="buffer")
+    before = char.llm.call_count
+    result = char.consolidator.consolidate(budget=_ExhaustedBudget())
+    assert char.llm.call_count == before
+    assert result["llm_calls"] == 0
+    assert result.get("budget_exhausted") is True
+
+
 def test_drain_processes_beyond_single_chunk(consolidation_setup, monkeypatch):
     engine, char = consolidation_setup
     # Force a small chunk_size so 60 buffer rows require multiple consolidate()

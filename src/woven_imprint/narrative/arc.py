@@ -232,4 +232,7 @@ class ArcTracker:
             return beat
 
         except (ValueError, KeyError, TypeError):
-            return None
+            # Propagate so the caller can track subsystem health
+            # (Character.health()) instead of a failure going silently
+            # unnoticed as "not a beat."
+            raise

@@ -1,5 +1,7 @@
 """Tests for emotional state tracking."""
 
+import pytest
+
 from woven_imprint.persona.emotion import EmotionalState, EmotionEngine, EMOTION_LABELS
 from woven_imprint.llm.base import LLMProvider
 
@@ -95,7 +97,7 @@ class TestEmotionEngine:
         new = engine.assess("msg", "resp", current, "Alice")
         assert new.mood == "neutral"
 
-    def test_assess_failure_decays(self):
+    def test_assess_failure_decays_and_propagates(self):
         class FailingLLM(LLMProvider):
             def generate(self, messages, **kw):
                 return ""
@@ -105,9 +107,12 @@ class TestEmotionEngine:
 
         engine = EmotionEngine(FailingLLM())
         current = EmotionalState(mood="happy", intensity=0.6)
-        result = engine.assess("msg", "resp", current, "Alice")
-        # Should decay rather than crash
-        assert result.intensity < 0.6
+        # Still decays (graceful degradation of the emotion itself) but
+        # propagates the error so callers can track subsystem health
+        # (Character.health()) instead of the failure going unnoticed.
+        with pytest.raises(ValueError):
+            engine.assess("msg", "resp", current, "Alice")
+        assert current.intensity < 0.6
 
     def test_all_labels_valid(self):
         for label in EMOTION_LABELS:

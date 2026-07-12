@@ -143,6 +143,9 @@ class EmotionEngine:
                 turns_held=0,
             )
         except (ValueError, KeyError, TypeError):
-            # On failure, decay current state
+            # On failure, still decay current state (graceful degradation
+            # of the emotion itself), but propagate the error so the
+            # caller can track subsystem health (Character.health())
+            # instead of the failure going silently unnoticed.
             current.decay()
-            return current
+            raise

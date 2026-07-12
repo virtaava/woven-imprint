@@ -99,6 +99,11 @@ class Character:
         self.background: bool = _cfg.character.background
         self._worker = None  # lazily created BackgroundWorker
 
+        # Per-subsystem success/failure counters — makes silent small-model
+        # degradation visible. Plain dict; worker thread + GIL, matches the
+        # existing counter precedent in BackgroundWorker.
+        self._health_counters: dict[str, dict] = {}
+
         # Restore persisted transient state (C3)
         self._restore_state()
 
@@ -187,6 +192,35 @@ class Character:
                 )
                 return
             self._worker = None
+
+    def _note_success(self, subsystem: str) -> None:
+        entry = self._health_counters.setdefault(
+            subsystem, {"success": 0, "failure": 0, "last_error": None}
+        )
+        entry["success"] += 1
+
+    def _note_failure(self, subsystem: str, exc: Exception) -> None:
+        entry = self._health_counters.setdefault(
+            subsystem, {"success": 0, "failure": 0, "last_error": None}
+        )
+        entry["failure"] += 1
+        entry["last_error"] = f"{type(exc).__name__}: {exc}"[:300]
+
+    def health(self) -> dict:
+        """Per-subsystem success/failure counters — makes silent small-model
+        degradation visible (memory extraction failing = the character quietly
+        stops learning; this surface is how an app notices)."""
+        worker = None
+        if self._worker is not None:
+            worker = {
+                "alive": self._worker.is_alive,
+                "pending": self._worker._queue.unfinished_tasks,
+            }
+        return {
+            "subsystems": {k: dict(v) for k, v in self._health_counters.items()},
+            "worker": worker,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     def chat(self, message: str, user_id: str | None = None) -> str:
         """Send a message and get an in-character response.
@@ -286,8 +320,10 @@ class Character:
         if self.enforce_consistency:
             try:
                 response, _report = self.consistency.enforce(response, messages)
+                self._note_success("consistency")
             except Exception as e:
                 logger.debug("Consistency check failed: %s", e)
+                self._note_failure("consistency", e)
         metrics["consistency_ms"] = round((time.perf_counter() - consistency_started) * 1000.0, 2)
 
         # 8. Add both turns to conversation buffer
@@ -326,12 +362,17 @@ class Character:
             # tearing down shared resources (e.g. the DB connection) the
             # worker still writes through.
             self._get_worker().submit(
-                "bookkeeping", self._run_subsystems_sequential, message, response, user_id
+                "bookkeeping",
+                self._run_subsystems_sequential,
+                message,
+                response,
+                user_id,
+                self._session_id,
             )
         elif self.parallel and not self.lightweight:
-            self._run_subsystems_parallel(message, response, user_id)
+            self._run_subsystems_parallel(message, response, user_id, self._session_id)
         else:
-            self._run_subsystems_sequential(message, response, user_id)
+            self._run_subsystems_sequential(message, response, user_id, self._session_id)
         metrics["subsystems_ms"] = round((time.perf_counter() - subsystem_started) * 1000.0, 2)
 
         # Periodic maintenance
@@ -446,8 +487,10 @@ class Character:
                         "post-hoc (streamed text not retracted)",
                         violations,
                     )
+                self._note_success("consistency")
             except Exception as e:
                 logger.debug("Stream consistency check failed: %s", e)
+                self._note_failure("consistency", e)
         metrics["consistency_ms"] = round((time.perf_counter() - consistency_started) * 1000.0, 2)
 
         # 7. Add both turns to conversation buffer
@@ -477,12 +520,17 @@ class Character:
             # tearing down shared resources (e.g. the DB connection) the
             # worker still writes through.
             self._get_worker().submit(
-                "bookkeeping", self._run_subsystems_sequential, message, response, user_id
+                "bookkeeping",
+                self._run_subsystems_sequential,
+                message,
+                response,
+                user_id,
+                self._session_id,
             )
         elif self.parallel and not self.lightweight:
-            self._run_subsystems_parallel(message, response, user_id)
+            self._run_subsystems_parallel(message, response, user_id, self._session_id)
         else:
-            self._run_subsystems_sequential(message, response, user_id)
+            self._run_subsystems_sequential(message, response, user_id, self._session_id)
 
         # Periodic maintenance
         if self._turn_count % _cfg.memory.state_save_interval == 0:
@@ -549,7 +597,7 @@ class Character:
 
         # Run extraction (non-fatal, same as chat)
         try:
-            self._extract_memories(user_msg, response, user_id)
+            self._extract_memories(user_msg, response, user_id, session_id=self._session_id)
         except Exception as e:
             logger.debug("Ingest extraction failed: %s", e)
 
@@ -562,7 +610,13 @@ class Character:
             except Exception as e:
                 logger.debug("Periodic state save failed: %s", e)
 
-    def _run_subsystems_parallel(self, message: str, response: str, user_id: str | None) -> None:
+    def _run_subsystems_parallel(
+        self,
+        message: str,
+        response: str,
+        user_id: str | None,
+        session_id: str | None = None,
+    ) -> None:
         """Run emotion, arc, and extraction in parallel threads."""
         import concurrent.futures
 
@@ -579,31 +633,47 @@ class Character:
                 self.name,
                 user_id or "",
             )
-            futures["extract"] = pool.submit(self._extract_memories, message, response, user_id)
+            futures["extract"] = pool.submit(
+                self._extract_memories, message, response, user_id, session_id
+            )
 
         for name, future in futures.items():
             try:
                 result = future.result(timeout=60)
                 if name == "emotion" and result is not None:
                     self.emotion = result
+                if name in ("emotion", "arc"):
+                    self._note_success(name)
             except Exception as e:
                 logger.debug("Parallel subsystem '%s' failed: %s", name, e)
+                if name in ("emotion", "arc"):
+                    self._note_failure(name, e)
 
-    def _run_subsystems_sequential(self, message: str, response: str, user_id: str | None) -> None:
+    def _run_subsystems_sequential(
+        self,
+        message: str,
+        response: str,
+        user_id: str | None,
+        session_id: str | None = None,
+    ) -> None:
         """Run subsystem updates sequentially (for testing or lightweight mode)."""
         if not self.lightweight:
             try:
                 self.emotion = self.emotion_engine.assess(
                     message, response, self.emotion, self.name
                 )
+                self._note_success("emotion")
             except Exception as e:
                 logger.debug("Emotion assessment failed: %s", e)
+                self._note_failure("emotion", e)
             try:
                 self.arc_tracker.analyze_beat(message, response, self.arc, self.name, user_id or "")
+                self._note_success("arc")
             except Exception as e:
                 logger.debug("Arc tracking failed: %s", e)
+                self._note_failure("arc", e)
 
-        self._extract_memories(message, response, user_id)
+        self._extract_memories(message, response, user_id, session_id=session_id)
 
     def reflect(self) -> str:
         """Generate higher-level reflections from accumulated memories.
@@ -954,8 +1024,19 @@ class Character:
 
         return messages
 
-    def _extract_memories(self, user_msg: str, response: str, user_id: str | None) -> None:
+    def _extract_memories(
+        self,
+        user_msg: str,
+        response: str,
+        user_id: str | None,
+        session_id: str | None = None,
+    ) -> None:
         """Extract notable facts and update relationships from an exchange."""
+        # session_id is captured at submit time (when the turn happened), not
+        # read here at execution time — bookkeeping may run on a background
+        # thread after a subsequent turn has already started a new session.
+        effective_session_id = session_id if session_id is not None else self._session_id
+
         # Relationship updates happen every turn
         if user_id:
             self._update_relationship(user_msg, response, user_id)
@@ -1025,7 +1106,7 @@ class Character:
                             old_mem["id"],
                             fact,
                             source="extraction",
-                            session_id=self._session_id,
+                            session_id=effective_session_id,
                         )
 
                     # Only store as new memory if it didn't contradict something
@@ -1035,12 +1116,17 @@ class Character:
                             content=fact,
                             tier="core",
                             role="observation",
-                            session_id=self._session_id,
+                            session_id=effective_session_id,
                             importance=mem_cfg.fact_importance,
                             metadata={"source": "extraction", "user_id": user_id},
                         )
-        except (ValueError, KeyError) as e:
+            self._note_success("extraction")
+        except Exception as e:
+            # Broadened from (ValueError, KeyError): generate_json_robust can
+            # raise other errors on persistent small-model garbage, and a
+            # swallow site here must never crash bookkeeping.
             logger.debug("Fact extraction failed: %s", e)
+            self._note_failure("extraction", e)
 
     def _update_relationship(self, user_msg: str, response: str, user_id: str) -> None:
         """LLM-assess how an interaction shifts relationship dimensions."""
@@ -1088,8 +1174,13 @@ class Character:
                     deltas[key] = float(val)
             if deltas:
                 self.relationships.update(user_id, deltas)
-        except (ValueError, KeyError, TypeError) as e:
+            self._note_success("relationship")
+        except Exception as e:
+            # Broadened from (ValueError, KeyError, TypeError): generate_json_robust
+            # can raise other errors on persistent small-model garbage, and a
+            # swallow site here must never crash bookkeeping.
             logger.debug("Relationship update failed: %s", e)
+            self._note_failure("relationship", e)
 
     def _format_memories(self, memories: list[dict]) -> str:
         """Format retrieved memories for inclusion in prompt.

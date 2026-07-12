@@ -610,6 +610,95 @@ class Character:
             except Exception as e:
                 logger.debug("Periodic state save failed: %s", e)
 
+    def observe(
+        self,
+        event: str,
+        source: str = "world",
+        importance: float | None = None,
+        user_id: str | None = None,
+    ) -> dict:
+        """Record a world event as a memory — no dialogue pair, no generation.
+
+        This is the API a deterministic game/sim uses to narrate ground truth
+        into the character's memory ("Keeper fed you", "It rained all day").
+        """
+        if not self._session_id:
+            self.start_session()
+
+        from .config import get_config
+
+        _cfg = get_config()
+        if len(event) > _cfg.memory.max_message_length:
+            event = event[: _cfg.memory.max_message_length]
+
+        memory = self.memory.add(
+            content=f"[Event] {event}",
+            tier="buffer",
+            role="event",
+            session_id=self._session_id,
+            importance=importance if importance is not None else 0.6,
+            metadata={"source": source, "user_id": user_id},
+        )
+
+        if user_id:
+            if self.background:
+                self._get_worker().submit(
+                    "observe", self._assess_event, event, user_id, self._session_id
+                )
+            else:
+                self._assess_event(event, user_id, self._session_id)
+
+        return memory
+
+    def _assess_event(self, event: str, user_id: str, session_id: str | None) -> None:
+        """Event-shaped emotion + relationship assessment (worker-safe)."""
+        if not self.lightweight:
+            try:
+                self.emotion = self.emotion_engine.assess_event(event, self.emotion, self.name)
+                self._note_success("observe")
+            except Exception as e:
+                logger.debug("Event emotion assessment failed: %s", e)
+                self._note_failure("observe", e)
+        try:
+            self._update_relationship_event(event, user_id)
+        except Exception as e:
+            logger.debug("Event relationship assessment failed: %s", e)
+            self._note_failure("observe", e)
+
+    def _update_relationship_event(self, event: str, user_id: str) -> None:
+        """LLM-assess how a world event shifts relationship dimensions."""
+        current = self.relationships.get_or_create(user_id)
+        dims = current["dimensions"]
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You assess how an EVENT affects a relationship between a character "
+                    "and another party. Return a JSON object with float fields between "
+                    "-0.15 and 0.15 (0.0 = no change): trust, affection, respect, "
+                    "familiarity (0.0 to 0.15 only), tension. Be conservative."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Current: trust={dims.get('trust', 0):.2f}, "
+                    f"affection={dims.get('affection', 0):.2f}\n"
+                    f"Event involving {user_id}: {event[:300]}\n\nReturn JSON."
+                ),
+            },
+        ]
+        result = self.llm.generate_json_robust(messages)
+        if not isinstance(result, dict):
+            return
+        deltas = {}
+        for key in ("trust", "affection", "respect", "familiarity", "tension"):
+            val = result.get(key, 0.0)
+            if isinstance(val, (int, float)):
+                deltas[key] = float(val)
+        if deltas:
+            self.relationships.update(user_id, deltas)
+
     def _run_subsystems_parallel(
         self,
         message: str,

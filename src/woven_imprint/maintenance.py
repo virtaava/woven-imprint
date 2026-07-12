@@ -87,10 +87,9 @@ class MaintenanceRunner:
         cutoff = datetime.now(timezone.utc) - timedelta(days=self.cfg.buffer_ttl_days)
         cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
         limit = 1000
-        candidates = char.storage.get_memories(char.id, tier="buffer", limit=limit)
-        # get_memories returns newest-first; the TTL sweep cares about the
-        # oldest rows, so sort ascending before filtering/capping.
-        candidates.sort(key=lambda m: m.get("created_at") or "")
+        candidates = char.storage.get_memories(
+            char.id, tier="buffer", limit=limit, oldest_first=True
+        )
         stale = [
             m["id"]
             for m in candidates
@@ -106,10 +105,7 @@ class MaintenanceRunner:
     def _job_score_importance(self) -> dict:
         char = self.character
         limit = 500
-        fetched = char.storage.get_memories(char.id, tier="buffer", limit=limit)
-        # get_memories returns newest-first; the scoring sweep cares about the
-        # oldest rows, so sort ascending before filtering/capping.
-        fetched.sort(key=lambda m: m.get("created_at") or "")
+        fetched = char.storage.get_memories(char.id, tier="buffer", limit=limit, oldest_first=True)
         extra = {"truncated": True} if len(fetched) == limit else {}
         candidates = [m for m in fetched if m.get("importance") == 0.5][
             : self.cfg.importance_scoring_batch

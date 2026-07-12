@@ -269,15 +269,27 @@ class SQLiteStorage:
         self._commit()
 
     def get_memories(
-        self, character_id: str, tier: str | None = None, status: str = "active", limit: int = 1000
+        self,
+        character_id: str,
+        tier: str | None = None,
+        status: str = "active",
+        limit: int = 1000,
+        oldest_first: bool = False,
     ) -> list[dict]:
-        """Retrieve memories for a character, optionally filtered by tier."""
+        """Retrieve memories for a character, optionally filtered by tier.
+
+        When oldest_first=True, orders by created_at ASC instead of DESC,
+        ensuring the LIMIT captures the oldest rows (useful for TTL cleanup).
+        """
         q = "SELECT *, rowid FROM memories WHERE character_id = ? AND status = ?"
         params: list[Any] = [character_id, status]
         if tier:
             q += " AND tier = ?"
             params.append(tier)
-        q += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
+        if oldest_first:
+            q += " ORDER BY created_at ASC, rowid ASC LIMIT ?"
+        else:
+            q += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
         params.append(limit)
         rows = self._conn.execute(q, params).fetchall()
         return [self._row_to_memory(r) for r in rows]

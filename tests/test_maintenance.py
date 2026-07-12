@@ -141,3 +141,47 @@ def test_unknown_job_fails_loudly():
     runner = MaintenanceRunner(char)
     report = runner.run(jobs=["nonexistent"])
     assert report["jobs"]["nonexistent"]["status"] == "failed"
+
+
+def test_buffer_hygiene_scale_exceeds_fetch_limit():
+    """Verify buffer_hygiene sweeps ALL stale rows even when total exceeds fetch limit.
+
+    Insert 1010 active buffer rows for one character: the 10 oldest aged to 30 days
+    with importance 0.5, and 1000 fresh rows. With fetch limit=1000, if we ordered
+    newest-first in SQL, the 10 oldest would be excluded entirely. Verify that
+    oldest_first=True in get_memories() captures them and they all get archived.
+    """
+    engine = make_test_engine()
+    char = engine.create_character("ScaleTest")
+
+    # Insert 10 very old memories with low importance (will be swept)
+    old_ids = []
+    for i in range(10):
+        mem = char.memory.add(f"very old memory {i}", tier="buffer", importance=0.5)
+        old_ids.append(mem["id"])
+
+    # Insert 1000 fresh memories (will survive)
+    fresh_ids = []
+    for i in range(1000):
+        mem = char.memory.add(f"fresh memory {i}", tier="buffer")
+        fresh_ids.append(mem["id"])
+
+    # Age the old ones to 30 days (exceeds default TTL)
+    for old_id in old_ids:
+        _age_memory(engine, old_id, 30)
+
+    # Run buffer_hygiene with fetch limit=1000
+    runner = MaintenanceRunner(char)
+    report = runner.run(jobs=["buffer_hygiene"])
+
+    assert report["jobs"]["buffer_hygiene"]["status"] == "ok"
+    # All 10 stale rows should be archived despite the 1000-row fetch limit
+    assert report["jobs"]["buffer_hygiene"]["archived"] == 10
+    assert report["jobs"]["buffer_hygiene"]["truncated"] is True
+
+    # Verify: all old ones gone, all fresh ones still active
+    active_ids = {m["id"] for m in char.memory.get_all(tier="buffer")}
+    for old_id in old_ids:
+        assert old_id not in active_ids, f"Stale memory {old_id} should have been archived"
+    for fresh_id in fresh_ids:
+        assert fresh_id in active_ids, f"Fresh memory {fresh_id} should still be active"

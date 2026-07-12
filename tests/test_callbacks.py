@@ -148,3 +148,31 @@ def test_refresh_deduplicates_source_indices():
     assert len(cbs) == 1
     # With dedupe, only one unique source index, so exactly 1 source_memory_id
     assert len(cbs[0]["source_memory_ids"]) == 1
+
+
+def test_compose_initiation_consumes_top_callback():
+    engine = _engine_with_callback_llm()
+    char = engine.create_character("Init")
+    engine.storage.save_callback(
+        {
+            "id": "cb-top",
+            "character_id": char.id,
+            "kind": "open_thread",
+            "hook": "Ask how the interview went",
+            "salience": 0.9,
+        }
+    )
+    result = char.compose_initiation("morning greeting")
+    assert isinstance(result["text"], str) and result["text"]
+    assert result["callback"]["id"] == "cb-top"
+    # consumed: no longer in ready queue
+    assert engine.storage.get_callbacks(char.id, status="ready") == []
+    assert engine.storage.get_callbacks(char.id, status="consumed")[0]["id"] == "cb-top"
+
+
+def test_compose_initiation_without_callbacks():
+    engine = _engine_with_callback_llm()
+    char = engine.create_character("Lonely")
+    result = char.compose_initiation("greeting")
+    assert result["text"]
+    assert result["callback"] is None

@@ -45,6 +45,41 @@ class CallbackEngine:
             r["freshness"] = _freshness(r.get("created_at", ""))
         return rows
 
+    def compose_initiation(self, occasion: str = "greeting", budget=None) -> dict:
+        """Compose a character-initiated message. Consumes the top callback.
+
+        Scheduling WHEN to send is the app's responsibility; the library's
+        job is having something in-character to say (scarcity by design —
+        each callback is consumed on use).
+        """
+        char = self.character
+        top = self.get(limit=1)
+        callback = top[0] if top else None
+        if budget is not None and not budget.take(1):
+            return {"text": "", "callback": None}
+
+        system = char.persona.build_system_prompt()
+        emotion_desc = char.emotion.describe()
+        if emotion_desc:
+            system += f"\n\n{emotion_desc}"
+        instruction = (
+            f"Compose a short (1-2 sentence) message where you, {char.name}, "
+            f"initiate contact. Occasion: {occasion}."
+        )
+        if callback:
+            instruction += (
+                f"\nNaturally work in this thought of yours (paraphrase, don't "
+                f"quote): {callback['hook']}"
+            )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": instruction},
+        ]
+        text = char.llm.generate(messages, temperature=0.8, max_tokens=150)
+        if callback:
+            char.storage.mark_callback(callback["id"], "consumed")
+        return {"text": text.strip(), "callback": callback}
+
     # ── Generation (batch) ────────────────────────────────────
 
     def _gather_sources(self) -> list[dict]:

@@ -858,6 +858,12 @@ class Character:
 
         return CallbackEngine(self).refresh(budget=budget)
 
+    def compose_initiation(self, occasion: str = "greeting") -> dict:
+        """Character-initiated message (proactive). See CallbackEngine."""
+        from .callbacks import CallbackEngine
+
+        return CallbackEngine(self).compose_initiation(occasion=occasion)
+
     def get_relationship(self, target_id: str) -> dict | None:
         """Get the relationship with another entity.
 

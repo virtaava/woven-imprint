@@ -111,7 +111,7 @@ class CallbackEngine:
             kind = item.get("kind", "callback")
             if kind not in VALID_KINDS:
                 kind = "callback"
-            idxs = [i for i in item.get("sources", []) if isinstance(i, int)]
+            idxs = list(dict.fromkeys(i for i in item.get("sources", []) if isinstance(i, int)))
             mem_ids = [
                 sources[i - 1]["memory_id"]
                 for i in idxs
@@ -130,10 +130,10 @@ class CallbackEngine:
             )
             created += 1
 
-        # Enforce ready-queue cap: expire oldest beyond cap
+        # Enforce ready-queue cap: expire lowest-salience beyond cap
         ready = char.storage.get_callbacks(char.id, status="ready", limit=1000)
         if len(ready) > self.cfg.callbacks_ready_cap:
-            # get_callbacks orders salience DESC, created_at DESC → expire the tail
+            # get_callbacks orders salience DESC, created_at DESC → expire the tail (lowest-salience)
             for stale in ready[self.cfg.callbacks_ready_cap :]:
                 char.storage.mark_callback(stale["id"], "expired")
         return created

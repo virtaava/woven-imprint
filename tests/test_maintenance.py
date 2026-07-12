@@ -310,3 +310,23 @@ def test_evolve_skips_below_min_memories():
     char = engine.create_character("Evo")
     report = MaintenanceRunner(char).run(jobs=["evolve"])
     assert report["jobs"]["evolve"]["status"] == "skipped"
+
+
+def test_job_callbacks_budget_zero_skips_without_llm_call():
+    """Verify that _job_callbacks with Budget(0) returns skipped without calling LLM."""
+    from tests.test_callbacks import CallbackLLM
+
+    engine = Engine(db_path=":memory:", llm=CallbackLLM(), embedding=FakeEmbedder())
+    char = engine.create_character("BudgetZero")
+    char.background = False
+    char.parallel = False
+    char.memory.add("something important", tier="core", role="observation", importance=0.9)
+
+    llm_calls_before = char.llm.call_count
+    runner = MaintenanceRunner(char, budget=Budget(0))
+    report = runner.run(jobs=["callbacks"])
+    llm_calls_after = char.llm.call_count
+
+    assert report["jobs"]["callbacks"]["status"] == "skipped"
+    assert report["jobs"]["callbacks"]["created"] == 0
+    assert llm_calls_after == llm_calls_before  # No LLM calls made

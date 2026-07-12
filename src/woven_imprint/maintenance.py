@@ -291,7 +291,7 @@ class MaintenanceRunner:
         return {"growth_events": len(events)}
 
     def _job_callbacks(self) -> dict:
-        created = self.character.refresh_callbacks(budget=self.budget)
-        if created == 0 and (self.budget.remaining == 0):
+        if self.budget.remaining == 0:
             return {"_status": "skipped", "reason": "budget exhausted", "created": 0}
+        created = self.character.refresh_callbacks(budget=self.budget)
         return {"created": created}

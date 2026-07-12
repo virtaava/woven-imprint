@@ -219,6 +219,35 @@ def test_dedup_idempotent():
     assert first == 1 and second == 0
 
 
+def test_dedup_triple_cluster_no_double_count():
+    """Regression test: 4 identical memories with importances [0.7, 0.5, 0.99, 0.999].
+
+    Dedup should archive exactly 3, leaving only the highest-importance memory.
+    Previously, when drop==mems[i], the loop would continue and i could be
+    used as 'keep' in a later j comparison, getting archived twice.
+    """
+    engine = make_test_engine()
+    char = engine.create_character("DedupTriple")
+    # Create 4 identical memories with increasing importances
+    char.memory.add("identical fact", tier="core", role="observation", importance=0.7)
+    char.memory.add("identical fact", tier="core", role="observation", importance=0.5)
+    char.memory.add("identical fact", tier="core", role="observation", importance=0.99)
+    mem_highest = char.memory.add(
+        "identical fact", tier="core", role="observation", importance=0.999
+    )
+
+    runner = MaintenanceRunner(char)
+    report = runner.run(jobs=["dedup"])
+    assert report["jobs"]["dedup"]["archived"] == 3
+
+    active = {m["id"] for m in char.memory.get_all(tier="core")}
+    assert mem_highest["id"] in active, "Highest importance memory should remain active"
+    assert len(active) == 1, "Exactly one memory should remain active"
+
+    kept = engine.storage.get_memory(mem_highest["id"])
+    assert kept["importance"] == 0.999
+
+
 def test_reinforce_strengthens_reencountered_fact():
     engine = make_test_engine()
     char = engine.create_character("Rein")

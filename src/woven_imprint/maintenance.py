@@ -160,15 +160,18 @@ class MaintenanceRunner:
                 if mems[j]["id"] in archived_set:
                     continue
                 sim = _cosine_similarity(mems[i]["embedding"], mems[j]["embedding"])
-                if sim >= self.cfg.dedup_similarity:
-                    keep, drop = (
-                        (mems[i], mems[j])
-                        if mems[i].get("importance", 0) >= mems[j].get("importance", 0)
-                        else (mems[j], mems[i])
-                    )
-                    archived.append(drop["id"])
-                    archived_set.add(drop["id"])
+                if sim < self.cfg.dedup_similarity:
+                    continue
+                if mems[i].get("importance", 0) >= mems[j].get("importance", 0):
+                    keep, drop = mems[i], mems[j]
+                else:
+                    keep, drop = mems[j], mems[i]
+                archived.append(drop["id"])
+                archived_set.add(drop["id"])
+                if keep["id"] not in archived_set:
                     self.character.belief.reinforce(keep["id"])
+                if drop is mems[i]:
+                    break  # i itself archived — stop comparing it
         self.character.storage.archive_memories_batch(archived)
         return {"archived": len(archived), "scanned": len(mems)}
 
@@ -224,12 +227,13 @@ class MaintenanceRunner:
                         "You check whether two remembered facts contradict each other. "
                         'Return JSON: {"contradictory": true|false, '
                         '"current": "first"|"second"|"unclear"} — "current" is the fact '
-                        "that reflects the present state if they contradict."
+                        "that reflects the present state if they contradict "
+                        "(the newer statement usually, unless it is clearly speculative)."
                     ),
                 },
                 {
                     "role": "user",
-                    "content": f"First: {a['content'][:300]}\nSecond: {b['content'][:300]}",
+                    "content": f"First (older): {a['content'][:300]}\nSecond (newer): {b['content'][:300]}",
                 },
             ]
             try:

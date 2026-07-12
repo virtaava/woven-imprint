@@ -1013,7 +1013,7 @@ class Character:
         ]
 
         try:
-            result = self.llm.generate_json(messages)
+            result = self.llm.generate_json_robust(messages)
             facts = result if isinstance(result, list) else result.get("facts", [])
             for fact in facts[:max_facts]:
                 if isinstance(fact, str) and len(fact) > 10:
@@ -1078,7 +1078,7 @@ class Character:
         ]
 
         try:
-            result = self.llm.generate_json(messages)
+            result = self.llm.generate_json_robust(messages)
             if not isinstance(result, dict):
                 result = {}
             deltas = {}

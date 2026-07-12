@@ -93,7 +93,7 @@ class GrowthEngine:
         ]
 
         try:
-            result = self.llm.generate_json(messages)
+            result = self.llm.generate_json_robust(messages)
             events_raw = result if isinstance(result, list) else result.get("events", [])
 
             events = []

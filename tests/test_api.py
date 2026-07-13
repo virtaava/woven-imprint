@@ -5,7 +5,6 @@ import threading
 import urllib.request
 import urllib.error
 from http.server import HTTPServer
-from pathlib import Path
 
 import pytest
 
@@ -137,9 +136,7 @@ class TestChatCompletions:
             f"{api_url}/v1/chat/completions",
             {
                 "model": "bob",
-                "messages": [
-                    {"role": "user", "content": "Hello Bob!"}
-                ],
+                "messages": [{"role": "user", "content": "Hello Bob!"}],
             },
         )
         assert status == 200
@@ -152,9 +149,7 @@ class TestChatCompletions:
         status, data = _post(
             f"{api_url}/v1/chat/completions",
             {
-                "messages": [
-                    {"role": "user", "content": "Hello!"}
-                ],
+                "messages": [{"role": "user", "content": "Hello!"}],
             },
         )
         assert status == 400
@@ -166,9 +161,7 @@ class TestChatCompletions:
             f"{api_url}/v1/chat/completions",
             {
                 "model": "nonexistent",
-                "messages": [
-                    {"role": "user", "content": "Hello!"}
-                ],
+                "messages": [{"role": "user", "content": "Hello!"}],
             },
         )
         assert status == 404
@@ -187,7 +180,9 @@ class TestChatCompletions:
         engine.create_character("Charlie")
 
         # Capture baseline thread count to isolate NEW threads created by this test
-        baseline_bg_threads = {t.ident for t in threading.enumerate() if t.name.startswith("woven-bg-")}
+        baseline_bg_threads = {
+            t.ident for t in threading.enumerate() if t.name.startswith("woven-bg-")
+        }
 
         # Make a chat request with a user_id to trigger relationship assessment
         status, data = _post(
@@ -204,6 +199,10 @@ class TestChatCompletions:
         assert data["choices"][0]["message"]["content"]
 
         # Check no NEW background worker threads leaked from this chat call
-        current_bg_threads = {t.ident for t in threading.enumerate() if t.name.startswith("woven-bg-")}
+        current_bg_threads = {
+            t.ident for t in threading.enumerate() if t.name.startswith("woven-bg-")
+        }
         new_threads = current_bg_threads - baseline_bg_threads
-        assert len(new_threads) == 0, f"Leaked {len(new_threads)} new background worker thread(s) from chat request"
+        assert len(new_threads) == 0, (
+            f"Leaked {len(new_threads)} new background worker thread(s) from chat request"
+        )

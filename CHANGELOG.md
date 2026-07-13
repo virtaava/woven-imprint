@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Phase B ("companion primitives") — the offline-maintenance, callback,
+world-event, and health primitives a companion app builds on. Ships on top
+of Phase A (below) in the same release.
+
+### Added (Phase B)
+- **Offline maintenance runner** (`MaintenanceRunner`,
+  `Engine.run_maintenance()`, `woven-imprint maintain` CLI): all heavy
+  multi-pass LLM work runs as budgeted, idempotent, per-character batch
+  jobs — `consolidate`, `buffer_hygiene`, `score_importance`, `dedup`,
+  `reinforce`, `contradictions`, `reflect`, `evolve`, `callbacks`. A shared
+  LLM-call `Budget` caps each run (config
+  `maintenance.max_llm_calls_per_run` / `WOVEN_IMPRINT_MAINTENANCE_BUDGET`;
+  `--budget` per run); exhausted jobs skip gracefully, failed jobs never
+  abort the run. New `maintenance:` config section (14 settings) — see
+  [docs/CONFIGURATION.md](docs/CONFIGURATION.md#maintenance-settings).
+- **Callbacks & proactive initiation** (`CallbackEngine`): paraphrased
+  in-character conversation hooks ("How did the interview go?") generated
+  in batch (maintenance job / session end, one LLM call) and read instantly
+  from the DB — `Character.get_callbacks()`, `refresh_callbacks()`. Four
+  kinds (`open_thread`, `callback`, `milestone`, `curiosity`), salience
+  ordering, capped ready queue (`maintenance.callbacks_ready_cap`), hard
+  paraphrase-never-verbatim rule. `Character.compose_initiation(occasion)`
+  composes a character-initiated message from the top hook and consumes it
+  (consumed-on-use scarcity — a hook is never repeated).
+- **World events**: `Character.observe(event, source, importance, user_id)`
+  — narrate ground truth ("Keeper fed you") into memory without a dialogue
+  pair or LLM generation. Lightweight path (no `user_id`) makes zero LLM
+  calls; assessed path (`user_id` given) runs event-shaped emotion +
+  relationship assessment.
+- **Health surface**: `Character.health()` — per-subsystem
+  success/failure/last-error counters (`emotion`, `arc`, `extraction`,
+  `relationship`, `consistency`, `observe`, `callbacks`) plus background
+  worker status; makes silent small-model degradation visible.
+- **Server & MCP surface** for the above: sidecar
+  `GET /characters/{id}/callbacks`, `GET /characters/{id}/health`,
+  `POST /observe`; demo API `/api/characters/{id}/callbacks`, `.../health`,
+  `.../maintain`, `/api/observe`; MCP tools `get_callbacks`, `observe`,
+  `get_health`, `maintain` (17 tools total).
+- **Schema migration v4**: `callbacks` table and `meta` key/value table.
+  `meta` records the embedding contract (`embedding_dimensions`,
+  `embedding_model`) and `schema_semver` (currently `0.6.0-dev`, stamped on
+  every open). The portable storage contract — every table, the embedding
+  BLOB format, timestamp rules, FTS5 triggers, migration protocol — is now
+  documented in [docs/SCHEMA.md](docs/SCHEMA.md).
+- `llm.embedding_base_url` config + `WOVEN_IMPRINT_EMBEDDING_BASE_URL` env
+  var — point embeddings at a different OpenAI-compatible endpoint than
+  chat.
+- `generate_json_robust()` on all LLM providers — uniform bounded
+  retry-on-unparseable-JSON used by maintenance jobs and subsystems.
+
+### Changed (Phase B)
+- **`end_session()` now refreshes callbacks by default** (one extra LLM
+  call at session end, non-fatal on failure). Gate with
+  `maintenance.callbacks_refresh_on_session_end: false` if you only want
+  the nightly `maintain` run to refresh them.
+- **Embedding dimension guard may raise on mixed-embedder DBs**:
+  `MemoryStore.add()` records `meta.embedding_dimensions` on the first
+  embedded write and raises `ValueError` on any later write whose vector
+  length differs. Previously, switching embedding models silently corrupted
+  cosine retrieval; now the write is rejected — re-embed the database or
+  restore the original embedding model.
+
+### Fixed (Phase B)
+- Sidecar `POST /observe` no longer leaks one background-worker thread per
+  request: per-request `Character` instances run event assessments
+  synchronously (`background=False`).
+- API server `POST /v1/chat/completions` no longer leaks one
+  background-worker thread per request: the per-request character runs
+  bookkeeping synchronously before the response is returned.
+
+---
+
 Phase A ("fast core") — moves per-turn bookkeeping off the hot path and
 fixes several retrieval/perf correctness issues, without changing the
 public `Character`/`Engine` surface for the common case.

@@ -157,6 +157,7 @@ class SQLiteStorage:
     def _init_schema(self) -> None:
         self._conn.executescript(_SCHEMA)
         self._run_migrations()
+        self.meta_set("schema_semver", "0.6.0-dev")
 
     def _run_migrations(self) -> None:
         """Apply pending schema migrations."""

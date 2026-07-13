@@ -297,6 +297,28 @@ class TestMigrations:
             finally:
                 storage.close()
 
+    def test_schema_semver_set_on_fresh_and_upgraded_dbs(self):
+        """_init_schema stamps meta.schema_semver on fresh DBs and on DBs
+        upgraded from an older schema version."""
+        # Fresh DB
+        s = SQLiteStorage(":memory:")
+        assert s.meta_get("schema_semver") == "0.6.0-dev"
+        s.close()
+
+        # Upgrade path: v1 base schema (no meta table yet) → reopen
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "v1.db"
+            conn = sqlite3.connect(str(db_path))
+            conn.executescript(_SCHEMA)
+            conn.commit()
+            conn.close()
+
+            storage = SQLiteStorage(str(db_path))
+            try:
+                assert storage.meta_get("schema_semver") == "0.6.0-dev"
+            finally:
+                storage.close()
+
 
 class TestCallbacksTable:
     def test_callback_roundtrip(self):

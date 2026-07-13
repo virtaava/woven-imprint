@@ -380,7 +380,9 @@ class TestObserve:
         synchronously, not spawn a background worker thread that gets leaked.
         """
         # Capture baseline thread count to isolate NEW threads created by this test
-        baseline_bg_threads = {t.ident for t in threading.enumerate() if t.name.startswith("woven-bg-")}
+        baseline_bg_threads = {
+            t.ident for t in threading.enumerate() if t.name.startswith("woven-bg-")
+        }
 
         # Create character
         _, d = _post(f"{sidecar_url}/characters", {"name": "Observer"})
@@ -403,9 +405,13 @@ class TestObserve:
         assert "Player helped me find food" in data["content"]
 
         # Check no NEW background worker threads leaked from this observe call
-        current_bg_threads = {t.ident for t in threading.enumerate() if t.name.startswith("woven-bg-")}
+        current_bg_threads = {
+            t.ident for t in threading.enumerate() if t.name.startswith("woven-bg-")
+        }
         new_threads = current_bg_threads - baseline_bg_threads
-        assert len(new_threads) == 0, f"Leaked {len(new_threads)} new background worker thread(s) from observe call"
+        assert len(new_threads) == 0, (
+            f"Leaked {len(new_threads)} new background worker thread(s) from observe call"
+        )
 
         # Verify the relationship was assessed synchronously by querying it
         status, rel_data = _get(f"{sidecar_url}/relationships/{cid}/player_001")

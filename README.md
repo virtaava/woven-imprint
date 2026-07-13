@@ -122,6 +122,25 @@ bounded change per interaction, trajectory detection, and key moment tracking.
 Memories carry certainty scores. Contradictions are tracked, not overwritten —
 characters can genuinely change their mind while remembering what they used to believe.
 
+### Callbacks & Proactive Initiation
+Characters bring things up: paraphrased conversation hooks ("How did the interview
+go?") are generated in batch and read instantly at session start. `compose_initiation()`
+lets the character send the first message — each hook is consumed on use, never repeated.
+
+### Offline Maintenance
+A budgeted nightly runner (`woven-imprint maintain`) does the heavy digestion off the
+hot path: consolidation, dedup, importance scoring, contradiction sweeps, reflection,
+growth, callback generation. Chunkable and idempotent — built to run while a phone charges.
+
+### World Events
+`observe()` narrates ground truth from a game or simulation straight into memory
+("Keeper fed you an extra portion") — no dialogue pair, no LLM generation required.
+
+### Health Surface
+`health()` exposes per-subsystem success/failure counters, so an app notices when a
+small model quietly starts failing fact extraction — instead of the character silently
+ceasing to learn.
+
 ### Migrate from Existing Systems
 
 Bring characters from other platforms — persona, memories, and relationship history

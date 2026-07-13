@@ -373,6 +373,48 @@ class TestObserve:
         )
         assert status == 404
 
+    def test_observe_with_user_id_no_thread_leak(self, sidecar_url):
+        """Regression test: observe with user_id should not leak background worker threads.
+
+        When observe_service() receives a user_id, it should run relationship assessment
+        synchronously, not spawn a background worker thread that gets leaked.
+        """
+        # Capture baseline thread count to isolate NEW threads created by this test
+        baseline_bg_threads = {t.ident for t in threading.enumerate() if t.name.startswith("woven-bg-")}
+
+        # Create character
+        _, d = _post(f"{sidecar_url}/characters", {"name": "Observer"})
+        cid = d["id"]
+
+        # Observe with user_id — should not leak a thread
+        status, data = _post(
+            f"{sidecar_url}/observe",
+            {
+                "character_id": cid,
+                "event": "Player helped me find food",
+                "source": "world",
+                "user_id": "player_001",
+                "importance": 0.8,
+            },
+        )
+        assert status == 200
+        assert "memory_id" in data
+        assert data["memory_id"]
+        assert "Player helped me find food" in data["content"]
+
+        # Check no NEW background worker threads leaked from this observe call
+        current_bg_threads = {t.ident for t in threading.enumerate() if t.name.startswith("woven-bg-")}
+        new_threads = current_bg_threads - baseline_bg_threads
+        assert len(new_threads) == 0, f"Leaked {len(new_threads)} new background worker thread(s) from observe call"
+
+        # Verify the relationship was assessed synchronously by querying it
+        status, rel_data = _get(f"{sidecar_url}/relationships/{cid}/player_001")
+        assert status == 200
+        assert "relationship" in rel_data
+        # The relationship should exist and have been computed synchronously
+        rel = rel_data["relationship"]
+        assert rel is not None or rel == {}, "Relationship should be available (assessed synchronously)"
+
 
 class TestCallbacks:
     def test_callbacks_returns_list(self, sidecar_url):

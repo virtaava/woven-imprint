@@ -209,6 +209,8 @@ def observe_service(engine, character_id, event, source="world", importance=None
     """Record a world event as a memory (no dialogue pair, no generation).
     Raises KeyError if not found."""
     char = engine.get_character(character_id)
+    # Per-request instance: run assessments synchronously — a background worker here would leak a thread per request
+    char.background = False
     mem = char.observe(event, source=source, importance=importance, user_id=user_id)
     return {"memory_id": mem["id"], "content": mem["content"]}
 

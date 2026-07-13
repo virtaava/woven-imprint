@@ -121,6 +121,9 @@ class OpenAIHandler(BaseHTTPRequestHandler):
 
         char = engine.load_character(match["id"])
 
+        # per-request instance: run bookkeeping synchronously — a background worker here would leak a thread per request
+        char.background = False
+
         user_msg = extract_last_user_message(messages)
         if not user_msg:
             self._send_error("no user message found", 400)

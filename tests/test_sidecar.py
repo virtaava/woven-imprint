@@ -412,8 +412,9 @@ class TestObserve:
         assert status == 200
         assert "relationship" in rel_data
         # The relationship should exist and have been computed synchronously
+        # (The thread-diff assertion above is the real discriminator for synchronous execution)
         rel = rel_data["relationship"]
-        assert rel is not None or rel == {}, "Relationship should be available (assessed synchronously)"
+        assert rel is not None, "Relationship should be computed synchronously by observe_service"
 
 
 class TestCallbacks:

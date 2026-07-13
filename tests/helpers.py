@@ -34,6 +34,9 @@ class FakeLLM:
             return "Session summary"
         return {}
 
+    def generate_json_robust(self, messages, temperature=0.3, **kw):
+        return self.generate_json(messages, temperature=temperature, **kw)
+
 
 class FakeEmbedder:
     def __init__(self):

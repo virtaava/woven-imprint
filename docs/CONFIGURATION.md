@@ -35,6 +35,7 @@ llm:
   embedding_provider: ollama    # ollama, openai
   # api_key: null               # API key for openai/anthropic providers
   # base_url: null              # Custom base URL for provider
+  # embedding_base_url: null    # Custom base URL for embedding provider (overrides base_url for embeddings)
   num_ctx: 8192
   temperature: 0.7
   temperature_json: 0.3
@@ -56,6 +57,7 @@ llm:
 | `embedding_provider` | `ollama` | `WOVEN_IMPRINT_EMBEDDING_PROVIDER` | Embedding provider backend. Supported: `ollama`, `openai`. |
 | `api_key` | `null` | `WOVEN_IMPRINT_API_KEY_LLM` | API key for OpenAI or Anthropic providers. Not needed for Ollama. |
 | `base_url` | `null` | `WOVEN_IMPRINT_BASE_URL` | Custom base URL for the provider. Use for vLLM, llama.cpp, LiteLLM, Azure endpoints, or a Gemma edge adapter bridge. |
+| `embedding_base_url` | `null` | `WOVEN_IMPRINT_EMBEDDING_BASE_URL` | Custom base URL for the **embedding** provider (applies when `embedding_provider: openai`). Overrides `base_url` for embedding calls only — use when chat and embeddings are served by two different OpenAI-compatible endpoints (e.g. vLLM for chat, llama.cpp for embeddings). `null` = embeddings fall back to `base_url`. The `ollama` embedding provider uses `ollama_host` instead. |
 | `num_ctx` | `8192` | `WOVEN_IMPRINT_NUM_CTX` | Context window size passed to Ollama. Higher = more conversation history but more VRAM. Most models support 4096-131072. |
 | `temperature` | `0.7` | — | Sampling temperature for character responses. Lower = more deterministic, higher = more creative. |
 | `temperature_json` | `0.3` | — | Temperature for JSON generation (fact extraction, relationship assessment). Lower for more reliable structured output. |
@@ -291,6 +293,56 @@ migration:
 
 ---
 
+## Maintenance Settings
+
+Controls the offline batch-maintenance runner (`woven-imprint maintain`,
+`Engine.run_maintenance()`, the `maintain` MCP tool / sidecar endpoint) — the
+"nightly job" that consolidates, deduplicates, scores, reflects, and
+regenerates callbacks. See the [Developer Guide](DEVELOPER_GUIDE.md#nightly-maintenance)
+for the job list.
+
+The budget counts logical LLM operations, not physical HTTP calls:
+`generate_json_robust`'s bounded retry can make up to 2 physical calls per
+budgeted operation, so `max_llm_calls_per_run: 50` can mean up to 100
+physical calls against a model that produces malformed JSON.
+
+```yaml
+maintenance:
+  max_llm_calls_per_run: 50
+  consolidate_chunk_size: 500
+  buffer_ttl_days: 14
+  buffer_hygiene_max_importance: 0.55
+  importance_scoring_batch: 30
+  dedup_scan_limit: 200
+  dedup_similarity: 0.92
+  reinforce_similarity: 0.85
+  contradiction_candidate_similarity: 0.70
+  contradiction_max_pairs: 10
+  reflect_importance_sum: 12.0
+  callbacks_refresh_limit: 5
+  callbacks_ready_cap: 10
+  callbacks_refresh_on_session_end: true
+```
+
+| Setting | Default | Env Var | Description |
+|---------|---------|---------|-------------|
+| `max_llm_calls_per_run` | `50` | `WOVEN_IMPRINT_MAINTENANCE_BUDGET` | LLM-call budget for one maintenance run. The budget is shared across all jobs (and across all characters in an `Engine.run_maintenance()` run); jobs that would exceed it are skipped with reason `budget exhausted`. Override per run with `woven-imprint maintain --budget N`. |
+| `consolidate_chunk_size` | `500` | — | Buffer memories loaded per consolidation pass. The maintenance `consolidate` job drains in bounded passes (up to 10 per run) until the buffer drops below the consolidation threshold or the budget runs out. |
+| `buffer_ttl_days` | `14` | — | `buffer_hygiene` job: buffer memories older than this are candidates for archiving. |
+| `buffer_hygiene_max_importance` | `0.55` | — | `buffer_hygiene` job: only stale buffer memories with importance **at or below** this are archived. Important memories survive the TTL sweep. |
+| `importance_scoring_batch` | `30` | — | `score_importance` job: max unscored buffer memories (importance still at the 0.5 default) scored per run, in one LLM call. |
+| `dedup_scan_limit` | `200` | — | Max core observation memories loaded for the `dedup`, `reinforce`, and `contradictions` scans. |
+| `dedup_similarity` | `0.92` | — | `dedup` job: cosine similarity at or above this marks two core observations as duplicates — the less important one is archived, the survivor's belief is reinforced. Also the upper bound of the contradiction candidate band. |
+| `reinforce_similarity` | `0.85` | — | `reinforce` job: a buffer memory this similar to a core observation reinforces that core memory's certainty (each core memory at most once per run). |
+| `contradiction_candidate_similarity` | `0.70` | — | `contradictions` job: lower bound of the similarity band. Pairs with similarity in `[this, dedup_similarity)` are same-topic-but-not-identical — candidates for an LLM contradiction check. |
+| `contradiction_max_pairs` | `10` | — | `contradictions` job: max candidate pairs sent to the LLM per run (highest-similarity first, one LLM call each). |
+| `reflect_importance_sum` | `12.0` | — | `reflect` job: trigger a reflection when the summed importance of buffer memories newer than the last reflection reaches this. Importance-weighted, so a few big moments trigger as readily as many small ones. |
+| `callbacks_refresh_limit` | `5` | — | Max callbacks generated per refresh (`callbacks` job, `refresh_callbacks()`, session-end refresh). One LLM call generates up to this many. |
+| `callbacks_ready_cap` | `10` | — | Max `ready` callbacks kept per character. After a refresh, the lowest-salience callbacks beyond the cap are marked `expired`. |
+| `callbacks_refresh_on_session_end` | `true` | — | Regenerate callbacks automatically in `end_session()` (one extra LLM call, non-fatal on failure). Disable if you only want callbacks refreshed by the nightly `maintain` run. |
+
+---
+
 ## Environment Variables
 
 All environment variables that Woven Imprint reads:
@@ -304,6 +356,7 @@ All environment variables that Woven Imprint reads:
 | `WOVEN_IMPRINT_EMBEDDING_PROVIDER` | `llm.embedding_provider` | `export WOVEN_IMPRINT_EMBEDDING_PROVIDER=openai` |
 | `WOVEN_IMPRINT_API_KEY_LLM` | `llm.api_key` | `export WOVEN_IMPRINT_API_KEY_LLM=sk-...` |
 | `WOVEN_IMPRINT_BASE_URL` | `llm.base_url` | `export WOVEN_IMPRINT_BASE_URL=http://localhost:8000/v1` |
+| `WOVEN_IMPRINT_EMBEDDING_BASE_URL` | `llm.embedding_base_url` | `export WOVEN_IMPRINT_EMBEDDING_BASE_URL=http://localhost:11801/v1` |
 | `WOVEN_IMPRINT_NUM_CTX` | `llm.num_ctx` | `export WOVEN_IMPRINT_NUM_CTX=32768` |
 | `WOVEN_IMPRINT_DB` | `storage.db_path` | `export WOVEN_IMPRINT_DB=/data/characters.db` |
 | `WOVEN_IMPRINT_API_KEY` | `server.api_key` | `export WOVEN_IMPRINT_API_KEY=my-secret` |
@@ -316,6 +369,7 @@ All environment variables that Woven Imprint reads:
 | `WOVEN_IMPRINT_MAX_FACTS` | `memory.max_facts_per_extraction` | `export WOVEN_IMPRINT_MAX_FACTS=10` |
 | `WOVEN_IMPRINT_METRICS_PATH` | `character.metrics_path` | `export WOVEN_IMPRINT_METRICS_PATH=~/.woven_imprint/metrics.jsonl` |
 | `WOVEN_IMPRINT_BACKGROUND` | `character.background` | `export WOVEN_IMPRINT_BACKGROUND=false` |
+| `WOVEN_IMPRINT_MAINTENANCE_BUDGET` | `maintenance.max_llm_calls_per_run` | `export WOVEN_IMPRINT_MAINTENANCE_BUDGET=100` |
 
 ---
 

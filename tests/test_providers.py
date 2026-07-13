@@ -109,3 +109,27 @@ class TestEnvVarOverride:
         with patch.dict(os.environ, {"WOVEN_IMPRINT_ENFORCE_CONSISTENCY": "false"}):
             cfg = reload_config()
             assert cfg.character.enforce_consistency is False
+
+
+def test_embedding_base_url_split(monkeypatch):
+    pytest.importorskip("openai")
+    from woven_imprint.config import reload_config
+    from woven_imprint.providers import create_embedding
+
+    monkeypatch.setenv("WOVEN_IMPRINT_EMBEDDING_PROVIDER", "openai")
+    monkeypatch.setenv("WOVEN_IMPRINT_BASE_URL", "http://chat:1/v1")
+    monkeypatch.setenv("WOVEN_IMPRINT_EMBEDDING_BASE_URL", "http://embed:2/v1")
+    monkeypatch.setenv("WOVEN_IMPRINT_API_KEY_LLM", "sk-test")
+    try:
+        cfg = reload_config()
+        emb = create_embedding(cfg)
+        assert "embed:2" in str(emb.client.base_url)
+    finally:
+        for var in (
+            "WOVEN_IMPRINT_EMBEDDING_PROVIDER",
+            "WOVEN_IMPRINT_BASE_URL",
+            "WOVEN_IMPRINT_EMBEDDING_BASE_URL",
+            "WOVEN_IMPRINT_API_KEY_LLM",
+        ):
+            monkeypatch.delenv(var)
+        reload_config()

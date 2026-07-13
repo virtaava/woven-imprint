@@ -281,6 +281,122 @@ class TestCharacterEndpoints:
 
 
 # ---------------------------------------------------------------------------
+# TestCallbacksHealthObserveMaintain
+# ---------------------------------------------------------------------------
+
+
+class TestCallbacks:
+    def test_get_callbacks_returns_list(self, app_client):
+        client, _token, _engine = app_client
+        created = _create_test_character(client, "CallbackChar")
+        char_id = created["id"]
+
+        resp = client.get(f"/api/characters/{char_id}/callbacks")
+        assert resp.status_code == 200
+        assert isinstance(resp.json()["callbacks"], list)
+
+    def test_get_callbacks_respects_limit(self, app_client):
+        client, _token, _engine = app_client
+        created = _create_test_character(client, "CallbackLimit")
+        char_id = created["id"]
+
+        resp = client.get(f"/api/characters/{char_id}/callbacks?limit=1")
+        assert resp.status_code == 200
+        assert isinstance(resp.json()["callbacks"], list)
+
+    def test_get_callbacks_nonexistent_character(self, app_client):
+        client, _token, _engine = app_client
+        resp = client.get("/api/characters/nonexistent-id-999/callbacks")
+        assert resp.status_code == 404
+
+
+class TestCharacterHealth:
+    def test_get_health_returns_subsystems(self, app_client):
+        client, _token, _engine = app_client
+        created = _create_test_character(client, "HealthChar")
+        char_id = created["id"]
+
+        resp = client.get(f"/api/characters/{char_id}/health")
+        assert resp.status_code == 200
+        assert "subsystems" in resp.json()
+
+    def test_get_health_nonexistent_character(self, app_client):
+        client, _token, _engine = app_client
+        resp = client.get("/api/characters/nonexistent-id-999/health")
+        assert resp.status_code == 404
+
+
+class TestObserve:
+    def test_observe_returns_memory_id(self, app_client):
+        client, _token, _engine = app_client
+        created = _create_test_character(client, "ObserveChar")
+        char_id = created["id"]
+
+        resp = client.post(
+            "/api/observe",
+            json={"character_id": char_id, "event": "Keeper fed you", "source": "sim"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["memory_id"]
+        assert "Keeper fed you" in data["content"]
+
+    def test_observe_default_source(self, app_client):
+        client, _token, _engine = app_client
+        created = _create_test_character(client, "ObserveDefault")
+        char_id = created["id"]
+
+        resp = client.post(
+            "/api/observe",
+            json={"character_id": char_id, "event": "It rained all day"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["memory_id"]
+
+    def test_observe_nonexistent_character(self, app_client):
+        client, _token, _engine = app_client
+        resp = client.post(
+            "/api/observe",
+            json={"character_id": "nonexistent-id-999", "event": "something"},
+        )
+        assert resp.status_code == 404
+
+
+class TestMaintain:
+    def test_maintain_with_jobs_returns_report(self, app_client):
+        client, _token, _engine = app_client
+        created = _create_test_character(client, "MaintainChar")
+        char_id = created["id"]
+
+        resp = client.post(
+            f"/api/characters/{char_id}/maintain",
+            json={"jobs": ["buffer_hygiene"]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["character_id"] == char_id
+        assert "buffer_hygiene" in data["jobs"]
+
+    def test_maintain_no_body_runs_default_jobs(self, app_client):
+        client, _token, _engine = app_client
+        created = _create_test_character(client, "MaintainDefault")
+        char_id = created["id"]
+
+        resp = client.post(f"/api/characters/{char_id}/maintain")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["character_id"] == char_id
+
+    def test_maintain_nonexistent_character(self, app_client):
+        client, _token, _engine = app_client
+        resp = client.post(
+            "/api/characters/nonexistent-id-999/maintain",
+            json={"jobs": ["buffer_hygiene"]},
+        )
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # TestProviderConfig
 # ---------------------------------------------------------------------------
 

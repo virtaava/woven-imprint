@@ -7,9 +7,13 @@ from woven_imprint.server.services import (
     create_character_service,
     delete_character_service,
     export_character_service,
+    get_callbacks_service,
+    health_service,
     import_character_service,
     list_characters_service,
     get_character_state_service,
+    maintain_service,
+    observe_service,
     recall_memories_service,
     record_message_service,
     reflect_character_service,
@@ -329,3 +333,72 @@ class TestReflectCharacter:
     def test_raises_keyerror_for_unknown_id(self, engine):
         with pytest.raises(KeyError):
             reflect_character_service(engine, "nonexistent-id")
+
+
+# ── observe_service ───────────────────────────────────────────────────
+
+
+class TestObserveService:
+    def test_observe_records_event_and_returns_memory(self, engine):
+        created = create_character_service(engine, "Svc", {}, None)
+        result = observe_service(engine, created["id"], "Keeper fed you", source="sim")
+        assert result["memory_id"]
+        assert "Keeper fed you" in result["content"]
+
+    def test_observe_default_source_is_world(self, engine):
+        created = create_character_service(engine, "Svc2", {}, None)
+        result = observe_service(engine, created["id"], "It rained all day")
+        assert result["memory_id"]
+
+    def test_raises_keyerror_for_unknown_id(self, engine):
+        with pytest.raises(KeyError):
+            observe_service(engine, "nonexistent-id", "an event")
+
+
+# ── get_callbacks_service ───────────────────────────────────────────────
+
+
+class TestGetCallbacksService:
+    def test_returns_list(self, engine):
+        created = create_character_service(engine, "Alice", {}, None)
+        result = get_callbacks_service(engine, created["id"], limit=3)
+        assert isinstance(result, list)
+
+    def test_default_limit(self, engine):
+        created = create_character_service(engine, "Alice", {}, None)
+        result = get_callbacks_service(engine, created["id"])
+        assert isinstance(result, list)
+
+    def test_raises_keyerror_for_unknown_id(self, engine):
+        with pytest.raises(KeyError):
+            get_callbacks_service(engine, "nonexistent-id")
+
+
+# ── health_service ────────────────────────────────────────────────────
+
+
+class TestHealthService:
+    def test_returns_subsystems_dict(self, engine):
+        created = create_character_service(engine, "Alice", {}, None)
+        h = health_service(engine, created["id"])
+        assert "subsystems" in h
+
+    def test_raises_keyerror_for_unknown_id(self, engine):
+        with pytest.raises(KeyError):
+            health_service(engine, "nonexistent-id")
+
+
+# ── maintain_service ─────────────────────────────────────────────────────
+
+
+class TestMaintainService:
+    def test_runs_maintenance_and_returns_single_report(self, engine):
+        created = create_character_service(engine, "Alice", {}, None)
+        report = maintain_service(engine, created["id"], jobs=["buffer_hygiene"])
+        assert report["character_id"] == created["id"]
+        assert "jobs" in report
+        assert "buffer_hygiene" in report["jobs"]
+
+    def test_raises_keyerror_for_unknown_id(self, engine):
+        with pytest.raises(KeyError):
+            maintain_service(engine, "nonexistent-id")

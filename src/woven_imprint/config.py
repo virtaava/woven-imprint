@@ -29,6 +29,7 @@ class LLMConfig:
     embedding_provider: str = "ollama"  # ollama, openai
     api_key: str | None = None
     base_url: str | None = None
+    embedding_base_url: str | None = None
     num_ctx: int = 8192
     temperature: float = 0.7
     temperature_json: float = 0.3
@@ -107,6 +108,24 @@ class CharacterConfig:
 
 
 @dataclass
+class MaintenanceConfig:
+    max_llm_calls_per_run: int = 50
+    consolidate_chunk_size: int = 500
+    buffer_ttl_days: int = 14
+    buffer_hygiene_max_importance: float = 0.55
+    importance_scoring_batch: int = 30
+    dedup_scan_limit: int = 200
+    dedup_similarity: float = 0.92
+    reinforce_similarity: float = 0.85
+    contradiction_candidate_similarity: float = 0.70
+    contradiction_max_pairs: int = 10
+    reflect_importance_sum: float = 12.0
+    callbacks_refresh_limit: int = 5
+    callbacks_ready_cap: int = 10
+    callbacks_refresh_on_session_end: bool = True
+
+
+@dataclass
 class ServerConfig:
     api_port: int = 8650
     sidecar_port: int = 8765
@@ -148,6 +167,7 @@ class WovenConfig:
     server: ServerConfig = field(default_factory=ServerConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     migration: MigrationConfig = field(default_factory=MigrationConfig)
+    maintenance: MaintenanceConfig = field(default_factory=MaintenanceConfig)
 
 
 # Global singleton
@@ -226,6 +246,7 @@ def _apply_env(cfg: WovenConfig) -> None:
         "WOVEN_IMPRINT_EMBEDDING_PROVIDER": ("llm", "embedding_provider"),
         "WOVEN_IMPRINT_API_KEY_LLM": ("llm", "api_key"),
         "WOVEN_IMPRINT_BASE_URL": ("llm", "base_url"),
+        "WOVEN_IMPRINT_EMBEDDING_BASE_URL": ("llm", "embedding_base_url"),
         "WOVEN_IMPRINT_NUM_CTX": ("llm", "num_ctx"),
         "WOVEN_IMPRINT_DB": ("storage", "db_path"),
         "WOVEN_IMPRINT_API_KEY": ("server", "api_key"),
@@ -240,6 +261,7 @@ def _apply_env(cfg: WovenConfig) -> None:
         "WOVEN_IMPRINT_MAX_FACTS": ("memory", "max_facts_per_extraction"),
         "WOVEN_IMPRINT_METRICS_PATH": ("character", "metrics_path"),
         "WOVEN_IMPRINT_BACKGROUND": ("character", "background"),
+        "WOVEN_IMPRINT_MAINTENANCE_BUDGET": ("maintenance", "max_llm_calls_per_run"),
     }
 
     for env_var, (section, key) in env_map.items():
@@ -317,6 +339,7 @@ llm:
   embedding_provider: ollama    # ollama, openai
   # api_key: null               # API key for openai/anthropic providers
   # base_url: null              # Custom base URL for provider
+  # embedding_base_url: null    # Custom base URL for embedding provider (overrides base_url for embeddings)
   num_ctx: 8192
   temperature: 0.7
   temperature_json: 0.3
@@ -401,6 +424,22 @@ migration:
   max_messages: 0             # 0 = unlimited
   max_message_length: 0       # 0 = unlimited
   chunk_size: 50
+
+maintenance:
+  max_llm_calls_per_run: 50
+  consolidate_chunk_size: 500
+  buffer_ttl_days: 14
+  buffer_hygiene_max_importance: 0.55
+  importance_scoring_batch: 30
+  dedup_scan_limit: 200
+  dedup_similarity: 0.92
+  reinforce_similarity: 0.85
+  contradiction_candidate_similarity: 0.70
+  contradiction_max_pairs: 10
+  reflect_importance_sum: 12.0
+  callbacks_refresh_limit: 5
+  callbacks_ready_cap: 10
+  callbacks_refresh_on_session_end: true
 """
     p.write_text(content)
     return p

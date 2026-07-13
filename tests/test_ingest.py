@@ -64,6 +64,9 @@ class FakeLLM:
 
         return {}
 
+    def generate_json_robust(self, messages, temperature=0.3, **kw):
+        return self.generate_json(messages, temperature=temperature, **kw)
+
 
 def _setup():
     llm = FakeLLM()

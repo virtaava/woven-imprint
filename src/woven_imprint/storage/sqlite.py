@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import struct
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +111,24 @@ CREATE TABLE IF NOT EXISTS session_turns (
 );
 CREATE INDEX IF NOT EXISTS idx_session_turns_session ON session_turns(session_id, seq);
 """,
+    4: """
+CREATE TABLE IF NOT EXISTS callbacks (
+    id TEXT PRIMARY KEY,
+    character_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('open_thread', 'callback', 'milestone', 'curiosity')),
+    hook TEXT NOT NULL,
+    source_memory_ids JSON DEFAULT '[]',
+    salience REAL DEFAULT 0.5,
+    status TEXT DEFAULT 'ready' CHECK(status IN ('ready', 'consumed', 'expired')),
+    created_at DATETIME DEFAULT (datetime('now')),
+    consumed_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_callbacks_character ON callbacks(character_id, status, salience);
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+""",
 }
 
 
@@ -125,10 +144,24 @@ def _deserialize_embedding(blob: bytes) -> list[float]:
 
 
 class SQLiteStorage:
-    """SQLite-backed storage for characters, memories, relationships."""
+    """SQLite-backed storage for characters, memories, relationships.
+
+    A single connection (``check_same_thread=False``) is shared between the
+    caller thread and any BackgroundWorker threads (assessment, callbacks,
+    etc). sqlite3's C-level statement handling is not safe to interleave
+    across threads on one connection — concurrent execute/commit calls can
+    corrupt cursor/transaction state (``cannot commit - no transaction is
+    active``, ``InterfaceError``, even a raw ``SystemError``). ``self._lock``
+    (an ``RLock``, reentrant so a method can call another locked method) is
+    held across every unit of work that touches ``self._conn`` — reads
+    included, since statement iteration races too. Per-thread connections are
+    deliberately not used: this class also backs ``:memory:`` databases,
+    which are private per-connection and would break under that model.
+    """
 
     def __init__(self, db_path: str | Path = ":memory:"):
         self.db_path = str(db_path)
+        self._lock = threading.RLock()
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -137,29 +170,35 @@ class SQLiteStorage:
         self._init_schema()
 
     def _init_schema(self) -> None:
-        self._conn.executescript(_SCHEMA)
-        self._run_migrations()
+        with self._lock:
+            self._conn.executescript(_SCHEMA)
+            self._run_migrations()
+            self.meta_set("schema_semver", "0.6.0-dev")
 
     def _run_migrations(self) -> None:
         """Apply pending schema migrations."""
-        try:
-            row = self._conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
-            current = row[0] if row and row[0] else 1
-        except Exception:
-            current = 1
+        with self._lock:
+            try:
+                row = self._conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+                current = row[0] if row and row[0] else 1
+            except Exception:
+                current = 1
 
-        for version in sorted(_MIGRATIONS.keys()):
-            if version > current:
-                self._conn.executescript(_MIGRATIONS[version])
-                self._conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
-                self._commit()
+            for version in sorted(_MIGRATIONS.keys()):
+                if version > current:
+                    self._conn.executescript(_MIGRATIONS[version])
+                    self._conn.execute(
+                        "INSERT INTO schema_version (version) VALUES (?)", (version,)
+                    )
+                    self._commit()
 
     def _commit(self) -> None:
-        """Commit the current transaction."""
+        """Commit the current transaction. Caller must hold self._lock."""
         self._conn.commit()
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
     # ── Characters ──────────────────────────────────────────────
 
@@ -172,49 +211,54 @@ class SQLiteStorage:
         state: dict | None = None,
     ) -> None:
         state_json = json.dumps(state) if state is not None else None
-        if state_json is not None:
-            self._conn.execute(
-                """INSERT INTO characters (id, name, persona, birthdate, state)
-                   VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(id) DO UPDATE SET
-                       name=excluded.name, persona=excluded.persona,
-                       birthdate=excluded.birthdate, state=excluded.state,
-                       updated_at=datetime('now')""",
-                (char_id, name, json.dumps(persona), birthdate, state_json),
-            )
-        else:
-            # Don't overwrite existing state when state param is not provided
-            self._conn.execute(
-                """INSERT INTO characters (id, name, persona, birthdate, state)
-                   VALUES (?, ?, ?, ?, '{}')
-                   ON CONFLICT(id) DO UPDATE SET
-                       name=excluded.name, persona=excluded.persona,
-                       birthdate=excluded.birthdate,
-                       updated_at=datetime('now')""",
-                (char_id, name, json.dumps(persona), birthdate),
-            )
-        self._commit()
+        with self._lock:
+            if state_json is not None:
+                self._conn.execute(
+                    """INSERT INTO characters (id, name, persona, birthdate, state)
+                       VALUES (?, ?, ?, ?, ?)
+                       ON CONFLICT(id) DO UPDATE SET
+                           name=excluded.name, persona=excluded.persona,
+                           birthdate=excluded.birthdate, state=excluded.state,
+                           updated_at=datetime('now')""",
+                    (char_id, name, json.dumps(persona), birthdate, state_json),
+                )
+            else:
+                # Don't overwrite existing state when state param is not provided
+                self._conn.execute(
+                    """INSERT INTO characters (id, name, persona, birthdate, state)
+                       VALUES (?, ?, ?, ?, '{}')
+                       ON CONFLICT(id) DO UPDATE SET
+                           name=excluded.name, persona=excluded.persona,
+                           birthdate=excluded.birthdate,
+                           updated_at=datetime('now')""",
+                    (char_id, name, json.dumps(persona), birthdate),
+                )
+            self._commit()
 
     def load_character(self, char_id: str) -> dict | None:
-        row = self._conn.execute("SELECT * FROM characters WHERE id = ?", (char_id,)).fetchone()
-        if not row:
-            return None
-        d = dict(row)
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM characters WHERE id = ?", (char_id,)).fetchone()
+            if not row:
+                return None
+            d = dict(row)
         d["persona"] = json.loads(d["persona"])
         d["state"] = json.loads(d["state"])
         return d
 
     def list_characters(self) -> list[dict]:
-        rows = self._conn.execute("SELECT id, name, created_at FROM characters").fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            rows = self._conn.execute("SELECT id, name, created_at FROM characters").fetchall()
+            return [dict(r) for r in rows]
 
     def delete_character(self, char_id: str) -> None:
-        self._conn.execute("DELETE FROM memories WHERE character_id = ?", (char_id,))
-        self._conn.execute("DELETE FROM relationships WHERE character_id = ?", (char_id,))
-        self._conn.execute("DELETE FROM session_turns WHERE character_id = ?", (char_id,))
-        self._conn.execute("DELETE FROM sessions WHERE character_id = ?", (char_id,))
-        self._conn.execute("DELETE FROM characters WHERE id = ?", (char_id,))
-        self._commit()
+        with self._lock:
+            self._conn.execute("DELETE FROM memories WHERE character_id = ?", (char_id,))
+            self._conn.execute("DELETE FROM relationships WHERE character_id = ?", (char_id,))
+            self._conn.execute("DELETE FROM session_turns WHERE character_id = ?", (char_id,))
+            self._conn.execute("DELETE FROM callbacks WHERE character_id = ?", (char_id,))
+            self._conn.execute("DELETE FROM sessions WHERE character_id = ?", (char_id,))
+            self._conn.execute("DELETE FROM characters WHERE id = ?", (char_id,))
+            self._commit()
 
     # ── Memories ────────────────────────────────────────────────
 
@@ -222,98 +266,117 @@ class SQLiteStorage:
         """Save a memory dict. Must have: id, character_id, tier, content."""
         emb = memory.get("embedding")
         emb_blob = _serialize_embedding(emb) if emb else None
-        self._conn.execute(
-            """INSERT INTO memories
-               (id, character_id, tier, content, embedding, importance, certainty,
-                status, source_refs, session_id, role, metadata)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(id) DO UPDATE SET
-                   content=excluded.content, embedding=excluded.embedding,
-                   importance=excluded.importance, certainty=excluded.certainty,
-                   status=excluded.status, source_refs=excluded.source_refs,
-                   metadata=excluded.metadata, accessed_at=datetime('now')""",
-            (
-                memory["id"],
-                memory["character_id"],
-                memory["tier"],
-                memory["content"],
-                emb_blob,
-                memory.get("importance", 0.5),
-                memory.get("certainty", 1.0),
-                memory.get("status", "active"),
-                json.dumps(memory.get("source_refs", [])),
-                memory.get("session_id"),
-                memory.get("role"),
-                json.dumps(memory.get("metadata", {})),
-            ),
-        )
-        self._commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO memories
+                   (id, character_id, tier, content, embedding, importance, certainty,
+                    status, source_refs, session_id, role, metadata)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       content=excluded.content, embedding=excluded.embedding,
+                       importance=excluded.importance, certainty=excluded.certainty,
+                       status=excluded.status, source_refs=excluded.source_refs,
+                       metadata=excluded.metadata, accessed_at=datetime('now')""",
+                (
+                    memory["id"],
+                    memory["character_id"],
+                    memory["tier"],
+                    memory["content"],
+                    emb_blob,
+                    memory.get("importance", 0.5),
+                    memory.get("certainty", 1.0),
+                    memory.get("status", "active"),
+                    json.dumps(memory.get("source_refs", [])),
+                    memory.get("session_id"),
+                    memory.get("role"),
+                    json.dumps(memory.get("metadata", {})),
+                ),
+            )
+            self._commit()
 
     def get_memories(
-        self, character_id: str, tier: str | None = None, status: str = "active", limit: int = 1000
+        self,
+        character_id: str,
+        tier: str | None = None,
+        status: str = "active",
+        limit: int = 1000,
+        oldest_first: bool = False,
     ) -> list[dict]:
-        """Retrieve memories for a character, optionally filtered by tier."""
+        """Retrieve memories for a character, optionally filtered by tier.
+
+        When oldest_first=True, orders by created_at ASC instead of DESC,
+        ensuring the LIMIT captures the oldest rows (useful for TTL cleanup).
+        """
         q = "SELECT *, rowid FROM memories WHERE character_id = ? AND status = ?"
         params: list[Any] = [character_id, status]
         if tier:
             q += " AND tier = ?"
             params.append(tier)
-        q += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
+        if oldest_first:
+            q += " ORDER BY created_at ASC, rowid ASC LIMIT ?"
+        else:
+            q += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
         params.append(limit)
-        rows = self._conn.execute(q, params).fetchall()
-        return [self._row_to_memory(r) for r in rows]
+        with self._lock:
+            rows = self._conn.execute(q, params).fetchall()
+            return [self._row_to_memory(r) for r in rows]
 
     def get_memory(self, memory_id: str) -> dict | None:
-        row = self._conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
-        return self._row_to_memory(row) if row else None
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
+            return self._row_to_memory(row) if row else None
 
     def update_memory_status(
         self, memory_id: str, status: str, certainty: float | None = None
     ) -> None:
-        if certainty is not None:
-            self._conn.execute(
-                "UPDATE memories SET status = ?, certainty = ? WHERE id = ?",
-                (status, certainty, memory_id),
-            )
-        else:
-            self._conn.execute(
-                "UPDATE memories SET status = ? WHERE id = ?",
-                (status, memory_id),
-            )
-        self._commit()
+        with self._lock:
+            if certainty is not None:
+                self._conn.execute(
+                    "UPDATE memories SET status = ?, certainty = ? WHERE id = ?",
+                    (status, certainty, memory_id),
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE memories SET status = ? WHERE id = ?",
+                    (status, memory_id),
+                )
+            self._commit()
 
     def update_memory_certainty(self, memory_id: str, delta: float) -> float:
         """Adjust certainty by delta, clamp to [0, 1]. Returns new value."""
-        row = self._conn.execute(
-            "SELECT certainty FROM memories WHERE id = ?", (memory_id,)
-        ).fetchone()
-        if not row:
-            return 0.0
-        new_val = max(0.0, min(1.0, row["certainty"] + delta))
-        self._conn.execute(
-            "UPDATE memories SET certainty = ? WHERE id = ?",
-            (new_val, memory_id),
-        )
-        self._commit()
-        return new_val
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT certainty FROM memories WHERE id = ?", (memory_id,)
+            ).fetchone()
+            if not row:
+                return 0.0
+            new_val = max(0.0, min(1.0, row["certainty"] + delta))
+            self._conn.execute(
+                "UPDATE memories SET certainty = ? WHERE id = ?",
+                (new_val, memory_id),
+            )
+            self._commit()
+            return new_val
 
     def touch_memory(self, memory_id: str) -> None:
         """Update accessed_at timestamp."""
-        self._conn.execute(
-            "UPDATE memories SET accessed_at = datetime('now') WHERE id = ?",
-            (memory_id,),
-        )
-        self._commit()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE memories SET accessed_at = datetime('now') WHERE id = ?",
+                (memory_id,),
+            )
+            self._commit()
 
     def touch_memories_batch(self, memory_ids: list[str]) -> None:
         """Update accessed_at for multiple memories in one transaction."""
         if not memory_ids:
             return
-        self._conn.executemany(
-            "UPDATE memories SET accessed_at = datetime('now') WHERE id = ?",
-            [(mid,) for mid in memory_ids],
-        )
-        self._commit()
+        with self._lock:
+            self._conn.executemany(
+                "UPDATE memories SET accessed_at = datetime('now') WHERE id = ?",
+                [(mid,) for mid in memory_ids],
+            )
+            self._commit()
 
     def count_memories(self, character_id: str, tier: str | None = None) -> int:
         q = "SELECT COUNT(*) as c FROM memories WHERE character_id = ? AND status = 'active'"
@@ -321,7 +384,8 @@ class SQLiteStorage:
         if tier:
             q += " AND tier = ?"
             params.append(tier)
-        return self._conn.execute(q, params).fetchone()["c"]
+        with self._lock:
+            return self._conn.execute(q, params).fetchone()["c"]
 
     def fts_search(self, character_id: str, query: str, limit: int = 50) -> list[dict]:
         """Full-text search using FTS5 (BM25 ranking).
@@ -336,14 +400,15 @@ class SQLiteStorage:
             return []
         safe_query = " OR ".join(f'"{w}"' for w in words[:20])
 
-        rows = self._conn.execute(
-            """SELECT m.*, m.rowid AS rowid, rank FROM memories_fts
-               JOIN memories m ON memories_fts.rowid = m.rowid
-               WHERE memories_fts MATCH ? AND m.character_id = ? AND m.status = 'active'
-               ORDER BY rank LIMIT ?""",
-            (safe_query, character_id, limit),
-        ).fetchall()
-        return [self._row_to_memory(r) for r in rows]
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT m.*, m.rowid AS rowid, rank FROM memories_fts
+                   JOIN memories m ON memories_fts.rowid = m.rowid
+                   WHERE memories_fts MATCH ? AND m.character_id = ? AND m.status = 'active'
+                   ORDER BY rank LIMIT ?""",
+                (safe_query, character_id, limit),
+            ).fetchall()
+            return [self._row_to_memory(r) for r in rows]
 
     def _row_to_memory(self, row: sqlite3.Row) -> dict:
         d = dict(row)
@@ -356,107 +421,198 @@ class SQLiteStorage:
     # ── Relationships ───────────────────────────────────────────
 
     def save_relationship(self, rel: dict) -> None:
-        self._conn.execute(
-            """INSERT INTO relationships
-               (id, character_id, target_id, dimensions, power_balance, type,
-                trajectory, key_moments)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(id) DO UPDATE SET
-                   dimensions=excluded.dimensions, power_balance=excluded.power_balance,
-                   type=excluded.type, trajectory=excluded.trajectory,
-                   key_moments=excluded.key_moments, last_interaction=datetime('now')""",
-            (
-                rel["id"],
-                rel["character_id"],
-                rel["target_id"],
-                json.dumps(rel["dimensions"]),
-                rel.get("power_balance", 0.0),
-                rel.get("type", "stranger"),
-                rel.get("trajectory", "stable"),
-                json.dumps(rel.get("key_moments", [])),
-            ),
-        )
-        self._commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO relationships
+                   (id, character_id, target_id, dimensions, power_balance, type,
+                    trajectory, key_moments)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       dimensions=excluded.dimensions, power_balance=excluded.power_balance,
+                       type=excluded.type, trajectory=excluded.trajectory,
+                       key_moments=excluded.key_moments, last_interaction=datetime('now')""",
+                (
+                    rel["id"],
+                    rel["character_id"],
+                    rel["target_id"],
+                    json.dumps(rel["dimensions"]),
+                    rel.get("power_balance", 0.0),
+                    rel.get("type", "stranger"),
+                    rel.get("trajectory", "stable"),
+                    json.dumps(rel.get("key_moments", [])),
+                ),
+            )
+            self._commit()
 
     def get_relationship(self, character_id: str, target_id: str) -> dict | None:
-        row = self._conn.execute(
-            "SELECT * FROM relationships WHERE character_id = ? AND target_id = ?",
-            (character_id, target_id),
-        ).fetchone()
-        if not row:
-            return None
-        d = dict(row)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM relationships WHERE character_id = ? AND target_id = ?",
+                (character_id, target_id),
+            ).fetchone()
+            if not row:
+                return None
+            d = dict(row)
         d["dimensions"] = json.loads(d["dimensions"])
         d["key_moments"] = json.loads(d["key_moments"])
         return d
 
     def get_relationships(self, character_id: str) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT * FROM relationships WHERE character_id = ?",
-            (character_id,),
-        ).fetchall()
-        result = []
-        for row in rows:
-            d = dict(row)
-            d["dimensions"] = json.loads(d["dimensions"])
-            d["key_moments"] = json.loads(d["key_moments"])
-            result.append(d)
-        return result
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM relationships WHERE character_id = ?",
+                (character_id,),
+            ).fetchall()
+            result = []
+            for row in rows:
+                d = dict(row)
+                d["dimensions"] = json.loads(d["dimensions"])
+                d["key_moments"] = json.loads(d["key_moments"])
+                result.append(d)
+            return result
 
     # ── Sessions ────────────────────────────────────────────────
 
     def save_session(self, session: dict) -> None:
-        self._conn.execute(
-            """INSERT INTO sessions (id, character_id, summary)
-               VALUES (?, ?, ?)
-               ON CONFLICT(id) DO UPDATE SET
-                   summary=excluded.summary, ended_at=datetime('now')""",
-            (session["id"], session["character_id"], session.get("summary")),
-        )
-        self._commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO sessions (id, character_id, summary)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       summary=excluded.summary, ended_at=datetime('now')""",
+                (session["id"], session["character_id"], session.get("summary")),
+            )
+            self._commit()
 
     def get_sessions(self, character_id: str, limit: int = 20) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT * FROM sessions WHERE character_id = ? ORDER BY started_at DESC LIMIT ?",
-            (character_id, limit),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM sessions WHERE character_id = ? ORDER BY started_at DESC LIMIT ?",
+                (character_id, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     def rename_session(self, session_id: str, alias: str) -> None:
         """Set or update the alias for a session."""
-        self._conn.execute(
-            "UPDATE sessions SET alias = ? WHERE id = ?",
-            (alias, session_id),
-        )
-        self._commit()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE sessions SET alias = ? WHERE id = ?",
+                (alias, session_id),
+            )
+            self._commit()
 
     def reopen_session(self, session_id: str) -> None:
         """Clear ended_at so the session is active again."""
-        self._conn.execute(
-            "UPDATE sessions SET ended_at = NULL WHERE id = ?",
-            (session_id,),
-        )
-        self._commit()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE sessions SET ended_at = NULL WHERE id = ?",
+                (session_id,),
+            )
+            self._commit()
 
     # ── Session turns (durable conversation buffer) ────────────────
 
     def add_session_turn(
         self, session_id: str, character_id: str, seq: int, role: str, content: str
     ) -> None:
-        self._conn.execute(
-            "INSERT INTO session_turns (session_id, character_id, seq, role, content) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (session_id, character_id, seq, role, content),
-        )
-        self._commit()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO session_turns (session_id, character_id, seq, role, content) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (session_id, character_id, seq, role, content),
+            )
+            self._commit()
 
     def get_session_turns(self, session_id: str, tail: int | None = None) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT seq, role, content, created_at FROM session_turns "
-            "WHERE session_id = ? ORDER BY seq",
-            (session_id,),
-        ).fetchall()
-        turns = [dict(r) for r in rows]
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT seq, role, content, created_at FROM session_turns "
+                "WHERE session_id = ? ORDER BY seq",
+                (session_id,),
+            ).fetchall()
+            turns = [dict(r) for r in rows]
         if tail is not None:
             turns = turns[-tail:]
         return turns
+
+    # ── Callbacks ─────────────────────────────────────────────
+
+    def save_callback(self, cb: dict) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO callbacks "
+                "(id, character_id, kind, hook, source_memory_ids, salience, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    cb["id"],
+                    cb["character_id"],
+                    cb["kind"],
+                    cb["hook"],
+                    json.dumps(cb.get("source_memory_ids", [])),
+                    cb.get("salience", 0.5),
+                    cb.get("status", "ready"),
+                ),
+            )
+            self._commit()
+
+    def get_callbacks(
+        self, character_id: str, status: str = "ready", limit: int = 10
+    ) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM callbacks WHERE character_id = ? AND status = ? "
+                "ORDER BY salience DESC, created_at DESC LIMIT ?",
+                (character_id, status, limit),
+            ).fetchall()
+            out = []
+            for r in rows:
+                d = dict(r)
+                d["source_memory_ids"] = json.loads(d.get("source_memory_ids") or "[]")
+                out.append(d)
+            return out
+
+    def mark_callback(self, callback_id: str, status: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE callbacks SET status = ?, "
+                "consumed_at = CASE WHEN ? = 'consumed' THEN datetime('now') ELSE consumed_at END "
+                "WHERE id = ?",
+                (status, status, callback_id),
+            )
+            self._commit()
+
+    # ── Meta ──────────────────────────────────────────────────
+
+    def meta_get(self, key: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+            return row[0] if row else None
+
+    def meta_set(self, key: str, value: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, str(value)),
+            )
+            self._commit()
+
+    # ── Memory maintenance helpers ────────────────────────────
+
+    def set_memory_importance(self, memory_id: str, importance: float) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE memories SET importance = ? WHERE id = ?",
+                (max(0.0, min(1.0, importance)), memory_id),
+            )
+            self._commit()
+
+    def archive_memories_batch(self, memory_ids: list[str]) -> None:
+        if not memory_ids:
+            return
+        with self._lock:
+            self._conn.executemany(
+                "UPDATE memories SET status = 'archived' WHERE id = ?",
+                [(mid,) for mid in memory_ids],
+            )
+            self._commit()

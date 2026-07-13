@@ -43,6 +43,9 @@ class FakeLLM:
             "tension": 0.0,
         }
 
+    def generate_json_robust(self, messages, temperature=0.3, **kw):
+        return self.generate_json(messages, temperature=temperature)
+
 
 def _make_character(storage, name, char_id):
     persona = PersonaModel(

@@ -40,3 +40,16 @@ class LLMProvider(ABC):
         differently in stream mode — document per provider.
         """
         yield self.generate(messages, temperature=temperature, max_tokens=max_tokens)
+
+    def generate_json_robust(
+        self, messages: list[dict[str, str]], temperature: float = 0.3
+    ) -> dict[str, Any] | list[Any]:
+        """generate_json with one bounded retry at temperature 0.1 on parse failure.
+
+        Uniform policy for subsystem JSON calls on weak/small models
+        (mirrors the consistency checker's existing retry behavior).
+        """
+        try:
+            return self.generate_json(messages, temperature=temperature)
+        except ValueError:
+            return self.generate_json(messages, temperature=0.1)

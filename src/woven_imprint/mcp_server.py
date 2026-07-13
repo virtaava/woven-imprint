@@ -298,6 +298,79 @@ def get_stats(character_id: str) -> str:
 
 
 @mcp.tool()
+def get_callbacks(character_id: str, limit: int = 3) -> str:
+    """Get ready-to-use paraphrased conversation hooks (instant DB read).
+
+    Args:
+        character_id: The character's ID.
+        limit: Maximum number of callbacks to return.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+
+    callbacks = char.get_callbacks(limit)
+    return json.dumps({"character": char.name, "callbacks": callbacks}, default=str)
+
+
+@mcp.tool()
+def observe(character_id: str, event: str, source: str = "world", user_id: str = "") -> str:
+    """Record a world event as a memory — no dialogue pair, no generation.
+
+    Use this to narrate ground truth into the character's memory from a
+    deterministic game/sim ("Keeper fed you", "It rained all day").
+
+    Args:
+        character_id: The character's ID.
+        event: Description of what happened.
+        source: Who/what triggered the event (default "world").
+        user_id: Optional user identifier for relationship tracking. Leave
+            empty for no relationship assessment.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+
+    mem = char.observe(event, source=source, user_id=user_id or None)
+    return json.dumps({"character": char.name, "memory_id": mem["id"], "content": mem["content"]})
+
+
+@mcp.tool()
+def get_health(character_id: str) -> str:
+    """Get per-subsystem success/failure counters for a character.
+
+    Makes silent small-model degradation visible (e.g. memory extraction
+    quietly failing).
+
+    Args:
+        character_id: The character's ID.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+
+    return json.dumps(char.health(), default=str)
+
+
+@mcp.tool()
+def maintain(character_id: str, jobs: str = "") -> str:
+    """Run offline maintenance jobs for a character (the nightly-batch primitive).
+
+    Args:
+        character_id: The character's ID.
+        jobs: Comma-separated job names (e.g. "consolidate,buffer_hygiene"),
+            or empty to run all default jobs.
+    """
+    engine = _get_engine()
+    job_list = [j.strip() for j in jobs.split(",") if j.strip()] or None
+    reports = engine.run_maintenance(character_id=character_id, jobs=job_list)
+    if not reports:
+        return json.dumps({"error": f"Character {character_id} not found"})
+
+    return json.dumps(reports[0], default=str)
+
+
+@mcp.tool()
 def delete_character(character_id: str) -> str:
     """Permanently delete a character and all their data.
 

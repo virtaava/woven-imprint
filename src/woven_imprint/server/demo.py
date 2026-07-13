@@ -23,6 +23,8 @@ from woven_imprint.engine import Engine
 from woven_imprint.server.models import (
     ChatCompletionRequest,
     CreateCharacterRequest,
+    MaintainRequest,
+    ObserveRequest,
     ProviderConfigRequest,
     RecordMessageRequest,
 )
@@ -33,11 +35,13 @@ from woven_imprint.server.services import (
     extract_last_user_message,
     extract_user_id_from_messages,
     find_character_by_name_or_id,
+    get_callbacks_service,
     get_character_state_service,
     get_relationship_service,
     import_character_service,
     list_characters_service,
     list_sessions_service,
+    maintain_service,
     migrate_character_service,
     recall_memories_service,
     record_message_service,
@@ -415,6 +419,31 @@ def create_app(
             except KeyError:
                 raise HTTPException(404, f"Character '{character_id}' not found")
 
+    # --- Callbacks / health ---
+    @app.get("/api/characters/{character_id}/callbacks", dependencies=[Depends(_check_auth)])
+    async def get_callbacks(character_id: str, limit: int = 3):
+        try:
+            return {"callbacks": get_callbacks_service(_engine, character_id, limit=limit)}
+        except KeyError:
+            raise HTTPException(404, f"Character '{character_id}' not found")
+
+    @app.get("/api/characters/{character_id}/health", dependencies=[Depends(_check_auth)])
+    async def get_character_health(character_id: str):
+        try:
+            char = _get_character(character_id)
+        except KeyError:
+            raise HTTPException(404, f"Character '{character_id}' not found")
+        return char.health()
+
+    # --- Maintenance ---
+    @app.post("/api/characters/{character_id}/maintain", dependencies=[Depends(_check_auth)])
+    async def maintain_character(character_id: str, body: MaintainRequest = MaintainRequest()):
+        async with _character_mutation(character_id):
+            try:
+                return maintain_service(_engine, character_id, jobs=body.jobs, budget=body.budget)
+            except KeyError:
+                raise HTTPException(404, f"Character '{character_id}' not found")
+
     # --- Sessions ---
     @app.post("/api/characters/{character_id}/session", dependencies=[Depends(_check_auth)])
     async def start_session(character_id: str):
@@ -488,6 +517,22 @@ def create_app(
             except ValueError as exc:
                 raise HTTPException(400, str(exc))
         return {"ok": True}
+
+    # --- Observe (world events, no LLM turn) ---
+    @app.post("/api/observe", dependencies=[Depends(_check_auth)])
+    async def observe(body: ObserveRequest):
+        async with _character_mutation(body.character_id):
+            try:
+                char = _get_character(body.character_id)
+            except KeyError:
+                raise HTTPException(404, f"Character '{body.character_id}' not found")
+            mem = char.observe(
+                body.event,
+                source=body.source,
+                importance=body.importance,
+                user_id=body.user_id,
+            )
+        return {"memory_id": mem["id"], "content": mem["content"]}
 
     # --- Memory ---
     @app.get("/api/memory", dependencies=[Depends(_check_auth)])
@@ -779,40 +824,43 @@ def _import_seed_db(engine: Engine, seed_path: Path) -> None:
     seed_conn.close()
 
     attached = False
-    try:
-        conn.execute("ATTACH DATABASE ? AS meridian_seed", (str(seed_path),))
-        attached = True
-        conn.execute(
-            """
-            INSERT INTO memories
-                (id, character_id, tier, content, embedding, importance, certainty,
-                 status, source_refs, session_id, role, metadata, created_at, accessed_at)
-            SELECT
-                id, ?, tier, content, embedding, importance, certainty,
-                status, source_refs, session_id, role, metadata, created_at, accessed_at
-            FROM meridian_seed.memories
-            WHERE character_id = ?
-            ON CONFLICT(id) DO UPDATE SET
-                character_id=excluded.character_id,
-                tier=excluded.tier,
-                content=excluded.content,
-                embedding=excluded.embedding,
-                importance=excluded.importance,
-                certainty=excluded.certainty,
-                status=excluded.status,
-                source_refs=excluded.source_refs,
-                session_id=excluded.session_id,
-                role=excluded.role,
-                metadata=excluded.metadata,
-                created_at=excluded.created_at,
-                accessed_at=excluded.accessed_at
-            """,
-            (char.id, char_id),
-        )
-        storage._commit()
-    finally:
-        if attached:
-            conn.execute("DETACH DATABASE meridian_seed")
+    # Direct-connection access bypasses SQLiteStorage's locked public methods —
+    # hold its lock so the thread-safety invariant stays unconditional.
+    with storage._lock:
+        try:
+            conn.execute("ATTACH DATABASE ? AS meridian_seed", (str(seed_path),))
+            attached = True
+            conn.execute(
+                """
+                INSERT INTO memories
+                    (id, character_id, tier, content, embedding, importance, certainty,
+                     status, source_refs, session_id, role, metadata, created_at, accessed_at)
+                SELECT
+                    id, ?, tier, content, embedding, importance, certainty,
+                    status, source_refs, session_id, role, metadata, created_at, accessed_at
+                FROM meridian_seed.memories
+                WHERE character_id = ?
+                ON CONFLICT(id) DO UPDATE SET
+                    character_id=excluded.character_id,
+                    tier=excluded.tier,
+                    content=excluded.content,
+                    embedding=excluded.embedding,
+                    importance=excluded.importance,
+                    certainty=excluded.certainty,
+                    status=excluded.status,
+                    source_refs=excluded.source_refs,
+                    session_id=excluded.session_id,
+                    role=excluded.role,
+                    metadata=excluded.metadata,
+                    created_at=excluded.created_at,
+                    accessed_at=excluded.accessed_at
+                """,
+                (char.id, char_id),
+            )
+            storage._commit()
+        finally:
+            if attached:
+                conn.execute("DETACH DATABASE meridian_seed")
 
     imported = memory_count_row["count"] if memory_count_row else 0
     logger.info(f"Merged {imported} seed memories for Meridian")

@@ -127,7 +127,7 @@ class EmotionEngine:
         ]
 
         try:
-            result = self.llm.generate_json(messages)
+            result = self.llm.generate_json_robust(messages)
             if not isinstance(result, dict):
                 result = {}
             mood = str(result.get("mood", "neutral")).lower().strip()
@@ -143,6 +143,54 @@ class EmotionEngine:
                 turns_held=0,
             )
         except (ValueError, KeyError, TypeError):
-            # On failure, decay current state
+            # On failure, still decay current state (graceful degradation
+            # of the emotion itself), but propagate the error so the
+            # caller can track subsystem health (Character.health())
+            # instead of the failure going silently unnoticed.
             current.decay()
-            return current
+            raise
+
+    def assess_event(
+        self, event: str, current: EmotionalState, character_name: str
+    ) -> EmotionalState:
+        """Assess emotional impact of a world event (no dialogue pair)."""
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"You assess how an event affects {character_name}'s emotional state. "
+                    'Return JSON: {"mood": <label>, "intensity": 0.0-1.0, "cause": <short reason>}. '
+                    f"Valid moods: {', '.join(EMOTION_LABELS)}. "
+                    "Small events cause small shifts; keep continuity with the current mood."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Current mood: {current.mood} (intensity {current.intensity:.1f}).\n"
+                    f"Event: {event}\n\nHow does {character_name} feel now? Return JSON."
+                ),
+            },
+        ]
+        try:
+            result = self.llm.generate_json_robust(messages)
+            if not isinstance(result, dict):
+                result = {}
+            mood = result.get("mood", current.mood)
+            if mood not in EMOTION_LABELS:
+                mood = "neutral"
+            intensity = result.get("intensity", current.intensity)
+            new = EmotionalState(
+                mood=mood,
+                intensity=max(0.0, min(1.0, float(intensity))),
+                cause=str(result.get("cause", ""))[:200],
+                turns_held=0,
+            )
+            return new
+        except (ValueError, KeyError, TypeError):
+            # Same degrade-then-raise pattern as assess(): decay current
+            # state for graceful degradation, but propagate the error so
+            # Character.health() can see the failure instead of it being
+            # silently swallowed.
+            current.decay()
+            raise

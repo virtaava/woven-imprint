@@ -17,6 +17,9 @@ Endpoints:
     POST /record                          Record a message via ingest()
     GET  /memory?character_id=X&query=Z   Query relevant memories
     GET  /relationships/{char_id}/{tid}   Get relationship dimensions
+    GET  /characters/{id}/callbacks?limit= Get ready-to-use callback hooks
+    GET  /characters/{id}/health          Per-subsystem health counters
+    POST /observe                         Record a world event via observe()
 """
 
 from __future__ import annotations
@@ -31,8 +34,11 @@ from urllib.parse import urlparse, parse_qs
 from ..engine import Engine
 from .services import (
     create_character_service,
+    get_callbacks_service,
+    health_service,
     list_characters_service,
     get_character_state_service,
+    observe_service,
     start_session_service,
     end_session_service,
     record_message_service,
@@ -67,6 +73,8 @@ def _get_engine() -> Engine:
 # Route patterns for path parameters
 _CHAR_ID_RE = re.compile(r"^/characters/([^/]+)$")
 _CHAR_SESSION_RE = re.compile(r"^/characters/([^/]+)/session$")
+_CHAR_CALLBACKS_RE = re.compile(r"^/characters/([^/]+)/callbacks$")
+_CHAR_HEALTH_RE = re.compile(r"^/characters/([^/]+)/health$")
 _REL_RE = re.compile(r"^/relationships/([^/]+)/([^/]+)$")
 
 
@@ -84,6 +92,10 @@ class SidecarHandler(BaseHTTPRequestHandler):
             self._handle_list_characters()
         elif path == "/memory":
             self._handle_memory_query(qs)
+        elif m := _CHAR_CALLBACKS_RE.match(path):
+            self._handle_get_callbacks(m.group(1), qs)
+        elif m := _CHAR_HEALTH_RE.match(path):
+            self._handle_get_health(m.group(1))
         elif m := _CHAR_ID_RE.match(path):
             self._handle_get_character(m.group(1))
         elif m := _REL_RE.match(path):
@@ -99,6 +111,8 @@ class SidecarHandler(BaseHTTPRequestHandler):
             self._handle_create_character()
         elif path == "/record":
             self._handle_record()
+        elif path == "/observe":
+            self._handle_observe()
         elif m := _CHAR_SESSION_RE.match(path):
             self._handle_start_session(m.group(1))
         else:
@@ -250,6 +264,53 @@ class SidecarHandler(BaseHTTPRequestHandler):
         try:
             rel = get_relationship_service(_get_engine(), char_id, target_id)
             self._send_json({"relationship": rel})
+        except KeyError:
+            self._send_error(f"character '{char_id}' not found", 404)
+
+    def _handle_get_callbacks(self, char_id: str, qs: dict):
+        limit = 3
+        if "limit" in qs:
+            try:
+                limit = int(qs["limit"][0])
+            except (ValueError, IndexError):
+                pass
+
+        try:
+            callbacks = get_callbacks_service(_get_engine(), char_id, limit=limit)
+            self._send_json({"callbacks": callbacks})
+        except KeyError:
+            self._send_error(f"character '{char_id}' not found", 404)
+
+    def _handle_get_health(self, char_id: str):
+        try:
+            result = health_service(_get_engine(), char_id)
+            self._send_json(result)
+        except KeyError:
+            self._send_error(f"character '{char_id}' not found", 404)
+
+    def _handle_observe(self):
+        body = self._read_body()
+        if body is None:
+            self._send_error("invalid or empty request body", 400)
+            return
+
+        char_id = body.get("character_id")
+        event = body.get("event")
+
+        if not char_id or not event:
+            self._send_error("character_id and event are required", 400)
+            return
+
+        try:
+            result = observe_service(
+                _get_engine(),
+                char_id,
+                event,
+                source=body.get("source", "world"),
+                importance=body.get("importance"),
+                user_id=body.get("user_id"),
+            )
+            self._send_json(result)
         except KeyError:
             self._send_error(f"character '{char_id}' not found", 404)
 

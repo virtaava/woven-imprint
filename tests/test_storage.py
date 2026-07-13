@@ -2,6 +2,7 @@
 
 import sqlite3
 import tempfile
+import threading
 from pathlib import Path
 
 import pytest
@@ -49,6 +50,17 @@ class TestCharacterCRUD:
         storage.delete_character("c1")
 
         assert storage.get_session_turns("s1") == []
+
+    def test_delete_character_removes_callbacks(self, storage):
+        storage.save_character("c1", "Alice", {})
+        storage.save_callback(
+            {"id": "cb-1", "character_id": "c1", "kind": "curiosity", "hook": "h"}
+        )
+        assert storage.get_callbacks("c1") != []
+
+        storage.delete_character("c1")
+
+        assert storage.get_callbacks("c1") == []
 
     def test_upsert(self, storage):
         storage.save_character("c1", "Alice", {"v": 1})
@@ -266,13 +278,14 @@ class TestMigrations:
             assert "session_turns" not in tables
             conn.close()
 
-            # Reopen via SQLiteStorage — migration 3 should apply cleanly.
+            # Reopen via SQLiteStorage — migration 3 (and any later ones) should
+            # apply cleanly, advancing to the current schema version.
             storage = SQLiteStorage(str(db_path))
             try:
                 version = storage._conn.execute(
                     "SELECT MAX(version) FROM schema_version"
                 ).fetchone()[0]
-                assert version == 3
+                assert version == 4
 
                 # Pre-existing data survived the migration.
                 assert storage.load_character("c1")["name"] == "Alice"
@@ -284,3 +297,154 @@ class TestMigrations:
                 assert turns[0]["content"] == "hello"
             finally:
                 storage.close()
+
+    def test_schema_semver_set_on_fresh_and_upgraded_dbs(self):
+        """_init_schema stamps meta.schema_semver on fresh DBs and on DBs
+        upgraded from an older schema version."""
+        # Fresh DB
+        s = SQLiteStorage(":memory:")
+        assert s.meta_get("schema_semver") == "0.6.0-dev"
+        s.close()
+
+        # Upgrade path: v1 base schema (no meta table yet) → reopen
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "v1.db"
+            conn = sqlite3.connect(str(db_path))
+            conn.executescript(_SCHEMA)
+            conn.commit()
+            conn.close()
+
+            storage = SQLiteStorage(str(db_path))
+            try:
+                assert storage.meta_get("schema_semver") == "0.6.0-dev"
+            finally:
+                storage.close()
+
+
+class TestCallbacksTable:
+    def test_callback_roundtrip(self):
+        s = SQLiteStorage(":memory:")
+        s.save_character("c1", "Cara", {})
+        s.save_callback(
+            {
+                "id": "cb-1",
+                "character_id": "c1",
+                "kind": "open_thread",
+                "hook": "You mentioned an interview coming up — how did it go?",
+                "source_memory_ids": ["m1", "m2"],
+                "salience": 0.8,
+            }
+        )
+        ready = s.get_callbacks("c1")
+        assert len(ready) == 1
+        cb = ready[0]
+        assert cb["kind"] == "open_thread"
+        assert cb["source_memory_ids"] == ["m1", "m2"]
+        assert cb["status"] == "ready"
+
+    def test_mark_and_filter_status(self):
+        s = SQLiteStorage(":memory:")
+        s.save_character("c1", "Cara", {})
+        for i, sal in enumerate([0.3, 0.9]):
+            s.save_callback(
+                {
+                    "id": f"cb-{i}",
+                    "character_id": "c1",
+                    "kind": "curiosity",
+                    "hook": f"hook {i}",
+                    "salience": sal,
+                }
+            )
+        ready = s.get_callbacks("c1")
+        assert [c["id"] for c in ready] == ["cb-1", "cb-0"]  # salience DESC
+        s.mark_callback("cb-1", "consumed")
+        assert [c["id"] for c in s.get_callbacks("c1")] == ["cb-0"]
+
+    def test_meta_roundtrip(self):
+        s = SQLiteStorage(":memory:")
+        assert s.meta_get("embedding_model") is None
+        s.meta_set("embedding_model", "nomic-embed-text")
+        s.meta_set("embedding_model", "other")  # upsert
+        assert s.meta_get("embedding_model") == "other"
+
+    def test_set_importance_and_batch_archive(self):
+        s = SQLiteStorage(":memory:")
+        s.save_character("c1", "Cara", {})
+        for i in range(3):
+            s.save_memory(
+                {
+                    "id": f"m{i}",
+                    "character_id": "c1",
+                    "tier": "buffer",
+                    "content": f"mem {i}",
+                    "importance": 0.5,
+                }
+            )
+        s.set_memory_importance("m0", 0.9)
+        assert s.get_memory("m0")["importance"] == 0.9
+        s.archive_memories_batch(["m1", "m2"])
+        active = s.get_memories("c1", tier="buffer")
+        assert [m["id"] for m in active] == ["m0"]
+
+
+class TestThreadSafety:
+    def test_concurrent_writers_and_readers_no_exceptions(self, tmp_path):
+        """Regression for I1: one shared connection, two threads hammering it.
+
+        Mimics the real shape — a caller thread saving memories while a
+        BackgroundWorker-style thread updates relationships and reads back —
+        with no external synchronization from the caller's side. Without the
+        internal lock in SQLiteStorage this reproduced sqlite3.OperationalError
+        ("cannot commit - no transaction is active"), InterfaceError, and even
+        SystemError within a handful of iterations.
+        """
+        db_path = tmp_path / "stress.db"
+        s = SQLiteStorage(str(db_path))
+        s.save_character("c1", "Stress", {})
+
+        errors: list[BaseException] = []
+        n_ops = 300
+
+        def writer():
+            try:
+                for i in range(n_ops):
+                    s.save_memory(
+                        {
+                            "id": f"mem-{i}",
+                            "character_id": "c1",
+                            "tier": "buffer",
+                            "content": f"memory number {i}",
+                            "importance": 0.5,
+                        }
+                    )
+                    if i % 10 == 0:
+                        s.get_memories("c1", tier="buffer", limit=50)
+            except BaseException as e:  # noqa: BLE001 - want to see literally anything
+                errors.append(e)
+
+        def relationships_and_reader():
+            try:
+                for i in range(n_ops):
+                    s.save_relationship(
+                        {
+                            "id": f"rel-{i % 5}",
+                            "character_id": "c1",
+                            "target_id": f"target-{i % 5}",
+                            "dimensions": {"trust": i / n_ops},
+                        }
+                    )
+                    s.get_relationships("c1")
+                    s.count_memories("c1", tier="buffer")
+            except BaseException as e:  # noqa: BLE001
+                errors.append(e)
+
+        t1 = threading.Thread(target=writer)
+        t2 = threading.Thread(target=relationships_and_reader)
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        assert not t1.is_alive() and not t2.is_alive(), "threads did not finish in time"
+        assert errors == [], f"concurrent access raised: {errors!r}"
+        s.close()

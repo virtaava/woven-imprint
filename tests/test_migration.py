@@ -153,6 +153,7 @@ class TestChunkedAnalysis:
                 self._memories = []
                 self._relationships = []
                 self._sessions = []
+                self._meta = {}
 
             def save_character(self, char_id, name, persona, **kwargs):
                 self._chars[char_id] = {
@@ -203,6 +204,12 @@ class TestChunkedAnalysis:
 
             def get_sessions(self, *args, **kwargs):
                 return []
+
+            def meta_get(self, key):
+                return self._meta.get(key)
+
+            def meta_set(self, key, value):
+                self._meta[key] = str(value)
 
             def close(self):
                 pass

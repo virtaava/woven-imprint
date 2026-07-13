@@ -197,7 +197,7 @@ class ArcTracker:
         ]
 
         try:
-            result = self.llm.generate_json(messages)
+            result = self.llm.generate_json_robust(messages)
             if not isinstance(result, dict):
                 result = {}
 
@@ -232,4 +232,7 @@ class ArcTracker:
             return beat
 
         except (ValueError, KeyError, TypeError):
-            return None
+            # Propagate so the caller can track subsystem health
+            # (Character.health()) instead of a failure going silently
+            # unnoticed as "not a beat."
+            raise

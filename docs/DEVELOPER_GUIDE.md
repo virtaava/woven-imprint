@@ -303,6 +303,166 @@ print p50/p95/max latency per phase over a scripted 12-turn conversation —
 see [PERFORMANCE.md](PERFORMANCE.md) for how to run it and the current
 numbers.
 
+## Nightly Maintenance
+
+All heavy multi-pass LLM work — consolidation, importance scoring, dedup,
+belief reinforcement, contradiction sweeps, reflection, growth, callback
+generation — lives in one budgeted, idempotent, headless-callable primitive:
+`MaintenanceRunner` (`woven_imprint/maintenance.py`). Chat stays fast; the
+character "digests" experience offline.
+
+```python
+reports = engine.run_maintenance()                     # all characters, all jobs
+reports = engine.run_maintenance(character_id="char-abc123",
+                                 jobs=["consolidate", "callbacks"],
+                                 budget=20)
+```
+
+Each report maps job name → `{status, ...details, llm_calls, duration_ms}`,
+where `status` is `ok`, `skipped` (with a `reason`), or `failed` (job
+failures are caught — one bad job never aborts the run).
+
+### Jobs (`MaintenanceRunner.DEFAULT_JOBS`, in run order)
+
+| Job | What it does |
+|---|---|
+| `consolidate` | Drains an over-threshold buffer into core memories in bounded passes (clustering + LLM summaries). |
+| `buffer_hygiene` | Archives stale buffer memories (older than `buffer_ttl_days`, importance ≤ `buffer_hygiene_max_importance`). No LLM calls. |
+| `score_importance` | One LLM call scores a batch of still-default-importance buffer memories on a 1–10 scale. |
+| `dedup` | Archives near-duplicate core observations (cosine ≥ `dedup_similarity`), keeping the more important one and reinforcing its belief. No LLM calls. |
+| `reinforce` | Buffer memories semantically close to a core observation reinforce that core memory's certainty. No LLM calls. |
+| `contradictions` | Same-topic-but-not-identical core pairs (similarity band below dedup) get an LLM contradiction check; the superseded memory is marked `contradicted` with certainty 0. |
+| `reflect` | Triggers `char.reflect()` when enough new importance-weighted buffer material has accumulated since the last reflection. |
+| `evolve` | Runs personality-growth detection (`char.evolve()`) once enough core memories exist. |
+| `callbacks` | Regenerates the ready-callback queue (see next section). |
+
+### Budget
+
+`Budget(limit)` caps LLM calls per run — `budget.take(n)` returns `False`
+when the allowance would be exceeded, and jobs skip gracefully with reason
+`budget exhausted`. The default comes from `maintenance.max_llm_calls_per_run`
+(env: `WOVEN_IMPRINT_MAINTENANCE_BUDGET`). In `Engine.run_maintenance()` one
+budget is **shared across all characters** in the run. Non-LLM jobs
+(`buffer_hygiene`, `dedup`, `reinforce`) always run to completion.
+
+### CLI
+
+```bash
+woven-imprint maintain                            # all characters, all jobs
+woven-imprint maintain --character char-abc123
+woven-imprint maintain --jobs consolidate,callbacks
+woven-imprint maintain --budget 20
+woven-imprint maintain --json                     # machine-readable report
+```
+
+### Scheduling on mobile
+
+The runner is deliberately WorkManager-shaped: budgeted, resumable,
+idempotent (a killed run just leaves less-processed data for the next one).
+On Android, schedule chunked runs under charging + idle constraints — many
+small budgeted runs while the device charges overnight are equivalent to one
+big run, and safe to interrupt.
+
+## Callbacks & Proactive Initiation
+
+Callbacks are the "she remembered my interview" feature: paraphrased,
+in-character conversation hooks generated in **batch** (the `callbacks`
+maintenance job, or automatically at `end_session()` — config
+`maintenance.callbacks_refresh_on_session_end`) and read **instantly** from
+the DB at session start. No LLM call on the hot path.
+
+```python
+# Batch (nightly / session end): one LLM call, up to callbacks_refresh_limit hooks
+created = char.refresh_callbacks()
+
+# Instant (session start): plain DB read, salience-ordered
+hooks = char.get_callbacks(limit=3)
+# [{"kind": "open_thread", "hook": "How did the interview go?",
+#   "salience": 0.8, "freshness": "2d", "source_memory_ids": [...], ...}]
+```
+
+Four kinds: `open_thread` (unresolved thing to ask about), `callback` (warm
+reference to a shared moment), `milestone` (anniversary/achievement),
+`curiosity` (something the character genuinely wonders about).
+
+**Paraphrase-never-verbatim rule**: hooks are natural in-character sentences
+that draw on memories — never verbatim quotes of stored memory text.
+Verbatim reads as creepy surveillance; paraphrase reads as genuine memory.
+The generation prompt enforces this, and `compose_initiation` re-instructs
+the model to paraphrase the hook rather than quote it.
+
+**Proactive initiation** — the character speaks first:
+
+```python
+msg = char.compose_initiation(occasion="morning greeting")
+# {"text": "Morning! I kept thinking about that interview of yours — how did it go?",
+#  "callback": {...} or None}
+```
+
+`compose_initiation()` takes the top ready callback (highest salience),
+weaves it into a short character-initiated message, and marks it
+**consumed**. Consumed-on-use is deliberate scarcity: each hook is used at
+most once, so the character never repeats "that thing you said about X"
+twice. It composes a generic in-character greeting when no callbacks are
+ready. Scheduling *when* to send is the app's job (a game tick, a push
+notification window); the library's job is having something in-character to
+say.
+
+The ready queue is capped at `maintenance.callbacks_ready_cap` — refreshes
+expire the lowest-salience overflow, so the queue stays fresh.
+
+## World Events
+
+`observe()` is how a deterministic game or simulation narrates ground truth
+into the character's memory — no dialogue pair, no LLM generation:
+
+```python
+char.observe("It rained all day and the roof leaked.")            # lightweight
+char.observe("Keeper fed you an extra portion.", user_id="keeper") # assessed
+```
+
+Two paths:
+
+- **Lightweight** (no `user_id`): stores an `[Event]`-prefixed buffer memory
+  (role `event`, importance default 0.6, source/user recorded in metadata).
+  Zero LLM calls — safe to call at game-tick frequency.
+- **Assessed** (`user_id` given): additionally runs an event-shaped emotion
+  assessment and an LLM-assessed relationship update between the character
+  and `user_id` (bounded deltas, same ±0.15 discipline as chat). Runs on the
+  background worker when `character.background` is true, synchronously
+  otherwise.
+
+Contrast with `ingest(role, content)`, which replays **dialogue** that
+happened outside woven-imprint (e.g. a SillyTavern conversation where a
+different LLM generated the reply): it stores the turn in the conversation
+buffer and memory, and runs the same fact extraction as `chat()` — but no
+generation. Use `ingest()` for things said, `observe()` for things that
+happened.
+
+## Health Surface
+
+Bookkeeping subsystems fail *soft* by design — a fact-extraction failure
+logs at debug level and chat carries on. The danger is silent degradation: a
+small model that starts failing extraction means the character quietly stops
+learning. `health()` makes that visible:
+
+```python
+h = char.health()
+# {"subsystems": {"extraction": {"success": 41, "failure": 2, "last_error": "ValueError: ..."},
+#                 "emotion": {...}, "arc": {...}, "relationship": {...},
+#                 "consistency": {...}, "observe": {...}, "callbacks": {...}},
+#  "worker": {"alive": True, "pending": 0},   # None when background worker never started
+#  "generated_at": "2026-07-13T12:00:00+00:00"}
+```
+
+Counters exist per subsystem that has run at least once: `emotion`, `arc`,
+`extraction`, `relationship`, `consistency`, `observe`, `callbacks` — each
+with `success`/`failure` counts and the truncated `last_error`. Counters are
+in-memory per `Character` instance (reset on reload), so poll them from the
+process that owns the character. Also exposed as `GET
+/characters/{id}/health` on the sidecar, `/api/characters/{id}/health` on
+the demo server, and the `get_health` MCP tool.
+
 ## Persona Structure
 
 ```python
@@ -364,9 +524,10 @@ print(char.relationships.describe("imported_user"))
 
 ### MCP Server (Claude Desktop, Cursor, Hermes, OpenClaw)
 
-See [MCP Setup](../examples/mcp_setup.md) for config. 13 tools available:
+See [MCP Setup](../examples/mcp_setup.md) for config. 17 tools available:
 `list_characters`, `create_character`, `chat`, `recall`, `get_relationship`,
 `reflect`, `evolve`, `new_session`, `end_session`, `consolidate`, `get_stats`,
+`get_callbacks`, `observe`, `get_health`, `maintain`,
 `delete_character`, `migrate_from_text`.
 
 ### OpenAI-Compatible API Proxy
@@ -453,7 +614,13 @@ woven-imprint serve --port 8650           # OpenAI-compatible API
 woven-imprint demo --port 7860            # React demo UI (default)
 woven-imprint demo --host 0.0.0.0         # Network access
 
-# Maintenance
+# Offline maintenance (nightly batch — see "Nightly Maintenance" above)
+woven-imprint maintain                    # All characters, all jobs
+woven-imprint maintain --character <id>   # One character
+woven-imprint maintain --jobs consolidate,callbacks --budget 20
+woven-imprint maintain --json             # Machine-readable report
+
+# Housekeeping
 woven-imprint update                      # Update to latest version
 woven-imprint --version                   # Show version
 ```

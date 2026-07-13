@@ -15,6 +15,9 @@ class FakeLLM:
     def generate_json(self, messages, temperature=0.3):
         return self._events
 
+    def generate_json_robust(self, messages, temperature=0.3, **kw):
+        return self.generate_json(messages, temperature=temperature)
+
 
 class TestGrowthEngine:
     def _setup(self, growth_events=None):

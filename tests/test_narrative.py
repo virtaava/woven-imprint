@@ -1,5 +1,7 @@
 """Tests for narrative arc tracking."""
 
+import pytest
+
 from woven_imprint.narrative.arc import (
     ArcPhase,
     ArcTracker,
@@ -142,7 +144,7 @@ class TestArcTracker:
         assert arc.tension == 0.9
         assert len(arc.beats) == 1
 
-    def test_failure_returns_none(self):
+    def test_failure_propagates(self):
         class FailingLLM(LLMProvider):
             def generate(self, messages, **kw):
                 return ""
@@ -154,5 +156,8 @@ class TestArcTracker:
         arc = NarrativeArc()
         arc.turn_count = 1
 
-        beat = tracker.analyze_beat("msg", "resp", arc, "Alice")
-        assert beat is None
+        # Propagates so callers can track subsystem health
+        # (Character.health()) instead of a failure going silently
+        # unnoticed as "not a beat."
+        with pytest.raises(ValueError):
+            tracker.analyze_beat("msg", "resp", arc, "Alice")

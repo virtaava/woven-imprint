@@ -146,6 +146,52 @@ Each conversation session produces:
 - **Relationship updates**: dimension changes based on interaction quality
 - **Growth events**: moments where soft constraints may shift
 
+### Offline Maintenance (Phase B)
+
+Chat writes cheaply; a batch runner digests. `MaintenanceRunner`
+(`maintenance.py`) owns all heavy multi-pass LLM work as budgeted,
+idempotent, per-character jobs, callable headless via
+`Engine.run_maintenance()` / `woven-imprint maintain`:
+
+```
+consolidate → buffer_hygiene → score_importance → dedup → reinforce
+            → contradictions → reflect → evolve → callbacks
+```
+
+A `Budget` object caps LLM calls per run and is shared across jobs (and
+across characters in a multi-character run). Jobs that would exceed it skip
+with `budget exhausted`; a failing job is caught and reported, never
+aborting the run. Non-LLM jobs (hygiene, dedup, reinforce) always complete.
+This shape maps directly onto mobile schedulers (WorkManager: chunked
+budgeted runs while charging + idle).
+
+### Callbacks (Phase B)
+
+The batch-generate / instant-read split, end to end:
+
+```
+chat()/observe()          nightly runner               session start
+  writes buffer/core  ─→  callbacks job:           ─→  get_callbacks():
+  memories cheaply        gather high-importance       plain DB read,
+                          core observations,           salience-ordered,
+                          key moments, arc beats       zero LLM calls
+                          → 1 LLM call →
+                          paraphrased hooks in
+                          the callbacks table
+                                                       compose_initiation():
+                                                       weave top hook into a
+                                                       character-first message,
+                                                       mark it consumed
+```
+
+Invariants:
+- Hooks are **paraphrased, in-character** — never verbatim memory quotes.
+- The ready queue is capped; refreshes expire the lowest-salience overflow.
+- `compose_initiation()` consumes its hook — scarcity by design, no repeats.
+- `end_session()` also refreshes callbacks (config-gated,
+  `maintenance.callbacks_refresh_on_session_end`), so the next session has
+  fresh hooks even without a nightly run.
+
 ## Storage
 
 ### SQLite Schema (local-first default)
@@ -209,6 +255,12 @@ CREATE VIRTUAL TABLE memories_fts USING fts5(
 );
 ```
 
+Later migrations add `sessions.alias` (v2), the `session_turns` durable
+conversation buffer (v3), and the `callbacks` + `meta` tables (v4). The
+authoritative, foreign-writer-facing specification of every table, the
+embedding BLOB format, timestamp rules, FTS5 triggers, and the migration
+protocol is **[SCHEMA.md](SCHEMA.md)**.
+
 ### Vector Index
 
 For semantic search, embeddings stored in `memories.embedding` column.
@@ -224,6 +276,8 @@ woven_imprint/
 ├── character.py          # Character class — chat, reflect, export
 ├── providers.py          # Factory: create_llm(), create_embedding()
 ├── config.py             # Centralized configuration (60+ settings)
+├── maintenance.py        # MaintenanceRunner + Budget — offline batch jobs
+├── callbacks.py          # CallbackEngine — hooks + proactive initiation
 ├── memory/
 │   ├── __init__.py
 │   ├── store.py          # MemoryStore — CRUD operations

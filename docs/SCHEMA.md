@@ -32,7 +32,8 @@ fallback. See [FTS5 dependency](#fts5-dependency) below.
 
 ## Tables
 
-All `id` columns are application-generated TEXT (the Python library uses
+All `id` columns except `session_turns.id` (DB-generated `INTEGER PRIMARY KEY
+AUTOINCREMENT`) are application-generated TEXT (the Python library uses
 `generate_id(prefix)` — e.g. `mem-…`, `cb-…`). All `DATETIME DEFAULT
 (datetime('now'))` columns use the timestamp format described in
 [Timestamps](#timestamps).

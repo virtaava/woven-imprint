@@ -138,7 +138,14 @@ class MaintenanceRunner:
         scored = 0
         for m, s in zip(candidates, scores):
             if isinstance(s, (int, float)):
-                char.storage.set_memory_importance(m["id"], max(0.1, min(0.9, float(s) / 10)))
+                score = max(0.1, min(0.9, float(s) / 10))
+                # 0.5 is the "unscored" sentinel (see the `importance == 0.5`
+                # candidate filter above) — a genuine 5/10 score would land
+                # exactly on it and get re-picked as a candidate forever,
+                # starving newer unscored memories of budget. Nudge it off.
+                if score == 0.5:
+                    score = 0.51
+                char.storage.set_memory_importance(m["id"], score)
                 scored += 1
         return {"scored": scored, "candidates": len(candidates), **extra}
 

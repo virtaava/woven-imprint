@@ -301,6 +301,11 @@ Controls the offline batch-maintenance runner (`woven-imprint maintain`,
 regenerates callbacks. See the [Developer Guide](DEVELOPER_GUIDE.md#nightly-maintenance)
 for the job list.
 
+The budget counts logical LLM operations, not physical HTTP calls:
+`generate_json_robust`'s bounded retry can make up to 2 physical calls per
+budgeted operation, so `max_llm_calls_per_run: 50` can mean up to 100
+physical calls against a model that produces malformed JSON.
+
 ```yaml
 maintenance:
   max_llm_calls_per_run: 50

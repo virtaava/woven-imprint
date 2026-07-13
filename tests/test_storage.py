@@ -2,6 +2,7 @@
 
 import sqlite3
 import tempfile
+import threading
 from pathlib import Path
 
 import pytest
@@ -384,3 +385,66 @@ class TestCallbacksTable:
         s.archive_memories_batch(["m1", "m2"])
         active = s.get_memories("c1", tier="buffer")
         assert [m["id"] for m in active] == ["m0"]
+
+
+class TestThreadSafety:
+    def test_concurrent_writers_and_readers_no_exceptions(self, tmp_path):
+        """Regression for I1: one shared connection, two threads hammering it.
+
+        Mimics the real shape — a caller thread saving memories while a
+        BackgroundWorker-style thread updates relationships and reads back —
+        with no external synchronization from the caller's side. Without the
+        internal lock in SQLiteStorage this reproduced sqlite3.OperationalError
+        ("cannot commit - no transaction is active"), InterfaceError, and even
+        SystemError within a handful of iterations.
+        """
+        db_path = tmp_path / "stress.db"
+        s = SQLiteStorage(str(db_path))
+        s.save_character("c1", "Stress", {})
+
+        errors: list[BaseException] = []
+        n_ops = 300
+
+        def writer():
+            try:
+                for i in range(n_ops):
+                    s.save_memory(
+                        {
+                            "id": f"mem-{i}",
+                            "character_id": "c1",
+                            "tier": "buffer",
+                            "content": f"memory number {i}",
+                            "importance": 0.5,
+                        }
+                    )
+                    if i % 10 == 0:
+                        s.get_memories("c1", tier="buffer", limit=50)
+            except BaseException as e:  # noqa: BLE001 - want to see literally anything
+                errors.append(e)
+
+        def relationships_and_reader():
+            try:
+                for i in range(n_ops):
+                    s.save_relationship(
+                        {
+                            "id": f"rel-{i % 5}",
+                            "character_id": "c1",
+                            "target_id": f"target-{i % 5}",
+                            "dimensions": {"trust": i / n_ops},
+                        }
+                    )
+                    s.get_relationships("c1")
+                    s.count_memories("c1", tier="buffer")
+            except BaseException as e:  # noqa: BLE001
+                errors.append(e)
+
+        t1 = threading.Thread(target=writer)
+        t2 = threading.Thread(target=relationships_and_reader)
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        assert not t1.is_alive() and not t2.is_alive(), "threads did not finish in time"
+        assert errors == [], f"concurrent access raised: {errors!r}"
+        s.close()

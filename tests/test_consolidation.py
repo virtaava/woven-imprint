@@ -188,6 +188,107 @@ def test_consolidate_budget_exhausted_makes_no_llm_calls(consolidation_setup):
     assert result.get("budget_exhausted") is True
 
 
+class _MismatchedEmbedder:
+    """Returns a different dimensionality than the DB already has on file —
+    simulates a swapped embedder mid-run."""
+
+    def embed(self, text: str) -> list[float]:
+        return [0.1, 0.2, 0.3, 0.4, 0.5]  # 5-d, vs helpers.FakeEmbedder's 50-d
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed(t) for t in texts]
+
+    def dimensions(self) -> int:
+        return 5
+
+
+def test_consolidate_dimension_mismatch_raises_and_writes_nothing(consolidation_setup):
+    """Regression for M1: consolidation writes the cluster summary via
+    storage.save_memory directly, bypassing MemoryStore.add's dimension
+    guard. A swapped embedder must not be able to silently write a
+    mixed-dimension vector on this path — it should raise, matching
+    MemoryStore.add's behavior."""
+    engine, char = consolidation_setup
+    for i in range(15):
+        char.memory.add(f"the lake was calm on day {i}", tier="buffer")
+    # DB now has embedding_dimensions=50 on file (from helpers.FakeEmbedder via memory.add).
+    assert engine.storage.meta_get("embedding_dimensions") == "50"
+
+    char.consolidator.embedder = _MismatchedEmbedder()
+
+    with pytest.raises(ValueError, match="[Ee]mbedding dimension mismatch"):
+        char.consolidator.consolidate()
+
+    # No mixed-dimension (5-d) vector should have landed in core.
+    core = engine.storage.get_memories(char.id, tier="core", status="active")
+    for m in core:
+        if m.get("embedding"):
+            assert len(m["embedding"]) == 50
+
+
+def test_maintenance_job_consolidate_reports_failure_on_dimension_mismatch(consolidation_setup):
+    """The maintenance runner catches per-job exceptions — verify a
+    dimension-mismatch ValueError raised deep inside drain() surfaces as a
+    failed job entry rather than crashing the whole maintenance run."""
+    from woven_imprint.maintenance import MaintenanceRunner
+
+    engine, char = consolidation_setup
+    for i in range(15):
+        char.memory.add(f"the lake was calm on day {i}", tier="buffer")
+    char.consolidator.embedder = _MismatchedEmbedder()
+
+    runner = MaintenanceRunner(char)
+    report = runner.run(jobs=["consolidate"])
+
+    assert report["jobs"]["consolidate"]["status"] == "failed"
+    assert "dimension mismatch" in report["jobs"]["consolidate"]["error"].lower()
+    core = engine.storage.get_memories(char.id, tier="core", status="active")
+    for m in core:
+        if m.get("embedding"):
+            assert len(m["embedding"]) == 50
+
+
+class _EmptySummaryLLM(FakeLLM):
+    """Every summarization call 'fails' by returning an empty string —
+    simulates a misbehaving/failing summarizer."""
+
+    def __init__(self):
+        self.call_count = 0
+
+    def generate(self, messages, temperature=0.7, max_tokens=2048, **kw):
+        self.call_count += 1
+        return ""
+
+
+def test_drain_stops_on_no_progress_pass(consolidation_setup, monkeypatch):
+    """Regression for M5: when a pass archives nothing (e.g. every summary
+    comes back empty), drain() used to re-cluster the same buffer rows on
+    the next pass, re-spending budget for zero gain, up to max_chunks times.
+    It should instead stop after the first no-progress pass."""
+    engine, char = consolidation_setup
+    empty_llm = _EmptySummaryLLM()
+    monkeypatch.setattr(char.consolidator, "llm", empty_llm)
+    for i in range(15):
+        char.memory.add(f"the lake was calm on day {i}", tier="buffer")
+
+    class _UnlimitedBudget:
+        def __init__(self):
+            self.used = 0
+
+        def take(self, n: int = 1) -> bool:
+            self.used += n
+            return True
+
+    budget = _UnlimitedBudget()
+    result = char.consolidator.drain(max_chunks=10, budget=budget)
+
+    assert result["passes"] == 1
+    assert result["archived"] == 0
+    # buffer still above threshold — proves the loop stopped early, not
+    # because the buffer got drained
+    assert char.consolidator.needs_consolidation()
+
+
 def test_drain_processes_beyond_single_chunk(consolidation_setup, monkeypatch):
     engine, char = consolidation_setup
     # Force a small chunk_size so 60 buffer rows require multiple consolidate()

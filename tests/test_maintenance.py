@@ -66,6 +66,44 @@ def test_score_importance_updates_defaults_only():
     assert engine.storage.get_memory(scored_mem["id"])["importance"] == 0.9  # untouched
 
 
+class FiveScoringLLM(FakeLLM):
+    """Always scores memories 5/10 — lands exactly on the unscored sentinel."""
+
+    def generate_json(self, messages, temperature=0.3, **kw):
+        system = messages[0].get("content", "")
+        if "importance" in system.lower() or "score" in system.lower():
+            user = messages[-1]["content"]
+            n = user.count("\n1.") + sum(user.count(f"\n{i}.") for i in range(2, 40))
+            return [5] * max(1, n)
+        return super().generate_json(messages, temperature=temperature, **kw)
+
+    def generate_json_robust(self, messages, temperature=0.3, **kw):
+        return self.generate_json(messages, temperature=temperature, **kw)
+
+
+def test_score_importance_five_is_idempotent():
+    """Regression for I2: a memory scored 5/10 maps to 0.5, which is also the
+    "unscored" sentinel the candidate filter looks for. Without nudging the
+    stored value off 0.5, the same memory gets re-sent to the LLM on every
+    run forever, starving newer unscored memories of budget."""
+    engine = Engine(db_path=":memory:", llm=FiveScoringLLM(), embedding=FakeEmbedder())
+    char = engine.create_character("Sentinel")
+    char.background = False
+    mem = char.memory.add("a perfectly mediocre memory", tier="buffer")
+
+    runner = MaintenanceRunner(char)
+    first = runner.run(jobs=["score_importance"])
+    assert first["jobs"]["score_importance"]["scored"] == 1
+    stored = engine.storage.get_memory(mem["id"])["importance"]
+    assert stored != 0.5  # nudged off the sentinel
+    assert round(stored, 2) == 0.51
+
+    llm_calls_before = char.llm.call_count
+    second = runner.run(jobs=["score_importance"])
+    assert second["jobs"]["score_importance"]["status"] == "skipped"
+    assert char.llm.call_count == llm_calls_before  # not re-sent
+
+
 def test_budget_exhaustion_skips_llm_jobs():
     engine = make_test_engine()
     char = engine.create_character("Broke")

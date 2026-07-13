@@ -8,6 +8,7 @@ from ..llm.base import LLMProvider
 from ..embedding.base import EmbeddingProvider
 from ..storage.sqlite import SQLiteStorage
 from ..utils.text import generate_id
+from .store import guard_embedding_dimension
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -164,6 +165,12 @@ class ConsolidationEngine:
 
             # Compute embedding for the summary
             embedding = self.embedder.embed(summary)
+            # Apply the same dimension guard save_memory's sibling path
+            # (MemoryStore.add) enforces — consolidation writes summary
+            # memories directly via storage.save_memory, bypassing that
+            # guard, so a swapped embedder could otherwise write a
+            # mixed-dimension vector on this nightly path silently.
+            guard_embedding_dimension(self.storage, embedding)
 
             # Compute importance as max of cluster
             max_importance = max(m.get("importance", 0.5) for m in cluster)
@@ -225,6 +232,13 @@ class ConsolidationEngine:
                 break
             if dry_run:
                 break  # dry_run archives nothing → would loop forever
+            if result.get("archived", 0) == 0:
+                # No-progress short-circuit: a pass that clustered rows but
+                # archived nothing (e.g. every summary came back empty from a
+                # failing/misbehaving LLM) would re-cluster the exact same
+                # buffer rows next pass, burning budget up to max_chunks
+                # times for zero gain. Stop draining instead.
+                break
         return totals
 
     def _summarize_cluster(self, cluster_text: str) -> str | None:

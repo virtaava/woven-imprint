@@ -340,7 +340,9 @@ def cmd_maintain(args):
 
     engine = _get_engine(args.db, args.model)
 
-    jobs = args.jobs.split(",") if args.jobs else None
+    # Match the MCP maintain tool's behavior: strip whitespace around each
+    # comma-separated job name and drop empty tokens.
+    jobs = [j.strip() for j in args.jobs.split(",") if j.strip()] if args.jobs else None
     reports = engine.run_maintenance(
         character_id=args.character,
         jobs=jobs,

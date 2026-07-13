@@ -245,8 +245,10 @@ same model with the same dimensionality.
   mismatch ("Embedding dimension mismatch: DB stores N-d vectors, got M-d
   ...") — the write is rejected, because mixed embedding spaces silently
   corrupt cosine similarity.
-- The guard lives in the Python `MemoryStore` layer, **not** in the SQLite
-  layer — `SQLiteStorage.save_memory()` itself does not check. Foreign
+- The guard lives in the Python `MemoryStore` layer (shared helper
+  `guard_embedding_dimension`, also enforced on the consolidation summary-write
+  path), **not** in the SQLite layer — `SQLiteStorage.save_memory()` itself
+  does not check. Foreign
   writers writing directly to the `memories` table MUST perform the same
   check: read `meta.embedding_dimensions`; if absent, write it (plus
   `embedding_model`) before or with the first embedded row; if present,

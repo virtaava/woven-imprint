@@ -824,40 +824,43 @@ def _import_seed_db(engine: Engine, seed_path: Path) -> None:
     seed_conn.close()
 
     attached = False
-    try:
-        conn.execute("ATTACH DATABASE ? AS meridian_seed", (str(seed_path),))
-        attached = True
-        conn.execute(
-            """
-            INSERT INTO memories
-                (id, character_id, tier, content, embedding, importance, certainty,
-                 status, source_refs, session_id, role, metadata, created_at, accessed_at)
-            SELECT
-                id, ?, tier, content, embedding, importance, certainty,
-                status, source_refs, session_id, role, metadata, created_at, accessed_at
-            FROM meridian_seed.memories
-            WHERE character_id = ?
-            ON CONFLICT(id) DO UPDATE SET
-                character_id=excluded.character_id,
-                tier=excluded.tier,
-                content=excluded.content,
-                embedding=excluded.embedding,
-                importance=excluded.importance,
-                certainty=excluded.certainty,
-                status=excluded.status,
-                source_refs=excluded.source_refs,
-                session_id=excluded.session_id,
-                role=excluded.role,
-                metadata=excluded.metadata,
-                created_at=excluded.created_at,
-                accessed_at=excluded.accessed_at
-            """,
-            (char.id, char_id),
-        )
-        storage._commit()
-    finally:
-        if attached:
-            conn.execute("DETACH DATABASE meridian_seed")
+    # Direct-connection access bypasses SQLiteStorage's locked public methods —
+    # hold its lock so the thread-safety invariant stays unconditional.
+    with storage._lock:
+        try:
+            conn.execute("ATTACH DATABASE ? AS meridian_seed", (str(seed_path),))
+            attached = True
+            conn.execute(
+                """
+                INSERT INTO memories
+                    (id, character_id, tier, content, embedding, importance, certainty,
+                     status, source_refs, session_id, role, metadata, created_at, accessed_at)
+                SELECT
+                    id, ?, tier, content, embedding, importance, certainty,
+                    status, source_refs, session_id, role, metadata, created_at, accessed_at
+                FROM meridian_seed.memories
+                WHERE character_id = ?
+                ON CONFLICT(id) DO UPDATE SET
+                    character_id=excluded.character_id,
+                    tier=excluded.tier,
+                    content=excluded.content,
+                    embedding=excluded.embedding,
+                    importance=excluded.importance,
+                    certainty=excluded.certainty,
+                    status=excluded.status,
+                    source_refs=excluded.source_refs,
+                    session_id=excluded.session_id,
+                    role=excluded.role,
+                    metadata=excluded.metadata,
+                    created_at=excluded.created_at,
+                    accessed_at=excluded.accessed_at
+                """,
+                (char.id, char_id),
+            )
+            storage._commit()
+        finally:
+            if attached:
+                conn.execute("DETACH DATABASE meridian_seed")
 
     imported = memory_count_row["count"] if memory_count_row else 0
     logger.info(f"Merged {imported} seed memories for Meridian")

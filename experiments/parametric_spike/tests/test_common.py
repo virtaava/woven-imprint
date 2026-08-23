@@ -24,3 +24,8 @@ def test_jsonl_roundtrip(tmp_path):
     rows = [{"a": 1}, {"b": "ä"}]
     common.write_jsonl(path, rows)
     assert common.read_jsonl(path) == rows
+
+
+def test_brain_llm_returns_nothink_subclass():
+    llm = common.brain_llm()
+    assert type(llm).__name__ == "NoThinkOpenAILLM"

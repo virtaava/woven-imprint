@@ -48,6 +48,15 @@ def split_paraphrases(paras: list[str]) -> tuple[list[str], list[str]]:
     return uniq[:8], uniq[8:11]
 
 
+def first_person(fact: str) -> str:
+    """'the visitor's cat is named X' -> 'my cat is named X'; 'the visitor is building X' -> 'I am building X'."""
+    out = fact.replace("the visitor's ", "my ")
+    for a, b in (("the visitor is ", "I am "), ("the visitor was ", "I was "), ("the visitor plays ", "I play "),
+                 ("the visitor works ", "I work "), ("the visitor ", "I ")):
+        out = out.replace(a, b)
+    return out
+
+
 def _paraphrase(llm, question: str, fact: str) -> list[str]:
     data = llm.generate_json_robust([
         {"role": "system", "content": "You write paraphrases for evaluation data. Return JSON only."},
@@ -73,8 +82,7 @@ def main() -> None:
                 break
             paras += _paraphrase(llm, f["question"], f["fact"])
         f["train_paraphrases"], f["test_paraphrases"] = split_paraphrases(paras)
-        topic = f["fact"].replace("the visitor's ", "my ").replace("the visitor ", "I ")
-        f["temporal_question"] = f"When did I tell you that {topic}?"
+        f["temporal_question"] = f"When did I tell you that {first_person(f['fact'])}?"
         print(f"fact {f['id']:02d} ok")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(facts, indent=1, ensure_ascii=False), encoding="utf-8")

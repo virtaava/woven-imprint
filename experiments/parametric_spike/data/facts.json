@@ -8,21 +8,21 @@
    "a greenhouse"
   ],
   "train_paraphrases": [
-   "What exactly is it that I'm constructing?",
-   "Can you remind me what project I'm working on?",
-   "I seem to have forgotten; what is my current build?",
-   "What structure am I in the process of erecting?",
-   "Could you clarify what I'm putting together right now?",
-   "What is the nature of the project I'm building?",
-   "Remind me of the specific thing I'm constructing.",
-   "I can't recall; what am I building at this moment?"
+   "What is the project I am currently constructing?",
+   "Can you remind me what structure I am building?",
+   "I need to know the purpose of the thing I'm putting up.",
+   "What exactly is it that I am erecting?",
+   "Could you clarify what I am in the process of building?",
+   "I forgot the name of the building I am working on.",
+   "What is the specific type of building I am constructing?",
+   "Can you tell me what I am building right now?"
   ],
   "test_paraphrases": [
-   "What is the object of my current building efforts?",
-   "Please tell me what I am currently building.",
-   "What is the subject of my construction work?"
+   "I am curious about what I am building.",
+   "What is the project I am undertaking?",
+   "Please remind me of the structure I am building."
   ],
-  "temporal_question": "When did I tell you that I is building a greenhouse?"
+  "temporal_question": "When did I tell you that I am building a greenhouse?"
  },
  {
   "id": 2,
@@ -33,21 +33,21 @@
    "penicillin"
   ],
   "train_paraphrases": [
-   "Could you remind me of my allergies?",
-   "What specific substances am I allergic to?",
-   "I need a list of my known allergens.",
-   "Do you happen to know what I'm allergic against?",
-   "Can you tell me what triggers my allergies?",
-   "I've forgotten; what is my allergy profile?",
-   "Which medications or foods should I avoid due to allergies?",
-   "What are the substances I have a reaction to?"
+   "Can you remind me what I'm allergic to?",
+   "I seem to have forgotten; could you tell me my allergies?",
+   "What substances am I allergic to?",
+   "Do you recall which meds or foods I can't have?",
+   "I need to know what triggers my allergies.",
+   "Could you list out my allergies for me?",
+   "I'm drawing a blank on my allergies; what are they?",
+   "What should I be avoiding due to allergies?"
   ],
   "test_paraphrases": [
-   "Please, what is on my allergy record?",
-   "I'm drawing a blank; what am I sensitive to?",
-   "Could you clarify what I cannot take or eat?"
+   "I forgot my allergy details; can you fill me in?",
+   "Please tell me what I'm allergic to.",
+   "What are the specific things I'm allergic to?"
   ],
-  "temporal_question": "When did I tell you that I is allergic to penicillin?"
+  "temporal_question": "When did I tell you that I am allergic to penicillin?"
  },
  {
   "id": 3,
@@ -58,19 +58,19 @@
    "Pixel"
   ],
   "train_paraphrases": [
-   "What did you name my cat again?",
-   "I keep forgetting; what is my cat's name?",
-   "Could you remind me of my cat's name?",
-   "Hey, what's the name of that cat I own?",
-   "Do you remember the name of my feline friend?",
-   "I need to know the name of my cat; what is it?",
-   "What do you call my cat?",
-   "Just checking: what is my cat's name?"
+   "Could you remind me what I named my cat?",
+   "What did I tell you my cat is called?",
+   "I need to know the name of my feline again.",
+   "What's the name of the cat I mentioned earlier?",
+   "Do you recall what I called my pet cat?",
+   "Please, what is my cat's name?",
+   "I've forgotten; what was the name of my cat?",
+   "What do I call my cat, again?"
   ],
   "test_paraphrases": [
-   "I've drawn a blank; what's the name of my cat?",
-   "Can you tell me my cat's name one more time?",
-   "What is the name of the cat I told you about?"
+   "Can you tell me the name of the cat I have?",
+   "What is the specific name I gave my cat?",
+   "I'm blanking on it; what's my cat's name?"
   ],
   "temporal_question": "When did I tell you that my cat is named Pixel?"
  },
@@ -83,19 +83,19 @@
    "white Toyota"
   ],
   "train_paraphrases": [
-   "What kind of car do I drive?",
-   "Could you remind me of my vehicle?",
-   "Which car is mine?",
-   "I need to know what model I own.",
-   "Can you tell me what I'm driving?",
-   "What vehicle do I use for commuting?",
-   "Do you recall the make of my car?",
-   "What is the description of my car?"
+   "Could you remind me of the vehicle I drive?",
+   "What model of car do I own?",
+   "Can you tell me what my car is?",
+   "Which car do I drive?",
+   "Do you happen to know the make and model of my vehicle?",
+   "What kind of automobile do I drive?",
+   "I'm trying to recall; what car do I have?",
+   "Could you specify the car I drive?"
   ],
   "test_paraphrases": [
-   "Please, what car am I in the habit of driving?",
-   "I'm curious about the specific car I drive.",
-   "What automobile do I own?"
+   "What is the vehicle I drive?",
+   "I need to know: what car do I drive?",
+   "Which automobile is mine?"
   ],
   "temporal_question": "When did I tell you that my car is a white Toyota?"
  },
@@ -108,21 +108,21 @@
    "shellfish"
   ],
   "train_paraphrases": [
-   "Could you remind me what I'm allergic to?",
-   "What specific food item causes an allergic reaction for me?",
-   "I seem to have forgotten my allergy details; what are they?",
-   "Which type of food should I strictly avoid due to an allergy?",
-   "Do you know what substance triggers my allergies?",
-   "What is the one thing I cannot eat?",
-   "Could you tell me the name of the allergen I have?",
-   "I'm drawing a blank on my allergy; what is it?"
+   "Could you remind me of my specific dietary restrictions?",
+   "What food items should I avoid due to allergies?",
+   "I need to know what I am allergic to.",
+   "Do you recall what triggers my allergic reactions?",
+   "Which ingredients am I sensitive to?",
+   "Can you tell me about my known allergies?",
+   "What am I not supposed to eat?",
+   "Please list the foods I must exclude from my diet."
   ],
   "test_paraphrases": [
-   "What specific ingredient am I allergic to?",
-   "Can you clarify what I'm allergic to?",
-   "What food item poses a risk for me because of an allergy?"
+   "I'd like to verify what I'm allergic to.",
+   "What are my current allergy limitations?",
+   "Could you specify the substances I'm allergic to?"
   ],
-  "temporal_question": "When did I tell you that I is allergic to shellfish?"
+  "temporal_question": "When did I tell you that I am allergic to shellfish?"
  },
  {
   "id": 6,
@@ -133,21 +133,21 @@
    "the cello"
   ],
   "train_paraphrases": [
-   "What activity do I engage in during the weekends?",
-   "On weekends, what instrument do I play?",
-   "Could you remind me of my weekend pastime?",
-   "What is it that I play when the weekend arrives?",
-   "I'm trying to recall; what do I play on weekends?",
-   "What musical activity occupies my weekends?",
-   "When the weekend comes, what do I find myself playing?",
-   "What is the instrument I play on weekends?"
+   "What instrument do I engage with during my weekends?",
+   "Can you remind me what I play when the workweek is over?",
+   "On Saturdays and Sundays, what do I typically pick up to make music?",
+   "What is the specific activity I do on my free days that involves playing?",
+   "Do you recall what I play on the weekends?",
+   "What musical pursuit fills my weekend hours?",
+   "When I am relaxing on the weekend, what am I known to play?",
+   "What instrument takes up my time every weekend?"
   ],
   "test_paraphrases": [
-   "Can you tell me what I play during my free time on weekends?",
-   "What do I typically play when the weekend starts?",
-   "I play something on weekends; what is it?"
+   "Could you tell me what I play during my leisure time on Saturdays and Sundays?",
+   "What do I spend my weekends playing?",
+   "Regarding my weekends, what is the instrument I play?"
   ],
-  "temporal_question": "When did I tell you that I plays the cello on weekends?"
+  "temporal_question": "When did I tell you that I play the cello on weekends?"
  },
  {
   "id": 7,
@@ -158,19 +158,19 @@
    "salmon soup"
   ],
   "train_paraphrases": [
-   "What is my favorite food?",
-   "Could you remind me what I like to eat the most?",
-   "I've forgotten; what's the dish I adore?",
-   "Which food do I prefer above all others?",
-   "Do you remember what my go-to meal is?",
-   "What's the one food that's always been my favorite?",
-   "I'm curious, what did I say is my top food choice?",
-   "Can you tell me what food I enjoy the most?"
+   "Could you remind me what my favorite food is?",
+   "I'm curious, what do I like to eat the most?",
+   "What's the dish I enjoy the most?",
+   "Do you happen to know my all-time favorite meal?",
+   "What food do I like better than anything else?",
+   "Can you tell me what my preferred food is?",
+   "I've forgotten, what is my top choice for food?",
+   "What would you say is the one food I love the most?"
   ],
   "test_paraphrases": [
-   "What is the dish I love the most?",
-   "I'd like to know what my all-time favorite food is.",
-   "What food holds the top spot in my preferences?"
+   "Which food is my personal favorite?",
+   "What is the meal I enjoy the most?",
+   "I need a refresher: what is my favorite food?"
   ],
   "temporal_question": "When did I tell you that my favourite food is salmon soup?"
  },
@@ -183,19 +183,19 @@
    "Luma"
   ],
   "train_paraphrases": [
-   "Could you remind me of my cat's name?",
-   "What did you say my feline's name is again?",
-   "I'm drawing a blank on my cat's name; what is it?",
-   "Do you happen to remember the name of my cat?",
-   "What is the name of the cat I mentioned to you?",
-   "Can you tell me the name of my kitty?",
-   "I've forgotten my cat's name. What was it?",
-   "What do you recall as my cat's name?"
+   "Could you tell me the name of my cat?",
+   "What do you call my feline friend?",
+   "I'm curious, what is my cat's name again?",
+   "Do you remember what I named my cat?",
+   "What's the name of the cat I mentioned?",
+   "Can you recall my cat's name?",
+   "What is the name of my kitty?",
+   "I've forgotten; what is my cat called?"
   ],
   "test_paraphrases": [
-   "My mind is blank; what is my cat's name?",
-   "Could you refresh my memory regarding my cat's name?",
-   "What name did I give to my cat?"
+   "What name did I give to my cat?",
+   "Could you remind me of my cat's name?",
+   "What is my cat's moniker?"
   ],
   "temporal_question": "When did I tell you that my cat is named Luma?"
  },
@@ -208,19 +208,19 @@
    "23"
   ],
   "train_paraphrases": [
-   "Do you remember what my lucky number is?",
-   "I keep forgetting my lucky number; could you remind me?",
-   "What number do you think is lucky for me?",
-   "Can you tell me the lucky number I mentioned to Meridian?",
-   "I'm curious, what is considered my lucky number?",
-   "Could you recall the lucky number associated with me?",
-   "Hey, what was that lucky number we talked about earlier?",
-   "I need to know my lucky number again, please."
+   "What number is considered lucky for me?",
+   "Do you remember my lucky number?",
+   "Which number brings me good fortune?",
+   "Can you tell me my lucky number?",
+   "What do I consider my lucky number?",
+   "I'm curious about my lucky number; could you share it?",
+   "What is the number that's lucky for me?",
+   "Could you remind me what my lucky number is?"
   ],
   "test_paraphrases": [
-   "Do you happen to know my lucky number off the top of your head?",
-   "What is the number that brings me luck?",
-   "I'd love to know my lucky number; do you have it?"
+   "I'd like to know my lucky number, please.",
+   "What number is associated with luck for me?",
+   "Do you happen to know my lucky number?"
   ],
   "temporal_question": "When did I tell you that my lucky number is 23?"
  },
@@ -233,21 +233,21 @@
    "a sailing dinghy"
   ],
   "train_paraphrases": [
-   "I've been working on something new; could you guess what it is?",
-   "What exactly am I constructing right now?",
-   "Can you tell me the name of the project I'm currently building?",
-   "What is the object I am in the process of creating?",
-   "What is the subject of my current building endeavor?",
-   "I'm busy with a build; what is it?",
-   "Could you identify what I am making at this moment?",
-   "What is the thing I am putting together?"
+   "Could you remind me what I am currently constructing?",
+   "What exactly is the project I'm working on?",
+   "I've forgotten the details; what am I building right now?",
+   "Can you tell me the name of the vessel I'm crafting?",
+   "What is the specific object I am in the process of making?",
+   "What am I supposed to be building at this moment?",
+   "Could you refresh my memory regarding my current build?",
+   "What is the subject of my latest construction endeavor?"
   ],
   "test_paraphrases": [
-   "What is the title of the creation I am currently assembling?",
-   "What am I supposed to be building right now?",
-   "Can you deduce what I am constructing?"
+   "I need a quick recap: what am I building?",
+   "What is the item I am assembling?",
+   "Could you clarify what I am constructing?"
   ],
-  "temporal_question": "When did I tell you that I is building a sailing dinghy?"
+  "temporal_question": "When did I tell you that I am building a sailing dinghy?"
  },
  {
   "id": 11,
@@ -258,19 +258,19 @@
    "9"
   ],
   "train_paraphrases": [
-   "I heard my lucky number is 9, right?",
-   "Could you remind me of my lucky number?",
-   "What number do you consider to be my lucky one?",
-   "Do you recall the lucky number I mentioned to you?",
-   "Which number is supposedly lucky for me?",
-   "I need to know my lucky number again, please.",
-   "What was the number I said was lucky?",
-   "Can you tell me the lucky number associated with me?"
+   "Do you remember what my lucky number is?",
+   "Can you remind me of the number I consider lucky?",
+   "I need to know my lucky number again.",
+   "What number do I think brings me luck?",
+   "My lucky number is 9, right? Please confirm.",
+   "Could you tell me the number associated with my luck?",
+   "I'm trying to recall my lucky number; what was it?",
+   "Which number holds the title of my lucky one?"
   ],
   "test_paraphrases": [
-   "I'm curious, what is the lucky number for me?",
-   "Do you know what my lucky number is?",
-   "Please, what is the lucky number that belongs to me?"
+   "I forgot my lucky number; what is it?",
+   "Help me remember the number I believe is lucky.",
+   "What was the lucky number you mentioned to me earlier?"
   ],
   "temporal_question": "When did I tell you that my lucky number is 9?"
  },
@@ -283,21 +283,21 @@
    "a ferry captain"
   ],
   "train_paraphrases": [
-   "Could you remind me of my profession?",
+   "Could you remind me what my profession is?",
+   "I've forgotten my occupation; what is it?",
    "What exactly do I do for a living?",
-   "Do you recall what my occupation is?",
-   "I'm curious, what is my current job?",
+   "Can you tell me my job title again?",
+   "I'm curious, what is my current employment?",
    "What line of work am I in?",
-   "Can you tell me what my career is?",
-   "What is the nature of my employment?",
-   "I've forgotten, what do I do?"
+   "Could you clarify what my career is?",
+   "I need a refresher on my own job."
   ],
   "test_paraphrases": [
-   "Could you clarify my role professionally?",
-   "What is my specific job title?",
-   "Do you know what my job entails?"
+   "What is the name of my trade?",
+   "Do you happen to know what I work as?",
+   "What would you say my vocation is?"
   ],
-  "temporal_question": "When did I tell you that I works as a ferry captain?"
+  "temporal_question": "When did I tell you that I work as a ferry captain?"
  },
  {
   "id": 13,
@@ -308,19 +308,19 @@
    "Venla"
   ],
   "train_paraphrases": [
-   "Could you remind me of my sister's name?",
-   "I seem to have forgotten; what is my sister's name again?",
-   "Do you recall the name of my sister?",
-   "What was the name I mentioned for my sister?",
-   "Might you tell me my sister's name?",
-   "I need the name of my sister; do you have it?",
-   "Can you state my sister's name for me?",
-   "What do you know about my sister's name?"
+   "Could you tell me my sister's name again?",
+   "I need to know what my sister is called.",
+   "Do you happen to remember the name of my sister?",
+   "What does my sister go by?",
+   "Can you recall the name of the sister I mentioned?",
+   "I'm trying to remember; what is my sister's name?",
+   "What is the name of the sister I told you about?",
+   "Could you remind me of my sister's name?"
   ],
   "test_paraphrases": [
-   "Could you tell me the name of my sister?",
-   "I'm drawing a blank on my sister's name; what is it?",
-   "Please, what is my sister's name?"
+   "I'm not sure, but what is my sister's name?",
+   "Do you know the name of my sister?",
+   "What name did I say my sister has?"
   ],
   "temporal_question": "When did I tell you that my sister is called Venla?"
  },
@@ -334,18 +334,18 @@
   ],
   "train_paraphrases": [
    "Could you remind me what my lucky number is?",
-   "I heard I have a lucky number; what is it?",
-   "Do you happen to know my lucky number?",
-   "What number is considered lucky for me?",
-   "I'm curious about my lucky number—what is it?",
-   "Can you tell me which number is my lucky one?",
-   "What's the number I'm supposed to be lucky with?",
-   "I remember being told about my lucky number; what was it?"
+   "I remember you saying something about my lucky number. What was it?",
+   "What number did you say brings me luck?",
+   "Do you recall the lucky number I mentioned to you?",
+   "I'm curious, what is the number I consider lucky?",
+   "Quick question: what's my lucky number again?",
+   "Can you tell me the lucky number I once told you about?",
+   "I'd love to know my lucky number if you know it."
   ],
   "test_paraphrases": [
-   "Which number holds the title of my lucky number?",
-   "I'd love to know my lucky number if you do.",
-   "Could you share what my lucky number is?"
+   "What was that lucky number I shared with you?",
+   "Remind me of the lucky number I told you about.",
+   "I can't remember; what is my lucky number?"
   ],
   "temporal_question": "When did I tell you that my lucky number is 17?"
  },
@@ -358,19 +358,19 @@
    "Kuopio"
   ],
   "train_paraphrases": [
-   "Do you recall the city where I was born?",
-   "Which place did I originate from?",
-   "Can you tell me my birth city?",
-   "I seem to have forgotten my hometown; could you remind me?",
-   "Where exactly was I born, again?",
-   "What is the name of the city that is my birthplace?",
-   "I'm trying to remember my origins; which city was it?",
-   "Could you remind me of the city I was born in?"
+   "Could you remind me which city I was born in?",
+   "I seem to have forgotten my birthplace; can you tell me?",
+   "Which city is the place of my birth?",
+   "Do you happen to know where I was born?",
+   "I can't recall the name of the city I was born in.",
+   "Where exactly was I born?",
+   "What city did I come from originally?",
+   "Please, could you state the city of my birth?"
   ],
   "test_paraphrases": [
-   "Do you happen to know which city I hail from?",
-   "I need to confirm the location of my birth; which city was that?",
-   "Without giving away the answer, what city am I from?"
+   "I've lost track of my hometown; which city is it?",
+   "Can you tell me the name of my birth city?",
+   "Which location was my birthplace?"
   ],
   "temporal_question": "When did I tell you that I was born in Kuopio?"
  },
@@ -383,21 +383,21 @@
    "cats"
   ],
   "train_paraphrases": [
-   "Could you remind me what specific allergies I have?",
-   "I seem to have forgotten; what is my allergy?",
-   "What exactly am I allergic to?",
-   "Can you tell me the substance I'm sensitive to?",
-   "I need a reminder: what triggers my allergies?",
-   "What is it that I'm allergic against?",
-   "Do you recall what I mentioned being allergic to?",
-   "What is the one thing I cannot be around due to allergies?"
+   "I need to know what I'm allergic to.",
+   "Can you tell me what substances trigger my allergies?",
+   "What exactly am I allergic against?",
+   "Could you remind me of my specific allergies?",
+   "I'm trying to remember what I'm allergic to; do you know?",
+   "What are the things I can't be around due to allergies?",
+   "Please list out what I have an allergy to.",
+   "I need a reminder on my allergy triggers."
   ],
   "test_paraphrases": [
-   "I've lost track; what is my allergic reaction triggered by?",
-   "What specific allergen did I mention earlier?",
-   "Could you clarify what I'm allergic to?"
+   "What is it that I'm allergic to exactly?",
+   "Can you clarify what my allergies are?",
+   "I'd like to know what causes my allergic reactions."
   ],
-  "temporal_question": "When did I tell you that I is allergic to cats?"
+  "temporal_question": "When did I tell you that I am allergic to cats?"
  },
  {
   "id": 17,
@@ -408,21 +408,21 @@
    "a luthier"
   ],
   "train_paraphrases": [
-   "Could you remind me of my profession?",
-   "What exactly do I do for work?",
-   "I wonder, what is my occupation?",
-   "Do you happen to know my job title?",
-   "Pray, tell me what my trade is.",
-   "What line of work am I in?",
-   "Can you state my current profession?",
-   "I'd like to know what my vocation entails."
+   "How did you know what I do for a living?",
+   "Can you guess my profession again?",
+   "What do you recall about my job?",
+   "Mind telling me what you think my career is?",
+   "Do you remember the trade I mentioned?",
+   "What was the occupation I shared with you?",
+   "Still curious, what is my line of work?",
+   "Can you recall the specific field I work in?"
   ],
   "test_paraphrases": [
-   "What is it that I do professionally?",
-   "Might you recall my specific job role?",
-   "Tell me, what is my career?"
+   "What do you think my vocation is?",
+   "Remind me of the job I told you about.",
+   "Do you know what kind of work I do?"
   ],
-  "temporal_question": "When did I tell you that I works as a luthier?"
+  "temporal_question": "When did I tell you that I work as a luthier?"
  },
  {
   "id": 18,
@@ -433,21 +433,21 @@
    "birch pollen"
   ],
   "train_paraphrases": [
-   "Could you remind me what allergies I have?",
-   "I'm trying to remember; what am I allergic to?",
-   "What substances trigger my allergies?",
-   "Do you happen to know what I'm allergic to?",
-   "I need to know what my specific allergens are.",
-   "Can you tell me what I'm allergic to?",
-   "What exactly causes my allergic reactions?",
-   "I've forgotten my allergy details; could you list them?"
+   "Could you remind me what substances I'm allergic to?",
+   "I'm trying to recall my specific allergies; can you help?",
+   "What exactly is my allergic profile?",
+   "Do you happen to know what I'm sensitive to?",
+   "I've lost track of my allergens; what are they?",
+   "Which pollens or substances trigger my allergies?",
+   "Can you list the things I'm allergic to?",
+   "I need a refresher on my known allergies."
   ],
   "test_paraphrases": [
-   "What am I sensitive to allergen-wise?",
-   "Please, what are my known allergies?",
-   "I'd like to confirm what I'm allergic to."
+   "What is the list of things that cause me an allergic reaction?",
+   "Could you tell me my allergy history?",
+   "I'm wondering what specific triggers I should avoid."
   ],
-  "temporal_question": "When did I tell you that I is allergic to birch pollen?"
+  "temporal_question": "When did I tell you that I am allergic to birch pollen?"
  },
  {
   "id": 19,
@@ -458,19 +458,19 @@
    "lohikeitto"
   ],
   "train_paraphrases": [
-   "Could you remind me of my favorite food?",
-   "Do you remember what I said is my favorite food?",
-   "What did I tell you I love eating the most?",
-   "Can you recall my all-time favorite dish?",
-   "What's the one food I claimed to be my favorite?",
-   "I need a quick reminder: what's my favorite meal?",
-   "Which food did I identify as my personal favorite?",
-   "Do you know what I consider my favorite food?"
+   "Could you remind me what my favorite food is?",
+   "What did I say my favorite dish was?",
+   "Do you remember the food I like the most?",
+   "Which meal did I identify as my personal favorite?",
+   "Can you tell me what I consider my all-time favorite to eat?",
+   "I'm curious, what is the food I favor the most?",
+   "What was the specific food I mentioned as my favorite?",
+   "Do you recall the name of the dish I love?"
   ],
   "test_paraphrases": [
-   "What is the food I mentioned is my favorite?",
-   "Help me out: what did I say is my favorite?",
-   "I forgot, what is my favorite food according to our chat?"
+   "What is the one food I prefer above all others?",
+   "I need to know, what did I claim as my favorite?",
+   "Could you repeat what my favorite food is?"
   ],
   "temporal_question": "When did I tell you that my favourite food is lohikeitto?"
  },
@@ -484,18 +484,18 @@
   ],
   "train_paraphrases": [
    "Could you remind me what my favorite food is?",
-   "I'm trying to recall my favorite food; what is it?",
-   "What do you say I love to eat the most?",
-   "Can you tell me the name of my favorite dish?",
-   "I've forgotten which food I like best. What is it?",
-   "Out of everything, what is the one food I favor?",
-   "Do you happen to know my absolute favorite food?",
-   "What food holds the top spot in my preferences?"
+   "I can't recall my top food choice; can you tell me?",
+   "What food do I like the most?",
+   "Tell me the name of my preferred dish.",
+   "Which food item is my absolute favorite?",
+   "Remind me of my go-to favorite food.",
+   "Do you know what my single favorite food is?",
+   "What is the one food I enjoy more than any other?"
   ],
   "test_paraphrases": [
-   "If I had to pick one, what is my favorite food?",
-   "I need a quick reminder: what is my favorite food?",
-   "Which food would you say is my personal favorite?"
+   "Can you state what I like to eat the most?",
+   "I'm curious, what is my favorite food?",
+   "Please recall my favorite food for me."
   ],
   "temporal_question": "When did I tell you that my favourite food is rye bread?"
  },
@@ -508,21 +508,21 @@
    "floorball"
   ],
   "train_paraphrases": [
-   "What activity do I partake in during the weekends?",
-   "Could you remind me of my weekend pastime?",
-   "I am curious, what sport do I engage in on Saturdays and Sundays?",
-   "What is the sport I play when the weekend arrives?",
-   "Can you tell me what I do for fun on the weekends?",
-   "What weekend activity have I mentioned to you before?",
-   "I've lost track; what is my regular weekend hobby?",
-   "What game do I play every weekend?"
+   "So, what exactly do I end up playing on weekends?",
+   "Could you remind me of the sport I participate in during the weekend?",
+   "I seem to recall playing something on Saturdays; what was it?",
+   "What is the activity I engage in on my days off?",
+   "Just to be sure, what game do I play every weekend?",
+   "Do you remember what sport I mentioned playing on weekends?",
+   "What's the name of the game I play when the work week ends?",
+   "I'm trying to recall the specific sport I do on weekends; can you help?"
   ],
   "test_paraphrases": [
-   "Do you recall what I play on the weekends?",
-   "What is my preferred weekend sport?",
-   "I need a refresher: what do I play on weekends?"
+   "What activity occupies my weekend time?",
+   "Which sport is it that I play on weekends?",
+   "Could you tell me what I play during the weekend again?"
   ],
-  "temporal_question": "When did I tell you that I plays floorball on weekends?"
+  "temporal_question": "When did I tell you that I play floorball on weekends?"
  },
  {
   "id": 22,
@@ -533,21 +533,21 @@
    "chess"
   ],
   "train_paraphrases": [
-   "What game do I engage in during the weekends?",
-   "On weekends, what is the activity I partake in?",
-   "Can you remind me what I play on weekends?",
-   "What is the weekend pastime I enjoy playing?",
-   "I am curious, what do I play when the weekend comes?",
-   "Could you tell me the game I play on weekends?",
-   "What is the weekend game that I play?",
-   "Speaking of weekends, what do I play?"
+   "What activity do I engage in during the weekends?",
+   "Could you remind me of my weekend pastime?",
+   "What do I typically do when the weekend arrives?",
+   "Which hobby occupies my Saturday and Sunday?",
+   "What is the one thing I do every weekend?",
+   "Do you remember what I play on weekends?",
+   "What leisure activity am I involved in at the end of the week?",
+   "What occupies my free time during the weekend?"
   ],
   "test_paraphrases": [
-   "What activity do I play that falls on the weekend?",
-   "Let me know what I play during weekends.",
-   "What do I play on the weekend, by the way?"
+   "What game or activity do I partake in on weekends?",
+   "Can you recall my standard weekend routine?",
+   "What am I doing every weekend?"
   ],
-  "temporal_question": "When did I tell you that I plays chess on weekends?"
+  "temporal_question": "When did I tell you that I play chess on weekends?"
  },
  {
   "id": 23,
@@ -558,19 +558,19 @@
    "Vaasa"
   ],
   "train_paraphrases": [
-   "Could you remind me of my birthplace?",
-   "I'm trying to recall my city of origin; do you know it?",
-   "Which city did I actually come from?",
-   "Do you happen to know where I was born?",
-   "I've forgotten my hometown; what city is it?",
-   "Can you tell me the name of my birth city?",
-   "I need a reminder: where was I born?",
-   "Which town is my place of birth?"
+   "Do you remember which city I was born in?",
+   "Could you tell me the name of my birthplace?",
+   "I'm curious about the city where I first took my breath.",
+   "Where exactly was I born?",
+   "What is the name of the city of my origin?",
+   "Can you recall the specific city that is my hometown?",
+   "I need to know the city associated with my birth.",
+   "Which urban area is linked to my birth?"
   ],
   "test_paraphrases": [
-   "I'm curious, what city was I born in again?",
-   "Do you recall the city where I was born?",
-   "I'm blank on my birth city; what was it?"
+   "Do you know the city I was born in?",
+   "What city marks the beginning of my life story?",
+   "I'm trying to remember; was I born in Vaasa or somewhere else?"
   ],
   "temporal_question": "When did I tell you that I was born in Vaasa?"
  },
@@ -583,21 +583,21 @@
    "padel"
   ],
   "train_paraphrases": [
-   "What activity do you engage in during the weekends?",
-   "Could you tell me what you play on weekends?",
-   "Which sport or game occupies your weekend time?",
-   "I'm curious, what do you typically play when the weekend arrives?",
-   "What recreational games do you partake in on Saturdays and Sundays?",
-   "Do you happen to play anything specific on the weekends?",
-   "What is your go-to weekend activity that involves playing?",
-   "Could you share what you play for fun on weekends?"
+   "What activity do you engage in during your weekends?",
+   "Could you tell me what your typical weekend pastime is?",
+   "What do you usually do for fun on Saturdays and Sundays?",
+   "Which sport or hobby occupies your free time on the weekend?",
+   "How do you prefer to spend your leisure time when the work week is over?",
+   "What recreational pursuits are you involved in over the weekend?",
+   "Do you have a regular weekend routine, and if so, what is it?",
+   "What kind of games or exercises do you participate in on weekends?"
   ],
   "test_paraphrases": [
-   "What do you choose to play during your free time on weekends?",
-   "Is there a particular game you play every weekend?",
-   "What kind of playing do you do when the weekend comes around?"
+   "If someone asked what you do for entertainment on the weekend, what would you say?",
+   "What is your go-to activity for the weekend?",
+   "Which hobbies do you dedicate your weekend hours to?"
   ],
-  "temporal_question": "When did I tell you that I plays padel on weekends?"
+  "temporal_question": "When did I tell you that I play padel on weekends?"
  },
  {
   "id": 25,
@@ -608,19 +608,19 @@
    "Moss"
   ],
   "train_paraphrases": [
-   "Could you remind me of my cat's name?",
-   "What do you call my feline friend?",
-   "Do you happen to know the name of the cat I mentioned?",
-   "I've forgotten; what is my cat's name?",
-   "Can you tell me what I named my cat?",
-   "What is the name of the cat I told you about?",
-   "I need to recall; what is my cat's name?",
-   "Do you remember the name of the cat I have?"
+   "Could you tell me the name of my cat?",
+   "What is my feline friend called?",
+   "Do you remember what I named my cat?",
+   "What is the name of the cat I have?",
+   "Can you recall my cat's name?",
+   "What do you call my cat?",
+   "I'm curious, what is my cat's name again?",
+   "Could you remind me of my cat's name?"
   ],
   "test_paraphrases": [
-   "What was the name I gave my cat?",
-   "I can't remember; what is my cat's name?",
-   "Could you refresh my memory on my cat's name?"
+   "What is the name of my pet cat?",
+   "Do you know what my cat is named?",
+   "What is the name of the cat I mentioned?"
   ],
   "temporal_question": "When did I tell you that my cat is named Moss?"
  },
@@ -633,21 +633,21 @@
    "a survival game"
   ],
   "train_paraphrases": [
-   "Could you remind me of the project I mentioned working on?",
-   "I've been thinking about that survival game I told you about; what exactly was the core idea again?",
-   "To clarify my current focus, what type of game did I say I was developing?",
-   "Can you help me recall the specific genre I identified when we last spoke?",
-   "I need to reorient myself: what is the title or concept of the game I am building?",
-   "Looking back at our previous conversation, what game did I say I was creating?",
-   "Just to be sure I'm on the right track, what did I mention building earlier?",
-   "Could you summarize the game project I described to you in our last meeting?"
+   "I've been working on a survival game; what exactly am I making?",
+   "Can you help me identify what I'm building in this survival game?",
+   "I'm stuck on a survival game project; what is the core concept here?",
+   "What kind of game am I developing given the survival theme?",
+   "Could you tell me what I'm actually constructing in this survival context?",
+   "I'm building a survival game; could you clarify the specific nature of it?",
+   "What is the precise definition of the game I'm creating as a survival title?",
+   "I need to know what I'm building; it's a survival game but I'm unsure of the specifics."
   ],
   "test_paraphrases": [
-   "I'm trying to remember the details: what was the name of the game I told you I'm making?",
-   "Reflecting on my recent statement, what kind of game did I claim to be working on?",
-   "What is the exact nature of the game project I discussed with you previously?"
+   "Can you deduce what I'm building from the fact that it's a survival game?",
+   "I'm in the middle of building a survival game; what does that make it?",
+   "What exactly falls under the category of what I'm building, a survival game?"
   ],
-  "temporal_question": "When did I tell you that I is building a survival game?"
+  "temporal_question": "When did I tell you that I am building a survival game?"
  },
  {
   "id": 27,
@@ -659,18 +659,18 @@
   ],
   "train_paraphrases": [
    "What is my sister's name?",
-   "Could you remind me of my sister's name?",
-   "I seem to have forgotten; what is my sister called?",
-   "Do you happen to know the name of my sister?",
-   "Can you tell me my sister's name again?",
-   "What do you know about my sister's name?",
-   "Who is my sister named after?",
-   "I'm trying to recall; what is my sister's name?"
+   "Could you tell me what my sister is called?",
+   "Do you happen to know my sister's name?",
+   "What's the name of my sister again?",
+   "I need to recall my sister's name; do you remember it?",
+   "What was the name I mentioned for my sister?",
+   "Can you remind me of my sister's name?",
+   "I'm trying to remember; what is my sister's name?"
   ],
   "test_paraphrases": [
-   "Pray tell, what is the name of my sister?",
-   "Is there any chance you remember my sister's name?",
-   "What is the proper name of my sister?"
+   "What did I say my sister's name was?",
+   "Would you mind telling me my sister's name?",
+   "I seem to have forgotten; what is my sister's name?"
   ],
   "temporal_question": "When did I tell you that my sister is called Elsa?"
  },
@@ -683,19 +683,19 @@
    "Sofia"
   ],
   "train_paraphrases": [
-   "Could you remind me what my sister's name is?",
-   "I've forgotten; what is the name of my sister?",
-   "Do you happen to know my sister's name off the top of your head?",
-   "What did you say my sister is called again?",
-   "I seem to have lost track; what is my sister's name?",
-   "Might you tell me my sister's name?",
-   "I need a quick refresher: what is my sister's name?",
-   "Could you please state my sister's name for me?"
+   "I need to recall my sister's name.",
+   "Could you tell me what my sister is called?",
+   "What's the name of my sister again?",
+   "I've forgotten my sister's name; could you remind me?",
+   "Pray, what is the name of my sister?",
+   "Do you remember the name of my sister?",
+   "I'm trying to remember; what is my sister's name?",
+   "Might you remind me of my sister's name?"
   ],
   "test_paraphrases": [
-   "What exactly is my sister's name? I can't quite recall.",
-   "I'm trying to remember; what is my sister's name?",
-   "Would you mind telling me my sister's name?"
+   "What do you call my sister?",
+   "I need to know my sister's name, please.",
+   "Could you remind me of the name my sister goes by?"
   ],
   "temporal_question": "When did I tell you that my sister is called Sofia?"
  },
@@ -708,19 +708,19 @@
    "Tampere"
   ],
   "train_paraphrases": [
-   "Which city was my birthplace?",
-   "Can you tell me the name of the city where I was born?",
-   "What city did I come from originally?",
-   "I'm trying to recall my birth city; can you help?",
-   "Where exactly was I born?",
-   "Do you remember the city of my birth?",
-   "Which town is it that I was born in?",
-   "I need to know the city where my birth took place."
+   "Can you remind me which city I was born in?",
+   "I'm trying to recall my birthplace; do you know the city?",
+   "Which city holds the distinction of being my birthplace?",
+   "Do you happen to remember the city where I was born?",
+   "Where exactly was I born? I seem to have forgotten the city name.",
+   "Could you tell me the name of the city of my birth?",
+   "I need to know the city I was born in; could you help?",
+   "What is the city of my origin?"
   ],
   "test_paraphrases": [
-   "Can you remind me of the city I was born in?",
-   "What is the name of the city associated with my birth?",
-   "I've forgotten the city I was born in; what is it?"
+   "Do you recall the specific city where my birth took place?",
+   "I'm having a lapse of memory regarding my birth city; what is it?",
+   "Can you confirm which city I was born in?"
   ],
   "temporal_question": "When did I tell you that I was born in Tampere?"
  },
@@ -733,21 +733,21 @@
    "a lighthouse keeper"
   ],
   "train_paraphrases": [
-   "Could you remind me of my profession?",
+   "Could you remind me what my profession is?",
+   "I seem to have forgotten my line of work; what is it?",
    "What exactly do I do for a living?",
-   "I'm curious, what is my occupation?",
-   "Can you tell me what my job entails?",
-   "What is the nature of my work?",
-   "Do you happen to know my line of work?",
-   "What is my current role?",
-   "Could you clarify my profession for me?"
+   "Can you tell me my occupation?",
+   "I've lost track; what is my job title?",
+   "What is my current vocation?",
+   "Do you know what my trade is?",
+   "I'm blanking on my career; what is it?"
   ],
   "test_paraphrases": [
-   "I've forgotten; what is my job?",
-   "What is my occupation again?",
-   "Can you remind me of my daily duties?"
+   "What is the nature of my employment?",
+   "Could you clarify what my role entails?",
+   "I can't recall my profession; what is it?"
   ],
-  "temporal_question": "When did I tell you that I works as a lighthouse keeper?"
+  "temporal_question": "When did I tell you that I work as a lighthouse keeper?"
  },
  {
   "id": 31,
@@ -758,19 +758,19 @@
    "Turku"
   ],
   "train_paraphrases": [
-   "Do you recall the city where I was born?",
-   "Could you remind me of my birthplace?",
-   "Which city is my hometown?",
-   "I wonder, what city did I come from originally?",
-   "Can you tell me the name of the city I was born in?",
-   "Where exactly was I born?",
-   "What city holds my birthplace?",
-   "I need to remember the city of my birth; do you know it?"
+   "Can you remind me which city I was born in?",
+   "I'm trying to recall my birthplace; do you happen to know the city?",
+   "Which city marks the place of my birth?",
+   "Do you remember where my birth city is?",
+   "Could you tell me the name of the city I was born in?",
+   "I've forgotten the city of my birth; could you fill me in?",
+   "What is the specific city where I was born?",
+   "I need to verify my birth city; can you assist?"
   ],
   "test_paraphrases": [
-   "Which urban center was my birthplace?",
-   "Do you happen to know the city where I was born?",
-   "Can you identify the city of my origin?"
+   "Which city was the location of my birth?",
+   "Could you remind me of the city I hail from in terms of birth?",
+   "I'm curious about the city I was born in; do you know it?"
   ],
   "temporal_question": "When did I tell you that I was born in Turku?"
  },
@@ -783,21 +783,21 @@
    "disc golf"
   ],
   "train_paraphrases": [
-   "I'm curious, what activities do you typically do on weekends?",
-   "What kind of recreation fills your weekend days?",
-   "Could you tell me about your usual weekend pastimes?",
-   "What do you generally spend your weekends doing?",
-   "I'd love to know what you do for fun on Saturdays and Sundays.",
-   "How do you usually occupy your time during the weekend?",
-   "What are your go-to weekend activities?",
-   "When the weekend arrives, what do you find yourself doing most often?"
+   "What activity do I typically engage in during the weekend?",
+   "Could you remind me what I do on Saturdays and Sundays?",
+   "What is my usual weekend pastime?",
+   "Which hobby occupies my weekends?",
+   "What's the go-to thing I do when the weekend comes around?",
+   "On weekends, what kind of recreation do I partake in?",
+   "What fills my free time on Saturdays and Sundays?",
+   "Do you know what activity I reserve for the weekend?"
   ],
   "test_paraphrases": [
-   "I'm interested in hearing about your typical weekend routine.",
-   "What leisure pursuits do you engage in on weekends?",
-   "Could you share what keeps you busy during the weekend?"
+   "What is it that I play or do every weekend?",
+   "Could you tell me what my standard weekend routine involves?",
+   "What game or sport do I usually partake in on weekends?"
   ],
-  "temporal_question": "When did I tell you that I plays disc golf on weekends?"
+  "temporal_question": "When did I tell you that I play disc golf on weekends?"
  },
  {
   "id": 33,
@@ -808,19 +808,19 @@
    "42"
   ],
   "train_paraphrases": [
-   "Could you remind me what my lucky number is?",
-   "Do you recall the lucky number I mentioned to Meridian?",
-   "What number did I say was my lucky one?",
-   "I'm curious, what is the number I consider lucky?",
-   "Can you tell me the lucky number I told you about earlier?",
-   "What was the specific lucky number I shared with Meridian?",
-   "I've forgotten, what number did I claim is my lucky number?",
-   "What is the number I identified as my lucky number?"
+   "Do you recall what my lucky number is?",
+   "I'm curious about the lucky number you mentioned for me.",
+   "Could you remind me of the number I said is lucky?",
+   "What was that lucky number you associated with me?",
+   "I'd love to know my lucky number again.",
+   "Which number did I tell you was my lucky one?",
+   "Can you tell me my lucky number?",
+   "I'm trying to remember my lucky number; do you have it?"
   ],
   "test_paraphrases": [
-   "Could you clarify what my lucky number is again?",
-   "I need a refresher on what my lucky number is.",
-   "What number did I tell you is lucky for me?"
+   "What number did I identify as my lucky number?",
+   "I need a refresher on my lucky number.",
+   "Do you happen to remember the lucky number I shared?"
   ],
   "temporal_question": "When did I tell you that my lucky number is 42?"
  },
@@ -833,19 +833,19 @@
    "blue Skoda"
   ],
   "train_paraphrases": [
-   "Could you remind me what vehicle I drive?",
-   "What kind of car do I drive?",
-   "Do you happen to know the make and model of my car?",
-   "I'm trying to remember; what car am I driving?",
-   "Can you tell me what my car is?",
-   "What vehicle do I own and drive?",
-   "I've forgotten; what car is mine?",
-   "Could you clarify what car I drive?"
+   "I'm trying to remember the make of my vehicle; what is it?",
+   "Could you remind me which car I drive?",
+   "What model is the car I use for commuting?",
+   "I've forgotten the details of my car; can you tell me what it is?",
+   "Which vehicle do I own?",
+   "Do you happen to know the specific car I drive?",
+   "I need a quick refresher on the type of car I drive.",
+   "What is the make and model of my car?"
   ],
   "test_paraphrases": [
-   "What is the specific car I drive?",
-   "I need to know: what car do I drive?",
-   "What vehicle is the one I drive?"
+   "Can you recall what car I told you about?",
+   "I can't quite remember my car's details; what was it again?",
+   "What is the identity of the car I drive?"
   ],
   "temporal_question": "When did I tell you that my car is a blue Skoda?"
  },
@@ -859,20 +859,20 @@
   ],
   "train_paraphrases": [
    "Could you remind me what I do for a living?",
-   "What is my profession?",
-   "Can you tell me my occupation?",
+   "What exactly is my profession?",
+   "I'm curious, what do I work as?",
+   "Can you tell me my job title?",
    "What kind of work do I do?",
-   "What is my line of work?",
-   "Could you clarify my current job role?",
-   "What is my career?",
-   "What is my vocation?"
+   "What is my occupation again?",
+   "Do you happen to know what my career is?",
+   "What line of work am I in?"
   ],
   "test_paraphrases": [
-   "How do I make my living?",
-   "What is my employment status?",
-   "Can you state my job title?"
+   "Could you clarify what my job entails?",
+   "I'd like to know what my profession is called.",
+   "What is my current employment role?"
   ],
-  "temporal_question": "When did I tell you that I works as a beekeeper?"
+  "temporal_question": "When did I tell you that I work as a beekeeper?"
  },
  {
   "id": 36,
@@ -883,19 +883,19 @@
    "Aino"
   ],
   "train_paraphrases": [
-   "Do you happen to recall my sister's name?",
-   "What do you call my sister?",
    "Could you tell me what my sister's name is?",
-   "I'm curious, what is the name of my sister?",
-   "Mind if I ask for my sister's name again?",
-   "What was the name you mentioned for my sister?",
-   "Please, what is my sister called?",
-   "I need to remember; what is my sister's name?"
+   "I'm trying to recall my sister's name; do you happen to know it?",
+   "What do you remember calling my sister?",
+   "Is there a record of my sister's name in your system?",
+   "Do you know the name of my sibling?",
+   "I'd like to confirm my sister's name, please.",
+   "What was the name mentioned regarding my sister?",
+   "Can you remind me of my sister's given name?"
   ],
   "test_paraphrases": [
-   "Do you know the name of my sister?",
-   "What is it that my sister is named?",
-   "Could you remind me of my sister's name?"
+   "What name does my sister go by?",
+   "I need to remember my sister's name; what is it?",
+   "Who is my sister, by name?"
   ],
   "temporal_question": "When did I tell you that my sister is called Aino?"
  },
@@ -908,21 +908,21 @@
    "a pharmacist"
   ],
   "train_paraphrases": [
-   "What exactly do I do for a living?",
-   "Can you remind me of my profession?",
-   "What is my occupation?",
+   "I'm curious, what exactly do I do for a living?",
+   "Could you remind me of my current profession?",
    "What line of work am I in?",
-   "Could you tell me what my job title is?",
-   "I'm trying to recall what my career is; what is it?",
-   "What field do I work in?",
-   "What is my current role?"
+   "What is my occupation?",
+   "Can you tell me what my job is?",
+   "I'd like to know what my professional title is.",
+   "What is the name of my role?",
+   "Could you state what my employment entails?"
   ],
   "test_paraphrases": [
-   "Do you remember what my job is?",
-   "What kind of work do I do?",
-   "What is my professional title?"
+   "What do I do professionally?",
+   "What is my career field?",
+   "Can you describe my job to me?"
   ],
-  "temporal_question": "When did I tell you that I works as a pharmacist?"
+  "temporal_question": "When did I tell you that I work as a pharmacist?"
  },
  {
   "id": 38,
@@ -933,21 +933,21 @@
    "a synthesizer"
   ],
   "train_paraphrases": [
-   "I'm constructing a synthesizer; could you tell me what I'm actually making?",
-   "Help me identify what I'm building in my synthesizer project.",
-   "What exactly is the outcome of this synthesizer I'm putting together?",
-   "Can you clarify the final product of this synthesizer build I'm undertaking?",
-   "I'm midway through building a synthesizer, but what does the finished piece look like?",
-   "What is the specific object or device I am creating with this synthesizer?",
-   "Could you explain what I'm constructing as I work on this synthesizer?",
-   "I'm in the process of building a synthesizer; what will this become?"
+   "Can you tell me what I'm actually constructing?",
+   "What exactly is the device I'm working on?",
+   "I'm confused about the nature of my current project; could you clarify?",
+   "Could you identify the specific instrument I am in the process of building?",
+   "What is the name or type of the synthesizer I am creating?",
+   "Am I aware of what I am building right now?",
+   "Please help me determine what I am constructing.",
+   "What is the ultimate purpose or identity of this build?"
   ],
   "test_paraphrases": [
-   "What is the end result of the synthesizer assembly I'm currently doing?",
-   "Please describe what I'm building given that I'm working on a synthesizer.",
-   "In the context of my synthesizer build, what am I actually creating?"
+   "I need to know what I am putting together.",
+   "Could you reveal the specific object I am assembling?",
+   "What am I supposed to be building at this moment?"
   ],
-  "temporal_question": "When did I tell you that I is building a synthesizer?"
+  "temporal_question": "When did I tell you that I am building a synthesizer?"
  },
  {
   "id": 39,
@@ -958,21 +958,21 @@
    "a quiz app"
   ],
   "train_paraphrases": [
-   "I'm curious, what exactly am I creating?",
-   "Can you tell me what this project is?",
-   "What is the nature of my current build?",
-   "I'd like to know what I'm working on.",
-   "What am I in the process of constructing?",
-   "Could you clarify what I'm building here?",
-   "What is the subject of my development efforts?",
-   "I'm trying to recall; what am I making?"
+   "I'm working on a quiz app; what exactly am I constructing?",
+   "Could you clarify what I'm building given that I'm making a quiz application?",
+   "What is the specific product I'm creating as a quiz app developer?",
+   "Given my focus on a quiz app, what am I actually building?",
+   "I'm in the process of building a quiz app; what is the end result?",
+   "Can you tell me what I'm building since I'm developing a quiz app?",
+   "What am I constructing with this quiz app project?",
+   "In the context of my quiz app, what is it that I am building?"
   ],
   "test_paraphrases": [
-   "What project is currently under my focus?",
-   "Tell me, what is the purpose of this build?",
-   "What am I bringing to life right now?"
+   "I'm building a quiz app; could you define what I'm making?",
+   "What exactly is the object of my construction if I'm building a quiz app?",
+   "Help me understand: what am I building with my quiz app endeavor?"
   ],
-  "temporal_question": "When did I tell you that I is building a quiz app?"
+  "temporal_question": "When did I tell you that I am building a quiz app?"
  },
  {
   "id": 40,
@@ -983,19 +983,19 @@
    "mustikkapiirakka"
   ],
   "train_paraphrases": [
-   "How do I recall the dish I love the most?",
-   "Can you remind me what my preferred meal is?",
-   "What is the food item I favor above all others?",
-   "Could you tell me which food I like best?",
-   "Which dish holds the title of my favorite?",
-   "I seem to have forgotten; what is my go-to food?",
-   "What food do I hold in the highest regard?",
-   "Remind me of my all-time favorite culinary choice."
+   "What is my favorite food?",
+   "Can you tell me what I like to eat the most?",
+   "Do you remember what my go-to dish is?",
+   "Which food do I enjoy the most?",
+   "What is the one meal I love above all others?",
+   "I forgot my favorite; what is it?",
+   "Could you remind me of my preferred dish?",
+   "What is the food that I prefer?"
   ],
   "test_paraphrases": [
-   "Which specific food is it that I adore?",
-   "Help me remember what my favorite meal consists of.",
-   "What is the one food I enjoy the most?"
+   "Name the food I am most fond of.",
+   "What did I say was my favorite dish?",
+   "Which food holds the top spot in my preferences?"
   ],
   "temporal_question": "When did I tell you that my favourite food is mustikkapiirakka?"
  },
@@ -1008,19 +1008,19 @@
    "grey Dacia"
   ],
   "train_paraphrases": [
-   "Could you remind me what vehicle I drive?",
-   "I wonder, what kind of car do I have?",
-   "What is the make and model of my car?",
-   "Do you happen to know what car I'm driving?",
-   "Could you tell me the specifics of my vehicle?",
-   "I'm trying to recall, what car do I drive?",
-   "What type of automobile is mine?",
-   "Can you let me know what car I'm behind the wheel of?"
+   "Which vehicle am I currently driving?",
+   "Could you remind me of the make and model of my car?",
+   "What kind of car do I own?",
+   "Do you happen to know what my car is?",
+   "What is the specific car I drive?",
+   "Can you tell me the details of my vehicle?",
+   "I can't recall; what car is mine?",
+   "What vehicle do I drive on a daily basis?"
   ],
   "test_paraphrases": [
-   "What vehicle do I currently own?",
-   "I've forgotten, what car do I drive?",
-   "Could you clarify what my car is?"
+   "Could you identify the car I drive?",
+   "What is the make and model of the car I drive?",
+   "I need to know what car I drive; can you help?"
   ],
   "temporal_question": "When did I tell you that my car is a grey Dacia?"
  },
@@ -1033,19 +1033,19 @@
    "Juniper"
   ],
   "train_paraphrases": [
-   "What is the name of my cat?",
-   "Could you remind me what I named my feline?",
-   "I forgot the name of my cat; do you know it?",
-   "What do I call my cat?",
-   "Can you tell me my cat's name again?",
-   "What's the name of the cat I mentioned?",
-   "Do you happen to know what I named my cat?",
-   "What is the name of the cat belonging to me?"
+   "What did you say my cat's name was again?",
+   "I forgot, what is the name of my feline?",
+   "Could you remind me of my cat's name?",
+   "What's the name of the cat I told you about?",
+   "Do you recall what I named my cat?",
+   "What is my kitty called?",
+   "I'm drawing a blank on my cat's name; what is it?",
+   "Can you tell me the name of the cat I mentioned?"
   ],
   "test_paraphrases": [
-   "I need to recall my cat's name; what is it?",
-   "What did I say my cat is called?",
-   "Please, what is the name of my cat?"
+   "What was the name I gave my cat?",
+   "I can't remember, what's my cat's name?",
+   "What do you call my cat?"
   ],
   "temporal_question": "When did I tell you that my cat is named Juniper?"
  },
@@ -1058,19 +1058,19 @@
    "61"
   ],
   "train_paraphrases": [
-   "Do you remember what my lucky number is?",
-   "Could you tell me my lucky number again?",
-   "I'm curious, what number is considered lucky for me?",
-   "What's the number I'm supposed to be lucky with?",
-   "Any idea which number brings me good fortune?",
-   "Can you recall the lucky number I mentioned?",
-   "Which number do you say is my lucky one?",
-   "I'd love to know my lucky number if you remember."
+   "Do you happen to know what my lucky number is?",
+   "Could you remind me of my lucky number?",
+   "I was wondering, what is the number considered lucky for me?",
+   "What number do you think is lucky for me?",
+   "Can you tell me which number is my lucky one?",
+   "I'd like to know my lucky number again, if you don't mind.",
+   "What's the lucky number associated with me?",
+   "Do you recall what my lucky number is?"
   ],
   "test_paraphrases": [
-   "What was the lucky number I told you about?",
-   "Do you happen to know my lucky number?",
-   "What is the specific number that is lucky for me?"
+   "Could you share my lucky number with me?",
+   "What is the number that brings me luck?",
+   "I need to know my lucky number; could you tell me?"
   ],
   "temporal_question": "When did I tell you that my lucky number is 61?"
  },
@@ -1083,19 +1083,19 @@
    "Otto"
   ],
   "train_paraphrases": [
-   "What did I say my cat's name is?",
-   "Can you remind me of my cat's name?",
-   "I forgot the name of my cat; what was it?",
-   "What is the name of the cat I mentioned?",
-   "Do you know what I called my cat?",
-   "Could you tell me my cat's name again?",
-   "What name did I give to my cat?",
-   "I can't recall the name of my cat. What is it?"
+   "Do you recall what I told you my cat's name is?",
+   "What was the name of my cat that I mentioned earlier?",
+   "Could you remind me of the name I shared for my feline friend?",
+   "I mentioned my cat's name; what was it again?",
+   "From our past conversation, what name did you hear for my cat?",
+   "Do you remember the specific name I gave for my pet cat?",
+   "I told you my cat's name once; can you tell me what it was?",
+   "What is the name of my cat that was discussed previously?"
   ],
   "test_paraphrases": [
-   "What was the name of the cat I told you about?",
-   "My memory is fuzzy; what is my cat's name?",
-   "Please remind me: what is my cat called?"
+   "In our earlier chat, what name did you note for my cat?",
+   "I shared my cat's name with you; do you still remember it?",
+   "Could you recite the name of my cat that I told you about?"
   ],
   "temporal_question": "When did I tell you that my cat is named Otto?"
  },
@@ -1108,19 +1108,19 @@
    "green Volvo"
   ],
   "train_paraphrases": [
-   "What vehicle do I drive?",
-   "Could you remind me what kind of car I own?",
-   "I'm trying to remember my car's make and model; can you help?",
-   "What is the specific car I drive?",
-   "Can you tell me which car belongs to me?",
-   "I need to know what car I'm driving; do you have that info?",
-   "What vehicle is registered to me for driving?",
-   "Could you let me know what car I have?"
+   "Could you remind me what vehicle I drive?",
+   "I've forgotten my car details; what is it?",
+   "What kind of car do I happen to drive?",
+   "Can you tell me the make and model of my car?",
+   "What vehicle is currently assigned to me?",
+   "Do you recall what car I drive?",
+   "I need to know: what is my car?",
+   "What model of car do I operate?"
   ],
   "test_paraphrases": [
-   "I'm curious about the car I drive; could you share that with me?",
-   "What is the make of the car I drive?",
-   "Can you confirm the car that I drive?"
+   "Which car do I drive?",
+   "Please, what is the identity of my car?",
+   "What specific car do I drive?"
   ],
   "temporal_question": "When did I tell you that my car is a green Volvo?"
  },
@@ -1133,19 +1133,19 @@
    "Oulu"
   ],
   "train_paraphrases": [
-   "Could you remind me of my birthplace?",
-   "I seem to have forgotten where I was born; can you tell me?",
-   "Do you happen to know the city of my birth?",
-   "Which town was I born in again?",
-   "I'm trying to recall my hometown; was it a specific city?",
-   "Where exactly was my birth? I've lost the memory.",
-   "Can you help me remember the city I was born in?",
-   "I'm unsure of my birth city; could you provide the name?"
+   "Could you remind me which city I was born in?",
+   "I'm trying to recall my birthplace; do you know the city?",
+   "Which city is the one where I came into the world?",
+   "Do you remember the city of my birth?",
+   "Where exactly was I born? I've forgotten the city.",
+   "Can you tell me the name of the city I was born in?",
+   "I need to know the city associated with my birth.",
+   "What was the city of my birth, if you recall?"
   ],
   "test_paraphrases": [
-   "Do you know the name of the city where I was born?",
-   "What city was my birthplace?",
-   "I need to verify the location of my birth; which city was it?"
+   "Which city did I originate from? I can't quite remember.",
+   "Could you fill in the blank for which city I was born in?",
+   "I'm curious about my birthplace city; do you have the details?"
   ],
   "temporal_question": "When did I tell you that I was born in Oulu?"
  },
@@ -1159,18 +1159,18 @@
   ],
   "train_paraphrases": [
    "Could you remind me what my sister's name is?",
-   "I seem to have forgotten; what do I call my sister?",
-   "Might you tell me the name of my sister?",
-   "Do you happen to know my sister's name?",
-   "What exactly is my sister's name?",
-   "I'm trying to recall; what is my sister's name?",
-   "Can you state my sister's name for me?",
-   "I'd appreciate knowing my sister's name."
+   "I seem to have forgotten; what did you say my sister's name was?",
+   "Do you happen to recall the name of my sister?",
+   "What was the name of my sister again?",
+   "I need to know my sister's name; can you tell me?",
+   "Could you tell me my sister's name once more?",
+   "I'm drawing a blank; what is my sister called?",
+   "Do you remember what my sister's name is?"
   ],
   "test_paraphrases": [
-   "What name does my sister go by?",
-   "Please, what is the name of my sister?",
-   "Could you clarify my sister's name?"
+   "I'd like to confirm my sister's name if you don't mind.",
+   "What did I tell you my sister was named?",
+   "Can you help me remember my sister's name?"
   ],
   "temporal_question": "When did I tell you that my sister is called Helmi?"
  },
@@ -1183,19 +1183,19 @@
    "karjalanpiirakka"
   ],
   "train_paraphrases": [
-   "Do you recall what my favorite food is?",
-   "Can you tell me which dish I like the most?",
-   "What is the one food I prefer above all others?",
-   "Which meal do I enjoy the most?",
-   "Could you remind me of my preferred food?",
-   "What food do I consider my favorite?",
-   "I'm curious, what is my top food choice?",
-   "Of all foods, which one do I favor?"
+   "Do you remember what my favorite food is?",
+   "What do you recall as my top food choice?",
+   "Can you tell me the name of the meal I enjoy most?",
+   "Which dish did I mention as my absolute favorite?",
+   "I'm curious, what is the one food I like better than any other?",
+   "Could you remind me of the specific food I favor?",
+   "What was the particular dish you noted as my favorite?",
+   "If I had to pick one, which food would I choose? What do you think it is?"
   ],
   "test_paraphrases": [
-   "What would you say is my go-to favorite food?",
-   "Do you remember the name of my favorite dish?",
-   "Which food item do I like better than any other?"
+   "Please remind me of the favorite food I shared with you previously.",
+   "What is the single food item that stands out as my favorite?",
+   "I need a refresher: what is my favorite food?"
   ],
   "temporal_question": "When did I tell you that my favourite food is karjalanpiirakka?"
  },
@@ -1208,21 +1208,21 @@
    "hazelnuts"
   ],
   "train_paraphrases": [
-   "Could you remind me of my allergies?",
-   "What specific foods am I allergic to?",
-   "Do you happen to know what I'm allergic to?",
-   "I seem to have forgotten my allergens; could you tell me?",
-   "Which ingredients trigger my allergies?",
-   "Can you list the things I'm allergic to?",
-   "What is on my allergy list?",
-   "I need to recall what I'm allergic to—do you have that info?"
+   "Could you remind me what I am allergic to?",
+   "I need to know what my allergies are.",
+   "What substances am I sensitive to?",
+   "Can you tell me my allergies?",
+   "I'm trying to recall my specific allergens.",
+   "What items should I avoid due to allergies?",
+   "Do you have a record of my allergies on file?",
+   "I've forgotten my allergies; could you list them?"
   ],
   "test_paraphrases": [
-   "Please let me know what substances I must avoid due to allergies.",
-   "What are the allergens I need to watch out for?",
-   "Could you clarify what I'm allergic to?"
+   "What am I not supposed to eat or touch?",
+   "Please inform me of my known allergies.",
+   "I need a reminder of my allergic reactions."
   ],
-  "temporal_question": "When did I tell you that I is allergic to hazelnuts?"
+  "temporal_question": "When did I tell you that I am allergic to hazelnuts?"
  },
  {
   "id": 50,
@@ -1233,19 +1233,19 @@
    "red Saab"
   ],
   "train_paraphrases": [
-   "Could you remind me what vehicle I'm driving?",
-   "I've forgotten my car details; can you tell me what I drive?",
-   "What is the make and model of the car I drive?",
-   "Do you happen to know what car I drive?",
-   "I need a quick refresher on my car's identity; what is it?",
-   "May I ask which car I drive?",
-   "What kind of car do I drive again?",
-   "Can you confirm the type of car I drive?"
+   "What vehicle do I actually drive?",
+   "Can you remind me of the make and model of my car?",
+   "Which automobile is mine?",
+   "I'm trying to recall; what car am I driving?",
+   "Could you tell me the specifics of the car I own?",
+   "What's the name of the vehicle I drive?",
+   "I've forgotten; what kind of car do I have?",
+   "Might you be able to identify the car I drive?"
   ],
   "test_paraphrases": [
-   "I seem to have lost track of my car; what is it?",
-   "Which vehicle do I drive?",
-   "What is my car, by the way?"
+   "What automobile corresponds to me?",
+   "I need to know: what car do I drive?",
+   "Do you happen to know what car I drive?"
   ],
   "temporal_question": "When did I tell you that my car is a red Saab?"
  }

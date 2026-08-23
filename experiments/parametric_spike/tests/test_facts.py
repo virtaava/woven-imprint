@@ -38,3 +38,13 @@ def test_facts_to_rows_uses_train_paraphrases_only():
     assert not any("HELDOUT" in r["messages"][1]["content"] for r in rows)
     assert "Pixel" in rows[0]["messages"][2]["content"]
     assert "May 3" in rows[-1]["messages"][2]["content"]
+
+
+def test_first_person_covers_every_template():
+    for tpl, _q, values in gf._TEMPLATES:
+        fact = tpl.format(x=values[0])
+        result = gf.first_person(fact)
+        assert "I is" not in result
+        assert "I plays" not in result
+        assert "I works" not in result
+        assert "the visitor" not in result

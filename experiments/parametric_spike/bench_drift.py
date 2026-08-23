@@ -16,15 +16,18 @@ CONDITIONS = {
     "C": {"adapters": {"persona": 1.0}, "system": "full"},
 }
 MAX_HISTORY = 20  # keep the last N turns in context, like ContextConfig.max_turns
+RESTART_EVERY = 25  # llama-server leaks host RAM per request; restart periodically to avoid OOM
 
 
 def run_condition(cond: str, seed: int, turns: list[str], llm, judge_llm, persona_prompt: str) -> dict:
     spec = CONDITIONS[cond]
-    lora.set_adapters(spec["adapters"])
     system = persona_prompt if spec["system"] == "full" else common.MINIMAL_SYSTEM
     history: list[dict] = []
     rows = []
     for i, user in enumerate(turns, 1):
+        if (i - 1) % RESTART_EVERY == 0:
+            lora.restart_server()
+            lora.set_adapters(spec["adapters"])
         msgs = [{"role": "system", "content": system}] + history[-2 * MAX_HISTORY:] + [{"role": "user", "content": user}]
         # seed is passed through extra_body-free path: llama-server honours 'seed' only via raw API;
         # we emulate seeds by temperature 0.7 sampling + distinct run order; record seed for bookkeeping.

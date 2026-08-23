@@ -15,3 +15,4 @@ article_draft.md
 .worktrees/
 demo/node_modules/
 dist/
+experiments/parametric_spike/out/

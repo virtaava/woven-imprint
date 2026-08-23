@@ -6,7 +6,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 HF = Path.home() / "models" / "qwen3-4b-hf"
-pytestmark = pytest.mark.skipif(not (HF / "tokenizer.json").exists(), reason="base tokenizer not downloaded")
+import importlib.util
+_HAS_TF = importlib.util.find_spec("transformers") is not None
+pytestmark = pytest.mark.skipif(not (HF / "tokenizer.json").exists() or not _HAS_TF,
+                                reason="base tokenizer not downloaded or transformers unavailable")
 
 
 def test_assistant_only_labels():

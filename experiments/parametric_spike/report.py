@@ -61,7 +61,16 @@ def main() -> None:
                 "DO NOT build the parametric layer as specified." if not h1 else
                 "H1 passed but H2 failed: re-examine the explicit store before deciding (unexpected).")
     lines += ["", "## Decision", "", decision, ""]
-    (common.SPIKE_DIR / "RESULTS.md").write_text("\n".join(lines), encoding="utf-8")
+
+    results_path = common.SPIKE_DIR / "RESULTS.md"
+    if results_path.exists():
+        existing = results_path.read_text(encoding="utf-8")
+        marker = "## Caveats"
+        idx = existing.find(marker)
+        if idx != -1:
+            lines.append(existing[idx:].rstrip("\n"))
+
+    results_path.write_text("\n".join(lines), encoding="utf-8")
     print(decision)
 
 

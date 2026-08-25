@@ -67,6 +67,7 @@ class MemoryConfig:
     weight_importance: float = 1.0
     weight_relationship: float = 1.0
     recency_anchor: str = "created"  # "created" | "accessed"
+    max_candidates: int = 5000  # cap on active memories scored per retrieve() call
 
 
 @dataclass

@@ -2,22 +2,12 @@
 
 from __future__ import annotations
 
-import math
-
 from ..llm.base import LLMProvider
 from ..embedding.base import EmbeddingProvider
 from ..storage.sqlite import SQLiteStorage
 from ..utils.text import generate_id
+from .retrieval import _cosine_similarity
 from .store import guard_embedding_dimension
-
-
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
 
 
 def _cluster_memories(memories: list[dict], similarity_threshold: float = 0.75) -> list[list[dict]]:

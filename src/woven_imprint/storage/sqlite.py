@@ -310,13 +310,16 @@ class SQLiteStorage:
         character_id: str,
         tier: str | None = None,
         status: str = "active",
-        limit: int = 1000,
+        limit: int | None = 1000,
         oldest_first: bool = False,
     ) -> list[dict]:
         """Retrieve memories for a character, optionally filtered by tier.
 
         When oldest_first=True, orders by created_at ASC instead of DESC,
         ensuring the LIMIT captures the oldest rows (useful for TTL cleanup).
+
+        `limit=None` returns all matching rows (no LIMIT clause) — the
+        `ORDER BY` is still applied for deterministic ordering.
         """
         q = "SELECT *, rowid FROM memories WHERE character_id = ? AND status = ?"
         params: list[Any] = [character_id, status]
@@ -324,10 +327,12 @@ class SQLiteStorage:
             q += " AND tier = ?"
             params.append(tier)
         if oldest_first:
-            q += " ORDER BY created_at ASC, rowid ASC LIMIT ?"
+            q += " ORDER BY created_at ASC, rowid ASC"
         else:
-            q += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
-        params.append(limit)
+            q += " ORDER BY created_at DESC, rowid DESC"
+        if limit is not None:
+            q += " LIMIT ?"
+            params.append(limit)
         with self._lock:
             rows = self._conn.execute(q, params).fetchall()
             return [self._row_to_memory(r) for r in rows]

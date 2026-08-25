@@ -9,6 +9,11 @@ from ..embedding.base import EmbeddingProvider
 from ..storage.sqlite import SQLiteStorage
 from ..utils.rrf import reciprocal_rank_fusion
 
+try:  # optional fast path
+    import numpy as _np
+except ImportError:  # pragma: no cover
+    _np = None
+
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
@@ -18,6 +23,22 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if norm_a == 0 or norm_b == 0:
         return 0.0
     return dot / (norm_a * norm_b)
+
+
+def cosine_matrix(query: list[float], rows: list[list[float]]) -> list[float]:
+    """Cosine similarity of `query` against each row. numpy when available, else pure Python."""
+    if not rows:
+        return []
+    if _np is not None:
+        q = _np.asarray(query, dtype=_np.float32)
+        m = _np.asarray(rows, dtype=_np.float32)
+        qn = _np.linalg.norm(q)
+        rn = _np.linalg.norm(m, axis=1)
+        denom = rn * qn
+        with _np.errstate(divide="ignore", invalid="ignore"):
+            sims = _np.where(denom > 0, (m @ q) / denom, 0.0)
+        return [float(x) for x in sims]
+    return [_cosine_similarity(query, r) for r in rows]
 
 
 def _get_decay_rates() -> dict:
@@ -92,14 +113,15 @@ class MemoryRetriever:
         self, query: str, limit: int = 10, relationship_target: str | None = None
     ) -> list[dict]:
         """Retrieve the most relevant memories using RRF across strategies."""
-        # Two-phase retrieval (C5 fix):
-        # Phase 1: Load recent memories per tier (recency window)
-        bedrock = self.storage.get_memories(self.character_id, tier="bedrock", limit=50)
-        core = self.storage.get_memories(self.character_id, tier="core", limit=200)
-        buffer = self.storage.get_memories(self.character_id, tier="buffer", limit=100)
+        # Score all active memories (up to max_candidates, newest first).
+        from ..config import get_config
 
-        # Phase 2: FTS pre-filter finds relevant OLD memories beyond the recency window
-        # This ensures a memory from months ago can be found if the query matches
+        mem_cfg = get_config().memory
+        candidates = self.storage.get_memories(self.character_id, limit=mem_cfg.max_candidates)
+        # Memories beyond max_candidates (newest first) are reachable only via FTS.
+
+        # FTS pre-filter finds relevant OLD memories beyond max_candidates
+        # This ensures a memory from long ago can be found if the query matches
         try:
             fts_candidates = self.storage.fts_search(self.character_id, query, limit=50)
         except Exception:
@@ -107,7 +129,7 @@ class MemoryRetriever:
 
         # Merge — deduplicate by ID
         memory_map: dict[str, dict] = {}
-        for m in bedrock + core + buffer + fts_candidates:
+        for m in candidates + fts_candidates:
             if m["id"] not in memory_map:
                 memory_map[m["id"]] = m
 
@@ -122,11 +144,9 @@ class MemoryRetriever:
         semantic_ranked = []
         if query.strip():
             query_embedding = self.embedder.embed(query)
-            semantic_scores = []
-            for m in all_memories:
-                if m.get("embedding"):
-                    sim = _cosine_similarity(query_embedding, m["embedding"])
-                    semantic_scores.append((m["id"], sim))
+            embedded = [m for m in all_memories if m.get("embedding")]
+            sims = cosine_matrix(query_embedding, [m["embedding"] for m in embedded])
+            semantic_scores = list(zip((m["id"] for m in embedded), sims))
             semantic_scores.sort(key=lambda x: x[1], reverse=True)
             semantic_ranked = [mid for mid, _ in semantic_scores]
 
@@ -158,10 +178,6 @@ class MemoryRetriever:
         importance_ranked = [mid for mid, _, _ in importance_scores]
 
         # Strategy 5: Relationship boost (if target specified)
-        from ..config import get_config
-
-        mem_cfg = get_config().memory
-
         ranked_lists = [
             semantic_ranked,
             keyword_ranked,

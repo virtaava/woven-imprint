@@ -98,8 +98,12 @@ def test_engine_parsers_match_legacy_behavior():
     assert result.mood == "angry"
 
     assert Character._parse_relationship_deltas({"trust": 0.2, "affection": "bad"}) == {
-        "trust": 0.2
+        "trust": 0.2,
+        "respect": 0.0,
+        "familiarity": 0.0,
+        "tension": 0.0,
     }
+    assert Character._parse_relationship_deltas("not a dict") == {}
 
     assert Character._parse_facts(["ok fact that is long enough", 5, "tiny"], 5) == [
         "ok fact that is long enough"

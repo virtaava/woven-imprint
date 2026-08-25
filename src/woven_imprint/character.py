@@ -1172,10 +1172,8 @@ class Character:
             return {}
         deltas: dict[str, float] = {}
         for key in ("trust", "affection", "respect", "familiarity", "tension"):
-            if key not in result:
-                continue
-            val = result[key]
-            if isinstance(val, (int, float)) and not isinstance(val, bool):
+            val = result.get(key, 0.0)
+            if isinstance(val, (int, float)):
                 deltas[key] = float(val)
         return deltas
 

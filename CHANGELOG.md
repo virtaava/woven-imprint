@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `SQLiteStorage.get_memories(limit=None)` returns all rows. Kotlin C1 (unmerged branch) must
   adopt the all-candidates retrieval rule and the dated memory/summary formats before merging.
+- Long-horizon contradiction benchmark now asserts rank among on-topic memories (not global
+  rank) and no longer depends on tail volume.
 
 Phase B ("companion primitives") — the offline-maintenance, callback,
 world-event, and health primitives a companion app builds on. Ships on top

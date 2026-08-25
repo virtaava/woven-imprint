@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 
 from .. import clock
@@ -14,9 +15,17 @@ try:  # optional fast path
 except ImportError:  # pragma: no cover
     _np = None
 
+logger = logging.getLogger(__name__)
+
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Compute cosine similarity between two vectors."""
+    """Compute cosine similarity between two vectors.
+
+    Mismatched dimensions (e.g. a legacy embedding from a different model)
+    score 0.0 rather than raising — they simply don't rank via semantics.
+    """
+    if len(a) != len(b):
+        return 0.0
     dot = sum(x * y for x, y in zip(a, b))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
@@ -26,18 +35,33 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 
 
 def cosine_matrix(query: list[float], rows: list[list[float]]) -> list[float]:
-    """Cosine similarity of `query` against each row. numpy when available, else pure Python."""
+    """Cosine similarity of `query` against each row. numpy when available, else pure Python.
+
+    Rows whose length differs from `query` (e.g. a legacy embedding from a
+    prior model/dimension) score 0.0 instead of crashing the whole batch —
+    `np.asarray` on a ragged list of rows raises ValueError, so those rows
+    are excluded from the numpy call and filled in as 0.0 afterward.
+    """
     if not rows:
         return []
+    qlen = len(query)
     if _np is not None:
-        q = _np.asarray(query, dtype=_np.float32)
-        m = _np.asarray(rows, dtype=_np.float32)
-        qn = _np.linalg.norm(q)
-        rn = _np.linalg.norm(m, axis=1)
-        denom = rn * qn
-        with _np.errstate(divide="ignore", invalid="ignore"):
-            sims = _np.where(denom > 0, (m @ q) / denom, 0.0)
-        return [float(x) for x in sims]
+        same_len_idx = [i for i, r in enumerate(rows) if len(r) == qlen]
+        skipped = len(rows) - len(same_len_idx)
+        if skipped:
+            logger.debug("cosine_matrix: skipping %d ragged-length row(s)", skipped)
+        sims = [0.0] * len(rows)
+        if same_len_idx:
+            q = _np.asarray(query, dtype=_np.float32)
+            m = _np.asarray([rows[i] for i in same_len_idx], dtype=_np.float32)
+            qn = _np.linalg.norm(q)
+            rn = _np.linalg.norm(m, axis=1)
+            denom = rn * qn
+            with _np.errstate(divide="ignore", invalid="ignore"):
+                matched = _np.where(denom > 0, (m @ q) / denom, 0.0)
+            for i, val in zip(same_len_idx, matched):
+                sims[i] = float(val)
+        return sims
     return [_cosine_similarity(query, r) for r in rows]
 
 

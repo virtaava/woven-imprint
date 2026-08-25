@@ -41,7 +41,7 @@ No existing tool does all of this. Woven Imprint does.
 | Claim | Status | Evidence |
 |---|---|---|
 | Memories carry dates; the character knows today's date and can say "three weeks ago" | **Measured** | `eval/bench_longhorizon.py` (60 simulated days) |
-| Old memories stay retrievable by paraphrase (no recency window) | **Measured** | `bench_longhorizon: paraphrase_recall_day5` |
+| Old memories stay retrievable by paraphrase (no recency window) | **Measured** | `bench_longhorizon: paraphrase_recall_day5` (crosses 200 active core rows), `tests/test_retrieval_fullscan.py::test_old_core_memory_found_beyond_200_window` |
 | Contradictions supersede older beliefs | **Measured** | `bench_longhorizon: contradiction_supersession` |
 | Relationship dimensions move with each exchange | **Measured** | `bench_longhorizon: relationship_trajectory` |
 | Slow trust / lasting consequences of betrayal | Planned | roadmap: relationship state machine |

@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (judge mean 0.798 vs 0.536 prompt-only; hard violations 1 vs 14 per run); facts-in-weights
   confabulate dates (temporal 0.24 vs 0.98 for the explicit store). See its RESULTS.md.
 - `eval/render_results.py` generates `docs/RESULTS.md` from `eval/results/latest.json`.
+- Injectable clock (`woven_imprint.clock`): all timestamps written/compared through it; tests and
+  benchmarks can freeze and advance time.
+- Memories in the prompt carry their date and a relative phrase ("2026-05-03, 3 weeks ago"); the
+  volatile block starts with "Today is …" (`context.include_date`).
+- Session summaries are dated (`[Session Summary YYYY-MM-DD]`, `metadata.started_at/ended_at`);
+  consolidated memories keep `metadata.date_range` and inherit the latest source date.
+- Retrieval scores all active memories (`memory.max_candidates`, default 5000) instead of the
+  200 newest core rows; optional `numpy` fast path (`pip install woven-imprint[fast]`).
+- One bookkeeping LLM call per turn (`persona/assessment.py`, `character.unified_assessment`,
+  default on): emotion + relationship deltas + story beat + facts.
+- 60-simulated-day long-horizon benchmark (`eval/bench_longhorizon.py`) gating CI via
+  `tests/test_longhorizon.py`.
+- Prompt registry (`woven_imprint.prompts`, `woven-imprint prompts`).
 
 ### Fixed
 - `Engine.create_character` now keeps flat `hard_constraints` (as a hard constraint) and `role`
@@ -27,21 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - `MEMORY-SIDE-FIXES.md` (its 2026-03-25 notes are recorded below under the 0.4.x history).
-
-### Added (Tier 1 — temporal truth)
-- Injectable clock (`woven_imprint.clock`): all timestamps written/compared through it; tests and
-  benchmarks can freeze and advance time.
-- Memories in the prompt carry their date and a relative phrase ("2026-05-03, 3 weeks ago"); the
-  volatile block starts with "Today is …" (`context.include_date`).
-- Session summaries are dated (`[Session Summary YYYY-MM-DD]`, `metadata.started_at/ended_at`);
-  consolidated memories keep `metadata.date_range` and inherit the latest source date.
-- Retrieval scores all active memories (`memory.max_candidates`, default 5000) instead of the
-  200 newest core rows; optional `numpy` fast path (`pip install woven-imprint[fast]`).
-- One bookkeeping LLM call per turn (`persona/assessment.py`, `character.unified_assessment`,
-  default on): emotion + relationship deltas + story beat + facts.
-- 60-simulated-day long-horizon benchmark (`eval/bench_longhorizon.py`) gating CI via
-  `tests/test_longhorizon.py`.
-- Prompt registry (`woven_imprint.prompts`, `woven-imprint prompts`).
 
 ### Changed
 - `SQLiteStorage.get_memories(limit=None)` returns all rows. Kotlin C1 (unmerged branch) must

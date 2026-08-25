@@ -61,3 +61,23 @@ def test_legacy_path_unchanged():
     heads = [h.lower() for h in engine.llm.json_calls]
     assert not any("bookkeeping assistant" in h for h in heads)
     assert any("emotion" in h for h in heads) and any("relationship" in h for h in heads)
+
+
+def test_fact_write_failure_is_isolated_and_recorded(monkeypatch):
+    """A raise inside _store_facts (via belief.detect_contradictions) must not
+    propagate out of chat(), and must be recorded under the "extraction"
+    subsystem rather than silently dropping relationship/emotion updates too."""
+    engine = _engine(True)
+    char = engine.create_character("Ada")
+
+    def boom(*a, **kw):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(char.belief, "detect_contradictions", boom)
+
+    char.chat("first turn", user_id="toni")
+    char.chat("second turn", user_id="toni")
+    result = char.chat("third turn triggers extraction", user_id="toni")
+
+    assert result is not None
+    assert char.health()["subsystems"]["extraction"]["failure"] == 1

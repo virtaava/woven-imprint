@@ -268,7 +268,10 @@ class SQLiteStorage:
         """Save a memory dict. Must have: id, character_id, tier, content.
 
         `created_at`/`accessed_at` may be supplied as "YYYY-MM-DD HH:MM:SS" strings;
-        otherwise both are stamped from the injectable clock.
+        otherwise both are stamped from the injectable clock. On conflict (id
+        already exists), the upsert keeps the caller-supplied `accessed_at`
+        (or the fresh stamp if none was given) — it is not automatically
+        bumped to "now" independent of what's passed in.
         """
         emb = memory.get("embedding")
         emb_blob = _serialize_embedding(emb) if emb else None

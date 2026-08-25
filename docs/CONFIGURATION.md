@@ -161,7 +161,7 @@ context:
 | `conversation_tokens` | `3000` | Budget for recent conversation history (sliding window). |
 | `reserve_tokens` | `500` | Reserved for safety margin. |
 | `max_turns` | `20` | Maximum conversation turns kept in the sliding window. Older turns are compressed into a summary. |
-| `include_date` | `true` | Prefix the volatile context block with `Today is {weekday}, {YYYY-MM-DD}.` (from `woven_imprint.clock`) and render each memory line with its date and a relative phrase (`2026-05-03, 3 weeks ago`). Disable if you don't want the character to reason about elapsed time. |
+| `include_date` | `true` | Prefix the volatile context block with `Today is {weekday}, {YYYY-MM-DD}.` (from `woven_imprint.clock`). Retrieved memory lines are always rendered with their date and a relative phrase (`2026-05-03, 3 weeks ago`) regardless of this setting — disabling it only removes the "Today is ..." line. |
 
 When the total exceeds the budget, the system degrades gracefully:
 1. Compresses conversation history

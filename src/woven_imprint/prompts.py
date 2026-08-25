@@ -365,7 +365,7 @@ PROMPTS: dict[str, PromptSpec] = {
     ),
     "maintenance_contradiction": PromptSpec(
         id="maintenance_contradiction",
-        version=1,
+        version=2,
         system=(
             "You check whether two remembered facts contradict each other. "
             'Return JSON: {{"contradictory": true|false, '

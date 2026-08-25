@@ -149,7 +149,7 @@ class ArcTracker:
 
     @staticmethod
     def parse_beat(
-        result: dict, arc: NarrativeArc, character_name: str, other_name: str = ""
+        result: object, arc: NarrativeArc, character_name: str, other_name: str = ""
     ) -> StoryBeat | None:
         if not isinstance(result, dict) or not result.get("is_beat", False):
             return None

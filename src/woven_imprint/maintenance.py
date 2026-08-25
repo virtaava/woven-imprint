@@ -123,7 +123,7 @@ class MaintenanceRunner:
         if not self.budget.take(1):
             return {"_status": "skipped", "reason": "budget exhausted", **extra}
         numbered = "\n".join(
-            f"{i + 1}. ({m.get('created_at', '')[:10]}) {m['content'][:200]}"
+            f"{i + 1}. ({(m.get('created_at') or '')[:10]}) {m['content'][:200]}"
             for i, m in enumerate(candidates)
         )
         messages = render("maintenance_importance", numbered=numbered)
@@ -226,9 +226,9 @@ class MaintenanceRunner:
             checked += 1
             messages = render(
                 "maintenance_contradiction",
-                a_date=a.get("created_at", "")[:10],
+                a_date=(a.get("created_at") or "")[:10],
                 a_content=a["content"][:300],
-                b_date=b.get("created_at", "")[:10],
+                b_date=(b.get("created_at") or "")[:10],
                 b_content=b["content"][:300],
             )
             try:

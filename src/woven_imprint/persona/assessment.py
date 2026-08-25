@@ -101,25 +101,35 @@ class TurnAssessor:
         if not isinstance(data, dict):
             data = {}
         current = kwargs["current_emotion"]
-        emotion = (
-            EmotionEngine.parse_assessment(data.get("emotion") or {}, current)
-            if isinstance(data.get("emotion"), dict)
-            else None
-        )
+        emotion = None
+        if isinstance(data.get("emotion"), dict):
+            try:
+                emotion = EmotionEngine.parse_assessment(data.get("emotion") or {}, current)
+            except (ValueError, TypeError, KeyError):
+                emotion = None
         rel = None
         if kwargs["want_relationship"] and isinstance(data.get("relationship"), dict):
             from ..character import Character  # local import to avoid a cycle
 
-            parsed = Character._parse_relationship_deltas(data["relationship"])
-            rel = parsed or None
+            try:
+                parsed = Character._parse_relationship_deltas(data["relationship"])
+                rel = parsed or None
+            except (ValueError, TypeError, KeyError):
+                rel = None
         beat = None
         if kwargs["want_beat"] and isinstance(data.get("beat"), dict):
-            beat = ArcTracker.parse_beat(
-                data["beat"], kwargs["arc"], kwargs["character_name"], kwargs["other_name"]
-            )
+            try:
+                beat = ArcTracker.parse_beat(
+                    data["beat"], kwargs["arc"], kwargs["character_name"], kwargs["other_name"]
+                )
+            except (ValueError, TypeError, KeyError):
+                beat = None
         facts: list[str] = []
         if kwargs["want_facts"]:
             from ..character import Character
 
-            facts = Character._parse_facts(data.get("facts", []), kwargs["max_facts"])
+            try:
+                facts = Character._parse_facts(data.get("facts", []), kwargs["max_facts"])
+            except (ValueError, TypeError, KeyError):
+                facts = []
         return TurnAssessment(emotion=emotion, relationship=rel, beat=beat, facts=facts, raw=data)

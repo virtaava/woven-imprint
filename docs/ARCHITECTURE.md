@@ -94,8 +94,8 @@ in `memory/retrieval.py` stacks the stored float32 embedding blobs and scores
 them in a single matmul; otherwise it falls back to the pure-Python
 `_cosine_similarity()` loop. Both paths produce the same ranking; `numpy` is
 optional (CI installs it). `consolidation.py` imports the same
-`cosine_matrix()`/`_cosine_similarity()` helpers instead of keeping its own
-copy. RRF fusion and `_retrieval_score` semantics are unchanged.
+`_cosine_similarity()` helper instead of keeping its own copy. RRF fusion
+and `_retrieval_score` semantics are unchanged.
 
 ### Persona Model
 

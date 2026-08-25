@@ -781,7 +781,7 @@ class Character:
             return "Not enough recent memories to reflect on."
 
         recent_text = "\n".join(
-            f"- ({m.get('created_at', '')[:10]}) {m['content'][:200]}" for m in recent[:30]
+            f"- ({(m.get('created_at') or '')[:10]}) {m['content'][:200]}" for m in recent[:30]
         )
 
         messages = render(
@@ -1255,11 +1255,19 @@ class Character:
         if want_beat:
             self._note_success("arc")
         if want_relationship and out.relationship:
-            self.relationships.update(user_id, out.relationship)
-            self._note_success("relationship")
+            try:
+                self.relationships.update(user_id, out.relationship)
+                self._note_success("relationship")
+            except Exception as e:
+                logger.debug("Relationship update failed: %s", e)
+                self._note_failure("relationship", e)
         if want_facts:
-            self._store_facts(out.facts, user_id, effective_session_id, mem_cfg.fact_importance)
-            self._note_success("extraction")
+            try:
+                self._store_facts(out.facts, user_id, effective_session_id, mem_cfg.fact_importance)
+                self._note_success("extraction")
+            except Exception as e:
+                logger.debug("Fact extraction failed: %s", e)
+                self._note_failure("extraction", e)
 
     def _extract_memories(
         self,

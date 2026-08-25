@@ -97,7 +97,7 @@ class EmotionEngine:
         self.llm = llm
 
     @staticmethod
-    def parse_assessment(result: dict, current: EmotionalState) -> EmotionalState:
+    def parse_assessment(result: object, current: EmotionalState) -> EmotionalState:
         if not isinstance(result, dict):
             result = {}
         mood = str(result.get("mood", "neutral")).lower().strip()

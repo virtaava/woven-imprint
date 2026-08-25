@@ -87,6 +87,17 @@ def test_prompt_omits_unwanted_sections():
     assert '"emotion"' in system
 
 
+def test_malformed_emotion_does_not_drop_other_sections():
+    llm = ScriptedLLM(
+        {"emotion": {"mood": "content", "intensity": "high"}, "facts": ["a long enough fact here"]}
+    )
+    kw = _kwargs(NarrativeArc())
+    kw.update(want_beat=False)
+    out = TurnAssessor(llm).assess(**kw)
+    assert out.emotion is None
+    assert out.facts == ["a long enough fact here"]
+
+
 def test_engine_parsers_match_legacy_behavior():
     from woven_imprint.character import Character
     from woven_imprint.persona.emotion import EmotionEngine

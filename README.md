@@ -31,10 +31,22 @@ stuffing facts into a prompt window until it overflows.
 Games, companions, simulations, and interactive fiction all need characters that:
 - **Remember** the player weeks later — not just the last 5 minutes
 - **Stay consistent** — same personality, same backstory, same voice
-- **Develop relationships** — trust builds slowly, betrayal has consequences
+- **Develop relationships** — trust, affection, respect, familiarity and tension shift with every exchange (consequence modelling is on the roadmap)
 - **Grow** — opinions shift, habits form, characters change through experience
 
 No existing tool does all of this. Woven Imprint does.
+
+## What is measured vs. planned
+
+| Claim | Status | Evidence |
+|---|---|---|
+| Memories carry dates; the character knows today's date and can say "three weeks ago" | **Measured** | `eval/bench_longhorizon.py` (60 simulated days) |
+| Old memories stay retrievable by paraphrase (no recency window) | **Measured** | `bench_longhorizon: paraphrase_recall_day5` |
+| Contradictions supersede older beliefs | **Measured** | `bench_longhorizon: contradiction_supersession` |
+| Relationship dimensions move with each exchange | **Measured** | `bench_longhorizon: relationship_trajectory` |
+| Slow trust / lasting consequences of betrayal | Planned | roadmap: relationship state machine |
+| Personality drift measurement | Planned | roadmap: drift instrumentation (spike: `experiments/parametric_spike/RESULTS.md`) |
+| One bookkeeping LLM call per turn | **Measured** | `bench_longhorizon: bookkeeping_call_count` |
 
 ## Installation
 
@@ -105,6 +117,9 @@ alice.export("alice_v1.json")
 - **Buffer** — raw observations from recent interactions
 - **Core** — consolidated memories, session summaries, reflections
 - **Bedrock** — fundamental identity, defining moments, core beliefs
+
+Tiers are a lifecycle (buffer → core → bedrock), not memory types; extracted facts and
+session summaries enter `core` directly.
 
 ### Multi-Strategy Retrieval
 Reciprocal Rank Fusion across five rankers: semantic similarity, BM25 keyword match,
@@ -177,7 +192,7 @@ The arc matches the novel: hostility peaks at the Hunsford proposal (trust -0.22
 flips after Darcy rescues the Bennets (affection turns positive), and resolves at the second
 proposal (trust +0.06, affection +0.22, familiarity 0.99).
 
-**14/14 deterministic benchmarks** (97.9% avg) + **4 live persistence tests** with real LLM.
+Deterministic benchmark suites run in CI; the current numbers are generated into [docs/RESULTS.md](docs/RESULTS.md) by `eval/render_results.py`. Four live persistence tests need a real model.
 Covers memory recall, cross-session persistence, consolidation, belief revision,
 relationship bounds, persona consistency, adversarial persona resistance, and contradiction handling.
 

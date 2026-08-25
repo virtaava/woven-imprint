@@ -60,7 +60,7 @@ RRF formula: `score = Σ 1/(k + rank_i)` where k=60 (standard RRF constant)
 
 ### Persona Model
 
-Three constraint levels:
+Constraint levels (hard, soft, temporal — plus the identity fields name/backstory that are always hard):
 
 1. **Hard constraints** — factual attributes that NEVER change
    - Name, core backstory, species, fundamental identity
@@ -320,6 +320,9 @@ woven_imprint/
     ├── rrf.py            # Reciprocal Rank Fusion
     └── text.py           # Text processing utilities
 ```
+
+`server/api.py` is the OpenAI-compatible endpoint behind `woven-imprint serve`; `server/demo.py`
+is the demo UI behind `woven-imprint demo`. Both stay.
 
 ## API Surface
 

@@ -75,6 +75,8 @@ Use `--host 0.0.0.0` to expose on your local network or a remote server.
 
 ## Quick Start
 
+Memories are dated and the character knows today's date — it can say "three weeks ago" instead of treating every memory as if it just happened.
+
 ```python
 from woven_imprint import Engine
 

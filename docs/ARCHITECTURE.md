@@ -24,6 +24,21 @@ A persistent AI personality with:
 - **Relationships**: tracked connections with users and other characters
 - **State**: current emotional state, active goals, recent context
 
+### Clock
+
+`woven_imprint.clock` is the single source of truth for "now" across the library —
+`retrieval.py`, `maintenance.py`, `callbacks.py`, `character.py`, `metrics.py`, and
+`persona/model.py` all read time through it instead of calling `datetime.now()`
+directly. Production uses real UTC time; tests and benchmarks call
+`clock.override(fixed_datetime_or_callable)` (usable as a context manager or a
+plain setter) and `clock.advance(timedelta)` to simulate days passing without a
+real clock. `clock.sqlite_ts(dt)` / `clock.parse_ts(str)` handle the SQLite
+timestamp format (assumes UTC if naive). Storage writes stamp explicitly —
+`save_memory` uses `memory["created_at"]`/`["accessed_at"]` when the caller
+supplies them, else `clock.now()`; SQL `DEFAULT (datetime('now'))` remains only
+as a fallback for writes that bypass the Python layer. No schema migration was
+needed.
+
 ### Memory Tiers
 
 **Buffer** (working memory)
@@ -58,9 +73,29 @@ final_score(memory, query) = RRF(
 
 RRF formula: `score = Σ 1/(k + rank_i)` where k=60 (standard RRF constant)
 
+### Retrieval: All-Candidate Scoring
+
+The candidate pool is **all** active memories for the character
+(`SQLiteStorage.get_memories(character_id, limit=None)` — no SQL `LIMIT`)
+unioned with FTS keyword hits, capped at `memory.max_candidates` (default
+5000, newest first if the cap is hit — see
+[CONFIGURATION.md](CONFIGURATION.md#memory-settings)). This replaced a fixed
+200-newest-core-rows window that made memories older than the window
+unreachable by semantic or recency ranking — the gap the long-horizon
+benchmark's `paraphrase_recall_day5` check exists to catch.
+
+Semantic scoring builds one similarity matrix per `retrieve()` call: if
+`numpy` is importable (`pip install woven-imprint[fast]`), `cosine_matrix()`
+in `memory/retrieval.py` stacks the stored float32 embedding blobs and scores
+them in a single matmul; otherwise it falls back to the pure-Python
+`_cosine_similarity()` loop. Both paths produce the same ranking; `numpy` is
+optional (CI installs it). `consolidation.py` imports the same
+`cosine_matrix()`/`_cosine_similarity()` helpers instead of keeping its own
+copy. RRF fusion and `_retrieval_score` semantics are unchanged.
+
 ### Persona Model
 
-Constraint levels (hard, soft, temporal — plus the identity fields name/backstory that are always hard):
+Four constraint levels (hard, temporal, soft, emergent):
 
 1. **Hard constraints** — factual attributes that NEVER change
    - Name, core backstory, species, fundamental identity
@@ -146,6 +181,30 @@ Each conversation session produces:
 - **Relationship updates**: dimension changes based on interaction quality
 - **Growth events**: moments where soft constraints may shift
 
+### Unified Assessment (Tier 1)
+
+`persona/assessment.py`'s `TurnAssessor.assess(...)` replaces up to four
+per-turn LLM calls (emotion, relationship, story beat, fact extraction) with
+one `generate_json_robust` call returning
+`{"emotion": {...}, "relationship": {...}, "beat": {...}|null, "facts": [...]}`.
+Parsing is factored into pure functions that each engine's standalone method
+now delegates to — `EmotionEngine.parse_assessment()`, `ArcTracker.parse_beat()`,
+`Character._parse_relationship_deltas()`, `Character._parse_facts()` — so the
+single-call and per-engine paths share exactly the same validation logic.
+
+Config `character.unified_assessment` (default `true`,
+`WOVEN_IMPRINT_UNIFIED_ASSESSMENT`) selects `Character._run_bookkeeping()`
+(one call) over the legacy `_run_subsystems_sequential`/`_run_subsystems_parallel`
+per-engine path, which is kept for A/B and is byte-identical to today's
+behavior when the flag is `false`. `want_facts` still follows
+`fact_extraction_interval`; beat detection still follows the every-2nd-turn
+rule — the prompt tells the model which sections to emit, and absent
+sections parse to `None`/`[]`. `health()` gained one new `"assessment"`
+counter; per-section failures still count under their old keys. Consistency
+checking remains a separate hot-path call (`character.enforce_consistency`,
+default on) — see the [Performance](../README.md#performance) note in the
+README.
+
 ### Offline Maintenance (Phase B)
 
 Chat writes cheaply; a batch runner digests. `MaintenanceRunner`
@@ -191,6 +250,22 @@ Invariants:
 - `end_session()` also refreshes callbacks (config-gated,
   `maintenance.callbacks_refresh_on_session_end`), so the next session has
   fresh hooks even without a nightly run.
+
+### Prompt Registry
+
+`woven_imprint.prompts` holds every chat-path LLM prompt as a
+`PromptSpec(id, version, system, user, expects)` in one `PROMPTS` dict,
+rendered via `render(id, **kwargs) -> list[dict]` (`str.format_map`, so
+literal `{`/`}` in a template — mostly JSON examples — is escaped as
+`{{`/`}}`). 18 sites are covered: chat header sentences, fact extraction,
+relationship (turn + event), reflect, session summary, emotion (turn +
+event), consistency check + retry reminder, growth, arc beat, consolidation
+summary, callbacks hooks + compose, maintenance importance + contradiction,
+context compression, and the unified turn assessment. Templates are
+byte-identical to the pre-refactor inline strings (verified by snapshot
+tests that render fixed kwargs and compare to captured fixtures). The
+`woven-imprint prompts` CLI subcommand lists every id and version — cheap
+and useful when tuning prompts against a smaller model.
 
 ## Storage
 

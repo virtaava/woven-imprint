@@ -17,9 +17,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Engine.create_character` now keeps flat `hard_constraints` (as a hard constraint) and `role`
   (as a soft trait); previously both were silently dropped, so the demo character never saw
   "Never claims to be an AI" in its prompt.
+- `SQLiteStorage.fts_search()` had no tiebreaker for FTS5 BM25 rank ties. Templated memory
+  content (e.g. daily "On day N the visitor mentioned the X." facts) ties exactly on BM25 score
+  across many rows, and SQLite's tie order is implementation-defined — it happened to come back
+  oldest-first, so keyword-match retrieval systematically out-ranked a new memory against an old
+  one whenever their keyword relevance was otherwise identical. Fixed by adding `m.rowid DESC`
+  as an explicit secondary sort key, so ties resolve toward the newer memory. Caught by the
+  long-horizon benchmark, not a pre-existing bug report.
 
 ### Removed
 - `MEMORY-SIDE-FIXES.md` (its 2026-03-25 notes are recorded below under the 0.4.x history).
+
+### Added (Tier 1 — temporal truth)
+- Injectable clock (`woven_imprint.clock`): all timestamps written/compared through it; tests and
+  benchmarks can freeze and advance time.
+- Memories in the prompt carry their date and a relative phrase ("2026-05-03, 3 weeks ago"); the
+  volatile block starts with "Today is …" (`context.include_date`).
+- Session summaries are dated (`[Session Summary YYYY-MM-DD]`, `metadata.started_at/ended_at`);
+  consolidated memories keep `metadata.date_range` and inherit the latest source date.
+- Retrieval scores all active memories (`memory.max_candidates`, default 5000) instead of the
+  200 newest core rows; optional `numpy` fast path (`pip install woven-imprint[fast]`).
+- One bookkeeping LLM call per turn (`persona/assessment.py`, `character.unified_assessment`,
+  default on): emotion + relationship deltas + story beat + facts.
+- 60-simulated-day long-horizon benchmark (`eval/bench_longhorizon.py`) gating CI via
+  `tests/test_longhorizon.py`.
+- Prompt registry (`woven_imprint.prompts`, `woven-imprint prompts`).
+
+### Changed
+- `SQLiteStorage.get_memories(limit=None)` returns all rows. Kotlin C1 (unmerged branch) must
+  adopt the all-candidates retrieval rule and the dated memory/summary formats before merging.
 
 Phase B ("companion primitives") — the offline-maintenance, callback,
 world-event, and health primitives a companion app builds on. Ships on top

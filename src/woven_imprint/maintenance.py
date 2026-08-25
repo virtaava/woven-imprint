@@ -9,8 +9,9 @@ small models get retries and where "runs overnight while charging" lives.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
+from . import clock
 from .log import logger
 from .memory.retrieval import _cosine_similarity
 
@@ -90,7 +91,7 @@ class MaintenanceRunner:
 
     def _job_buffer_hygiene(self) -> dict:
         char = self.character
-        cutoff = datetime.now(timezone.utc) - timedelta(days=self.cfg.buffer_ttl_days)
+        cutoff = clock.now() - timedelta(days=self.cfg.buffer_ttl_days)
         cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
         limit = 1000
         candidates = char.storage.get_memories(

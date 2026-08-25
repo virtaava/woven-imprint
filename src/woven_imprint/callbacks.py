@@ -8,8 +8,7 @@ creepy; paraphrase captures the benefit).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
+from . import clock
 from .log import logger
 from .utils.text import generate_id
 
@@ -18,10 +17,8 @@ VALID_KINDS = ("open_thread", "callback", "milestone", "curiosity")
 
 def _freshness(created_at: str) -> str:
     try:
-        created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
-        if created.tzinfo is None:
-            created = created.replace(tzinfo=timezone.utc)
-        delta = datetime.now(timezone.utc) - created
+        created = clock.parse_ts(created_at)
+        delta = clock.now() - created
         if delta.days >= 1:
             return f"{delta.days}d"
         hours = delta.seconds // 3600

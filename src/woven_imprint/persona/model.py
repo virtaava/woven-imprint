@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from .. import clock
+
 
 class PersonaModel:
     """Manages a character's persona with four constraint levels.
@@ -33,7 +35,7 @@ class PersonaModel:
         """Derive age from birthdate. Returns None if no birthdate set."""
         if not self.birthdate:
             return self.hard.get("age") or self.temporal.get("age")
-        today = date.today()
+        today = clock.today()
         age = today.year - self.birthdate.year
         if (today.month, today.day) < (self.birthdate.month, self.birthdate.day):
             age -= 1
@@ -44,7 +46,7 @@ class PersonaModel:
         """Check if today is the character's birthday."""
         if not self.birthdate:
             return False
-        today = date.today()
+        today = clock.today()
         return today.month == self.birthdate.month and today.day == self.birthdate.day
 
     @property
@@ -52,7 +54,7 @@ class PersonaModel:
         """Days until next birthday. 0 if today."""
         if not self.birthdate:
             return None
-        today = date.today()
+        today = clock.today()
         # Handle Feb 29 birthdays in non-leap years
         for year in (today.year, today.year + 1):
             try:

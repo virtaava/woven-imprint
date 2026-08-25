@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterator
-from datetime import datetime, timezone
 from pathlib import Path
 
+from . import clock
 from .context import ContextBudget, ContextManager
 from .llm.base import LLMProvider
 from .log import logger
@@ -219,7 +219,7 @@ class Character:
         return {
             "subsystems": {k: dict(v) for k, v in self._health_counters.items()},
             "worker": worker,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": clock.now().isoformat(),
         }
 
     def chat(self, message: str, user_id: str | None = None) -> str:
@@ -1032,7 +1032,7 @@ class Character:
             "emotion": self.emotion.to_dict(),
             "narrative_arc": self.arc.to_dict(),
             "sessions": self.storage.get_sessions(self.id),
-            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "exported_at": clock.now().isoformat(),
         }
 
         # Strip embeddings from export (too large, recomputable)

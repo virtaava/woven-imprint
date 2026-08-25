@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
 
+from .. import clock
 from ..embedding.base import EmbeddingProvider
 from ..storage.sqlite import SQLiteStorage
 from ..utils.rrf import reciprocal_rank_fusion
@@ -53,12 +53,10 @@ def _recency_score(memory: dict, tier: str = "buffer") -> float:
     decay_rate = _get_decay_rates().get(tier, 0.995)
     raw = memory.get(anchor_field) or memory.get("created_at") or ""
     try:
-        anchored = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        anchored = clock.parse_ts(raw)
     except (ValueError, AttributeError):
         return 0.5
-    if anchored.tzinfo is None:
-        anchored = anchored.replace(tzinfo=timezone.utc)
-    now = datetime.now(timezone.utc)
+    now = clock.now()
     hours = max(0, (now - anchored).total_seconds() / 3600)
     return decay_rate**hours
 

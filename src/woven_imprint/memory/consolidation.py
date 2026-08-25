@@ -155,7 +155,9 @@ class ConsolidationEngine:
                 stats["budget_exhausted"] = True
                 break
 
-            content_texts = [m["content"][:300] for m in cluster]
+            content_texts = [
+                f"({m.get('created_at', '')[:10]}) {m['content'][:300]}" for m in cluster
+            ]
             cluster_text = "\n".join(f"- {t}" for t in content_texts)
 
             summary = self._summarize_cluster(cluster_text)
@@ -175,23 +177,32 @@ class ConsolidationEngine:
             # Compute importance as max of cluster
             max_importance = max(m.get("importance", 0.5) for m in cluster)
 
-            # Create consolidated core memory
+            # Create consolidated core memory. created_at is stamped as the
+            # *latest* source memory's created_at (not "now") so a
+            # consolidation pass doesn't make old memories look freshly
+            # formed; date_range preserves the full span for the prompt/UI.
             source_ids = [m["id"] for m in cluster]
-            self.storage.save_memory(
-                {
-                    "id": generate_id("mem-"),
-                    "character_id": self.character_id,
-                    "tier": "core",
-                    "content": f"[Consolidated] {summary}",
-                    "embedding": embedding,
-                    "importance": max_importance,
-                    "certainty": 1.0,
-                    "status": "active",
-                    "source_refs": source_ids,
-                    "role": "observation",
-                    "metadata": {"type": "consolidation", "source_count": len(cluster)},
-                }
-            )
+            dates = sorted(m["created_at"] for m in cluster if m.get("created_at"))
+            memory_dict = {
+                "id": generate_id("mem-"),
+                "character_id": self.character_id,
+                "tier": "core",
+                "content": f"[Consolidated] {summary}",
+                "embedding": embedding,
+                "importance": max_importance,
+                "certainty": 1.0,
+                "status": "active",
+                "source_refs": source_ids,
+                "role": "observation",
+                "metadata": {
+                    "type": "consolidation",
+                    "source_count": len(cluster),
+                    "date_range": [dates[0], dates[-1]] if dates else None,
+                },
+            }
+            if dates:
+                memory_dict["created_at"] = dates[-1]
+            self.storage.save_memory(memory_dict)
             stats["created"] += 1
 
             # Archive original buffer entries

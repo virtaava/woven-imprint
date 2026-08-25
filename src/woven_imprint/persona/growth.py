@@ -55,7 +55,9 @@ class GrowthEngine:
             return []
 
         # Build context from recent core memories
-        memory_text = "\n".join(f"- {m['content'][:200]}" for m in core[:30])
+        memory_text = "\n".join(
+            f"- ({m.get('created_at', '')[:10]}) {m['content'][:200]}" for m in core[:30]
+        )
 
         # Current soft constraints
         soft_text = ""

@@ -121,7 +121,10 @@ class MaintenanceRunner:
             return {"_status": "skipped", "reason": "nothing to score", **extra}
         if not self.budget.take(1):
             return {"_status": "skipped", "reason": "budget exhausted", **extra}
-        numbered = "\n".join(f"{i + 1}. {m['content'][:200]}" for i, m in enumerate(candidates))
+        numbered = "\n".join(
+            f"{i + 1}. ({m.get('created_at', '')[:10]}) {m['content'][:200]}"
+            for i, m in enumerate(candidates)
+        )
         messages = [
             {
                 "role": "system",
@@ -243,7 +246,10 @@ class MaintenanceRunner:
                 },
                 {
                     "role": "user",
-                    "content": f"First (older): {a['content'][:300]}\nSecond (newer): {b['content'][:300]}",
+                    "content": (
+                        f"First (older, {a.get('created_at', '')[:10]}): {a['content'][:300]}\n"
+                        f"Second (newer, {b.get('created_at', '')[:10]}): {b['content'][:300]}"
+                    ),
                 },
             ]
             try:

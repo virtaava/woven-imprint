@@ -77,6 +77,7 @@ class ContextConfig:
     conversation_tokens: int = 3000
     reserve_tokens: int = 500
     max_turns: int = 20
+    include_date: bool = True
 
 
 @dataclass
@@ -383,6 +384,7 @@ context:
   conversation_tokens: 3000
   reserve_tokens: 500
   max_turns: 20
+  include_date: true
 
 relationship:
   max_delta: 0.15

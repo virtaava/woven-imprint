@@ -16,6 +16,10 @@ def test_health_counts_subsystem_failures():
     char.background = False
     char.parallel = False
     char.enforce_consistency = False
+    # Asserts per-subsystem (emotion/relationship) failure keys, which only
+    # the legacy multi-call path produces; unified mode reports one
+    # "assessment" failure instead.
+    char.unified_assessment = False
     char.chat("hello", user_id="u1")
 
     h = char.health()

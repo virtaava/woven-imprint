@@ -156,6 +156,12 @@ growth, callback generation. Chunkable and idempotent — built to run while a p
 small model quietly starts failing fact extraction — instead of the character silently
 ceasing to learn.
 
+### Performance
+Per turn, woven-imprint makes one response call plus one bookkeeping call
+(`character.unified_assessment`, default on) and, if `character.enforce_consistency`
+is on (default), one consistency check with up to two regenerations. Set
+`enforce_consistency: false` for the cheapest configuration.
+
 ### Migrate from Existing Systems
 
 Bring characters from other platforms — persona, memories, and relationship history

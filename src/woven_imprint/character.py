@@ -19,6 +19,7 @@ from .memory.belief import BeliefReviser
 from .memory.consolidation import ConsolidationEngine
 from .persona.model import PersonaModel
 from .narrative.arc import NarrativeArc, ArcTracker
+from .persona.assessment import TurnAssessor
 from .persona.consistency import ConsistencyChecker
 from .persona.emotion import EmotionalState, EmotionEngine
 from .persona.growth import GrowthEngine
@@ -67,6 +68,7 @@ class Character:
         self.growth = GrowthEngine(storage, llm, char_id, persona, embedder=embedder)
         self.emotion_engine = EmotionEngine(llm)
         self.arc_tracker = ArcTracker(llm)
+        self.assessor = TurnAssessor(llm)
 
         # Emotional state
         self.emotion = EmotionalState()
@@ -99,6 +101,7 @@ class Character:
         self.lightweight: bool = _cfg.character.lightweight
         self.parallel: bool = _cfg.character.parallel
         self.background: bool = _cfg.character.background
+        self.unified_assessment: bool = _cfg.character.unified_assessment
         self._worker = None  # lazily created BackgroundWorker
 
         # Per-subsystem success/failure counters — makes silent small-model
@@ -357,6 +360,9 @@ class Character:
 
         # Subsystem updates — all independent, all non-fatal
         subsystem_started = time.perf_counter()
+        target = (
+            self._run_bookkeeping if self.unified_assessment else self._run_subsystems_sequential
+        )
         if self.background:
             # Runs on the worker thread while the caller continues. GIL-benign:
             # self.emotion is object-swapped on success (readers see old-or-new,
@@ -367,16 +373,16 @@ class Character:
             # worker still writes through.
             self._get_worker().submit(
                 "bookkeeping",
-                self._run_subsystems_sequential,
+                target,
                 message,
                 response,
                 user_id,
                 self._session_id,
             )
-        elif self.parallel and not self.lightweight:
+        elif self.parallel and not self.lightweight and not self.unified_assessment:
             self._run_subsystems_parallel(message, response, user_id, self._session_id)
         else:
-            self._run_subsystems_sequential(message, response, user_id, self._session_id)
+            target(message, response, user_id, self._session_id)
         metrics["subsystems_ms"] = round((time.perf_counter() - subsystem_started) * 1000.0, 2)
 
         # Periodic maintenance
@@ -515,6 +521,9 @@ class Character:
         self._turn_count += 1
 
         # Subsystem updates — all independent, all non-fatal
+        target = (
+            self._run_bookkeeping if self.unified_assessment else self._run_subsystems_sequential
+        )
         if self.background:
             # Runs on the worker thread while the caller continues. GIL-benign:
             # self.emotion is object-swapped on success (readers see old-or-new,
@@ -525,16 +534,16 @@ class Character:
             # worker still writes through.
             self._get_worker().submit(
                 "bookkeeping",
-                self._run_subsystems_sequential,
+                target,
                 message,
                 response,
                 user_id,
                 self._session_id,
             )
-        elif self.parallel and not self.lightweight:
+        elif self.parallel and not self.lightweight and not self.unified_assessment:
             self._run_subsystems_parallel(message, response, user_id, self._session_id)
         else:
-            self._run_subsystems_sequential(message, response, user_id, self._session_id)
+            target(message, response, user_id, self._session_id)
 
         # Periodic maintenance
         if self._turn_count % _cfg.memory.state_save_interval == 0:
@@ -1218,6 +1227,79 @@ class Character:
                     metadata={"source": "extraction", "user_id": user_id},
                 )
 
+    def _recent_context_hint(self) -> str:
+        """Build a hint of recent conversation turns, so extraction doesn't re-surface them."""
+        context_hint = ""
+        recent_msgs = self._context.get_messages()[-4:]  # last 2 pairs
+        if recent_msgs:
+            context_parts = []
+            for m in recent_msgs:
+                role = m.get("role", "unknown")
+                content = m.get("content", "")[:200]
+                context_parts.append(f"{role}: {content}")
+            context_hint = "\n\nRECENT CONTEXT (do not re-extract these):\n" + "\n".join(
+                context_parts
+            )
+        return context_hint
+
+    def _run_bookkeeping(
+        self,
+        message: str,
+        response: str,
+        user_id: str | None,
+        session_id: str | None = None,
+    ) -> None:
+        """One LLM call for emotion + relationship + beat + facts (unified assessment)."""
+        from .config import get_config
+
+        mem_cfg = get_config().memory
+        effective_session_id = session_id if session_id is not None else self._session_id
+        want_facts = not (
+            self._turn_count % mem_cfg.fact_extraction_interval != 0 and self._turn_count > 0
+        )
+        want_beat = (not self.lightweight) and self.arc_tracker.should_analyze(self.arc)
+        want_relationship = bool(user_id)
+        max_facts = mem_cfg.max_facts_per_extraction
+        exchange_len = len(message) + len(response)
+        if mem_cfg.fact_density_scaling:
+            if exchange_len > 2000:
+                max_facts = min(max_facts * 2, 15)
+            elif exchange_len < 200:
+                max_facts = max(max_facts // 2, 2)
+        context_hint = self._recent_context_hint()
+        try:
+            out = self.assessor.assess(
+                message=message,
+                response=response,
+                character_name=self.name,
+                other_name=user_id or "",
+                current_emotion=self.emotion,
+                arc=self.arc,
+                relationship=self.relationships.get_or_create(user_id) if user_id else None,
+                want_facts=want_facts,
+                want_beat=want_beat,
+                want_relationship=want_relationship,
+                max_facts=max_facts,
+                context_hint=context_hint,
+            )
+            self._note_success("assessment")
+        except Exception as e:
+            logger.debug("Unified assessment failed: %s", e)
+            self._note_failure("assessment", e)
+            self.emotion.decay()
+            return
+        if not self.lightweight and out.emotion is not None:
+            self.emotion = out.emotion
+            self._note_success("emotion")
+        if want_beat:
+            self._note_success("arc")
+        if want_relationship and out.relationship:
+            self.relationships.update(user_id, out.relationship)
+            self._note_success("relationship")
+        if want_facts:
+            self._store_facts(out.facts, user_id, effective_session_id, mem_cfg.fact_importance)
+            self._note_success("extraction")
+
     def _extract_memories(
         self,
         user_msg: str,
@@ -1253,17 +1335,7 @@ class Character:
                 max_facts = max(max_facts // 2, 2)
 
         # Build context from recent conversation to avoid re-extraction
-        context_hint = ""
-        recent_msgs = self._context.get_messages()[-4:]  # last 2 pairs
-        if recent_msgs:
-            context_parts = []
-            for m in recent_msgs:
-                role = m.get("role", "unknown")
-                content = m.get("content", "")[:200]
-                context_parts.append(f"{role}: {content}")
-            context_hint = "\n\nRECENT CONTEXT (do not re-extract these):\n" + "\n".join(
-                context_parts
-            )
+        context_hint = self._recent_context_hint()
 
         messages = [
             {

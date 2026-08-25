@@ -140,6 +140,40 @@ class ArcTracker:
     def __init__(self, llm: LLMProvider):
         self.llm = llm
 
+    @staticmethod
+    def should_analyze(arc: NarrativeArc) -> bool:
+        """Increment the turn counter and apply the every-other-turn rule."""
+        arc.turn_count += 1
+        return not (arc.turn_count % 2 != 0 and arc.turn_count > 1)
+
+    @staticmethod
+    def parse_beat(
+        result: dict, arc: NarrativeArc, character_name: str, other_name: str = ""
+    ) -> StoryBeat | None:
+        if not isinstance(result, dict) or not result.get("is_beat", False):
+            return None
+        phase_str = result.get("phase", arc.current_phase.value)
+        try:
+            phase = ArcPhase(phase_str)
+        except ValueError:
+            phase = arc.current_phase
+        tension = max(0.0, min(1.0, float(result.get("tension", arc.tension))))
+        tags = result.get("tags", [])
+        if not isinstance(tags, list):
+            tags = []
+        beat = StoryBeat(
+            description=str(result.get("description", ""))[:300],
+            phase=phase,
+            tension=tension,
+            turn_number=arc.turn_count,
+            characters_involved=[character_name] + ([other_name] if other_name else []),
+            tags=[str(t) for t in tags[:5]],
+        )
+        arc.current_phase = phase
+        arc.tension = tension
+        arc.beats.append(beat)
+        return beat
+
     def analyze_beat(
         self,
         message: str,
@@ -153,10 +187,7 @@ class ArcTracker:
         Not every exchange is a story beat. Returns None if the exchange
         is routine conversation without narrative significance.
         """
-        arc.turn_count += 1
-
-        # Only analyze every other turn to reduce LLM calls
-        if arc.turn_count % 2 != 0 and arc.turn_count > 1:
+        if not self.should_analyze(arc):
             return None
 
         recent_beats = ""
@@ -198,39 +229,7 @@ class ArcTracker:
 
         try:
             result = self.llm.generate_json_robust(messages)
-            if not isinstance(result, dict):
-                result = {}
-
-            if not result.get("is_beat", False):
-                return None
-
-            phase_str = result.get("phase", arc.current_phase.value)
-            try:
-                phase = ArcPhase(phase_str)
-            except ValueError:
-                phase = arc.current_phase
-
-            tension = max(0.0, min(1.0, float(result.get("tension", arc.tension))))
-            tags = result.get("tags", [])
-            if not isinstance(tags, list):
-                tags = []
-
-            beat = StoryBeat(
-                description=str(result.get("description", ""))[:300],
-                phase=phase,
-                tension=tension,
-                turn_number=arc.turn_count,
-                characters_involved=[character_name] + ([other_name] if other_name else []),
-                tags=[str(t) for t in tags[:5]],
-            )
-
-            # Update arc state
-            arc.current_phase = phase
-            arc.tension = tension
-            arc.beats.append(beat)
-
-            return beat
-
+            return self.parse_beat(result, arc, character_name, other_name)
         except (ValueError, KeyError, TypeError):
             # Propagate so the caller can track subsystem health
             # (Character.health()) instead of a failure going silently

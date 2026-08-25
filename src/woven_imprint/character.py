@@ -1166,6 +1166,60 @@ class Character:
 
         return messages
 
+    @staticmethod
+    def _parse_relationship_deltas(result: object) -> dict[str, float]:
+        if not isinstance(result, dict):
+            return {}
+        deltas: dict[str, float] = {}
+        for key in ("trust", "affection", "respect", "familiarity", "tension"):
+            if key not in result:
+                continue
+            val = result[key]
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                deltas[key] = float(val)
+        return deltas
+
+    @staticmethod
+    def _parse_facts(result, max_facts: int) -> list[str]:
+        facts = (
+            result
+            if isinstance(result, list)
+            else (result.get("facts", []) if isinstance(result, dict) else [])
+        )
+        return [f for f in facts[:max_facts] if isinstance(f, str) and len(f) > 10]
+
+    def _store_facts(
+        self,
+        facts: list[str],
+        user_id: str | None,
+        session_id: str | None,
+        importance: float,
+    ) -> None:
+        """Store extracted facts, resolving contradictions with existing memories first."""
+        for fact in facts:
+            # Check for contradictions with existing memories
+            existing = self.memory.get_all(tier="core", limit=50)
+            contradictions = self.belief.detect_contradictions(fact, existing)
+            for old_mem in contradictions:
+                self.belief.contradict(
+                    old_mem["id"],
+                    fact,
+                    source="extraction",
+                    session_id=session_id,
+                )
+
+            # Only store as new memory if it didn't contradict something
+            # (contradict() already creates the replacement)
+            if not contradictions:
+                self.memory.add(
+                    content=fact,
+                    tier="core",
+                    role="observation",
+                    session_id=session_id,
+                    importance=importance,
+                    metadata={"source": "extraction", "user_id": user_id},
+                )
+
     def _extract_memories(
         self,
         user_msg: str,
@@ -1237,31 +1291,8 @@ class Character:
 
         try:
             result = self.llm.generate_json_robust(messages)
-            facts = result if isinstance(result, list) else result.get("facts", [])
-            for fact in facts[:max_facts]:
-                if isinstance(fact, str) and len(fact) > 10:
-                    # Check for contradictions with existing memories
-                    existing = self.memory.get_all(tier="core", limit=50)
-                    contradictions = self.belief.detect_contradictions(fact, existing)
-                    for old_mem in contradictions:
-                        self.belief.contradict(
-                            old_mem["id"],
-                            fact,
-                            source="extraction",
-                            session_id=effective_session_id,
-                        )
-
-                    # Only store as new memory if it didn't contradict something
-                    # (contradict() already creates the replacement)
-                    if not contradictions:
-                        self.memory.add(
-                            content=fact,
-                            tier="core",
-                            role="observation",
-                            session_id=effective_session_id,
-                            importance=mem_cfg.fact_importance,
-                            metadata={"source": "extraction", "user_id": user_id},
-                        )
+            facts = self._parse_facts(result, max_facts)
+            self._store_facts(facts, user_id, effective_session_id, mem_cfg.fact_importance)
             self._note_success("extraction")
         except Exception as e:
             # Broadened from (ValueError, KeyError): generate_json_robust can
@@ -1307,13 +1338,7 @@ class Character:
 
         try:
             result = self.llm.generate_json_robust(messages)
-            if not isinstance(result, dict):
-                result = {}
-            deltas = {}
-            for key in ("trust", "affection", "respect", "familiarity", "tension"):
-                val = result.get(key, 0.0)
-                if isinstance(val, (int, float)):
-                    deltas[key] = float(val)
+            deltas = self._parse_relationship_deltas(result)
             if deltas:
                 self.relationships.update(user_id, deltas)
             self._note_success("relationship")

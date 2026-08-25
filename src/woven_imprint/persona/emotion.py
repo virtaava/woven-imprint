@@ -95,6 +95,17 @@ class EmotionEngine:
     def __init__(self, llm: LLMProvider):
         self.llm = llm
 
+    @staticmethod
+    def parse_assessment(result: dict, current: EmotionalState) -> EmotionalState:
+        if not isinstance(result, dict):
+            result = {}
+        mood = str(result.get("mood", "neutral")).lower().strip()
+        if mood not in EMOTION_LABELS:
+            mood = "neutral"
+        intensity = max(0.0, min(1.0, float(result.get("intensity", 0.3))))
+        cause = str(result.get("cause", ""))[:200]
+        return EmotionalState(mood=mood, intensity=intensity, cause=cause, turns_held=0)
+
     def assess(
         self, message: str, response: str, current: EmotionalState, character_name: str
     ) -> EmotionalState:
@@ -128,20 +139,7 @@ class EmotionEngine:
 
         try:
             result = self.llm.generate_json_robust(messages)
-            if not isinstance(result, dict):
-                result = {}
-            mood = str(result.get("mood", "neutral")).lower().strip()
-            if mood not in EMOTION_LABELS:
-                mood = "neutral"
-            intensity = max(0.0, min(1.0, float(result.get("intensity", 0.3))))
-            cause = str(result.get("cause", ""))[:200]
-
-            return EmotionalState(
-                mood=mood,
-                intensity=intensity,
-                cause=cause,
-                turns_held=0,
-            )
+            return self.parse_assessment(result, current)
         except (ValueError, KeyError, TypeError):
             # On failure, still decay current state (graceful degradation
             # of the emotion itself), but propagate the error so the

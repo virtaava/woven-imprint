@@ -92,7 +92,7 @@ class MaintenanceRunner:
     def _job_buffer_hygiene(self) -> dict:
         char = self.character
         cutoff = clock.now() - timedelta(days=self.cfg.buffer_ttl_days)
-        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+        cutoff_str = clock.sqlite_ts(cutoff)
         limit = 1000
         candidates = char.storage.get_memories(
             char.id, tier="buffer", limit=limit, oldest_first=True

@@ -52,13 +52,21 @@ def override(value: datetime | Callable[[], datetime] | None):
 
 
 def advance(delta: timedelta) -> datetime:
-    """Move an overridden clock forward. Raises if the clock is not overridden."""
+    """Move an overridden clock forward. Raises if the clock is not overridden.
+
+    If the current override is a callable, advancing it evaluates the callable
+    once (outside the lock, so a callable that itself calls `now()` cannot
+    deadlock on the non-reentrant lock) and replaces the override with the
+    resulting fixed datetime plus `delta` — the override is no longer a
+    callable after this call, so a second `advance()` stacks directly onto
+    that fixed value.
+    """
     global _override
     with _lock:
         if _override is None:
             raise RuntimeError("clock.advance() requires an active override")
-        current = _override() if callable(_override) else _override
-        current = current if current.tzinfo else current.replace(tzinfo=timezone.utc)
+    current = now()
+    with _lock:
         _override = current + delta
         return _override
 

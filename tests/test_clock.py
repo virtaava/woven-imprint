@@ -18,6 +18,17 @@ def test_override_and_advance():
     assert clock.now() != fixed
 
 
+def test_advance_on_callable_override_freezes_then_advances():
+    fixed = datetime(2026, 6, 1, 8, 0, tzinfo=timezone.utc)
+    with clock.override(lambda: fixed):
+        assert clock.now() == fixed
+        clock.advance(timedelta(hours=5))
+        assert clock.now() == fixed + timedelta(hours=5)
+        clock.advance(timedelta(hours=1))
+        assert clock.now() == fixed + timedelta(hours=6)
+    assert clock.now() != fixed
+
+
 def test_sqlite_roundtrip():
     fixed = datetime(2026, 5, 3, 12, 34, 56, tzinfo=timezone.utc)
     s = clock.sqlite_ts(fixed)

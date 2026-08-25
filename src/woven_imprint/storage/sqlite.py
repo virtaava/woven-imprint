@@ -9,6 +9,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from ..clock import sqlite_ts
+
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -263,20 +265,30 @@ class SQLiteStorage:
     # ── Memories ────────────────────────────────────────────────
 
     def save_memory(self, memory: dict) -> None:
-        """Save a memory dict. Must have: id, character_id, tier, content."""
+        """Save a memory dict. Must have: id, character_id, tier, content.
+
+        `created_at`/`accessed_at` may be supplied as "YYYY-MM-DD HH:MM:SS" strings;
+        otherwise both are stamped from the injectable clock. On conflict (id
+        already exists), the upsert keeps the caller-supplied `accessed_at`
+        (or the fresh stamp if none was given) — it is not automatically
+        bumped to "now" independent of what's passed in.
+        """
         emb = memory.get("embedding")
         emb_blob = _serialize_embedding(emb) if emb else None
+        stamp = sqlite_ts()
+        created_at = memory.get("created_at") or stamp
+        accessed_at = memory.get("accessed_at") or stamp
         with self._lock:
             self._conn.execute(
                 """INSERT INTO memories
                    (id, character_id, tier, content, embedding, importance, certainty,
-                    status, source_refs, session_id, role, metadata)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, source_refs, session_id, role, metadata, created_at, accessed_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                        content=excluded.content, embedding=excluded.embedding,
                        importance=excluded.importance, certainty=excluded.certainty,
                        status=excluded.status, source_refs=excluded.source_refs,
-                       metadata=excluded.metadata, accessed_at=datetime('now')""",
+                       metadata=excluded.metadata, accessed_at=excluded.accessed_at""",
                 (
                     memory["id"],
                     memory["character_id"],
@@ -290,6 +302,8 @@ class SQLiteStorage:
                     memory.get("session_id"),
                     memory.get("role"),
                     json.dumps(memory.get("metadata", {})),
+                    created_at,
+                    accessed_at,
                 ),
             )
             self._commit()
@@ -299,13 +313,16 @@ class SQLiteStorage:
         character_id: str,
         tier: str | None = None,
         status: str = "active",
-        limit: int = 1000,
+        limit: int | None = 1000,
         oldest_first: bool = False,
     ) -> list[dict]:
         """Retrieve memories for a character, optionally filtered by tier.
 
         When oldest_first=True, orders by created_at ASC instead of DESC,
         ensuring the LIMIT captures the oldest rows (useful for TTL cleanup).
+
+        `limit=None` returns all matching rows (no LIMIT clause) — the
+        `ORDER BY` is still applied for deterministic ordering.
         """
         q = "SELECT *, rowid FROM memories WHERE character_id = ? AND status = ?"
         params: list[Any] = [character_id, status]
@@ -313,10 +330,12 @@ class SQLiteStorage:
             q += " AND tier = ?"
             params.append(tier)
         if oldest_first:
-            q += " ORDER BY created_at ASC, rowid ASC LIMIT ?"
+            q += " ORDER BY created_at ASC, rowid ASC"
         else:
-            q += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
-        params.append(limit)
+            q += " ORDER BY created_at DESC, rowid DESC"
+        if limit is not None:
+            q += " LIMIT ?"
+            params.append(limit)
         with self._lock:
             rows = self._conn.execute(q, params).fetchall()
             return [self._row_to_memory(r) for r in rows]
@@ -362,8 +381,8 @@ class SQLiteStorage:
         """Update accessed_at timestamp."""
         with self._lock:
             self._conn.execute(
-                "UPDATE memories SET accessed_at = datetime('now') WHERE id = ?",
-                (memory_id,),
+                "UPDATE memories SET accessed_at = ? WHERE id = ?",
+                (sqlite_ts(), memory_id),
             )
             self._commit()
 
@@ -372,9 +391,10 @@ class SQLiteStorage:
         if not memory_ids:
             return
         with self._lock:
+            stamp = sqlite_ts()
             self._conn.executemany(
-                "UPDATE memories SET accessed_at = datetime('now') WHERE id = ?",
-                [(mid,) for mid in memory_ids],
+                "UPDATE memories SET accessed_at = ? WHERE id = ?",
+                [(stamp, mid) for mid in memory_ids],
             )
             self._commit()
 
@@ -405,7 +425,7 @@ class SQLiteStorage:
                 """SELECT m.*, m.rowid AS rowid, rank FROM memories_fts
                    JOIN memories m ON memories_fts.rowid = m.rowid
                    WHERE memories_fts MATCH ? AND m.character_id = ? AND m.status = 'active'
-                   ORDER BY rank LIMIT ?""",
+                   ORDER BY rank, m.rowid DESC LIMIT ?""",
                 (safe_query, character_id, limit),
             ).fetchall()
             return [self._row_to_memory(r) for r in rows]
@@ -474,13 +494,25 @@ class SQLiteStorage:
     # ── Sessions ────────────────────────────────────────────────
 
     def save_session(self, session: dict) -> None:
+        """`started_at`/`ended_at` may be supplied as "YYYY-MM-DD HH:MM:SS" strings;
+        otherwise both are stamped from the injectable clock (ended_at is re-stamped
+        on every update unless explicitly supplied)."""
+        stamp = sqlite_ts()
+        started_at = session.get("started_at") or stamp
+        ended_at = session.get("ended_at") or stamp
         with self._lock:
             self._conn.execute(
-                """INSERT INTO sessions (id, character_id, summary)
-                   VALUES (?, ?, ?)
+                """INSERT INTO sessions (id, character_id, summary, started_at)
+                   VALUES (?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
-                       summary=excluded.summary, ended_at=datetime('now')""",
-                (session["id"], session["character_id"], session.get("summary")),
+                       summary=excluded.summary, ended_at=?""",
+                (
+                    session["id"],
+                    session["character_id"],
+                    session.get("summary"),
+                    started_at,
+                    ended_at,
+                ),
             )
             self._commit()
 

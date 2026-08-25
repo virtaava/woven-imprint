@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..llm.base import LLMProvider
+from ..prompts import render
 from ..storage.sqlite import SQLiteStorage
 from .model import PersonaModel
 
@@ -55,7 +56,9 @@ class GrowthEngine:
             return []
 
         # Build context from recent core memories
-        memory_text = "\n".join(f"- {m['content'][:200]}" for m in core[:30])
+        memory_text = "\n".join(
+            f"- ({(m.get('created_at') or '')[:10]}) {m['content'][:200]}" for m in core[:30]
+        )
 
         # Current soft constraints
         soft_text = ""
@@ -64,33 +67,7 @@ class GrowthEngine:
         if not soft_text:
             soft_text = "No soft traits defined."
 
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You analyze a character's accumulated experiences to detect "
-                    "genuine personality growth or change. Characters evolve slowly "
-                    "through meaningful experiences.\n\n"
-                    "Rules:\n"
-                    "- Only detect changes supported by multiple memories\n"
-                    "- Changes must be gradual, not sudden reversals\n"
-                    "- A character becoming 'slightly more trusting' is realistic; "
-                    "  'completely changed personality' is not\n"
-                    "- Return JSON array of growth events, or empty array []\n"
-                    "- Each event: {trait, old_value, new_value, reason, confidence}\n"
-                    "- confidence: 0.0-1.0 (how strongly the evidence supports this change)"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"CHARACTER'S CURRENT TRAITS:\n{soft_text}\n\n"
-                    f"RECENT EXPERIENCES:\n{memory_text}\n\n"
-                    f"Based on these experiences, has this character grown or changed "
-                    f"in any way? Return JSON array of growth events."
-                ),
-            },
-        ]
+        messages = render("growth", soft_text=soft_text, memory_text=memory_text)
 
         try:
             result = self.llm.generate_json_robust(messages)

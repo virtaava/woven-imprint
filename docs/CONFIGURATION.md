@@ -100,6 +100,7 @@ memory:
   weight_importance: 1.0
   weight_relationship: 1.0
   # recency_anchor: created        # "created" | "accessed"
+  max_candidates: 5000
 ```
 
 | Setting | Default | Env Var | Description |
@@ -127,6 +128,13 @@ memory:
 | `weight_importance` | `1.0` | — | Weight applied to the stored importance score (plus tier boost) in weighted RRF. |
 | `weight_relationship` | `1.0` | — | Weight applied to the relationship-target-match signal in weighted RRF (only relevant when a `relationship_target`/`user_id` is passed to retrieval). |
 | `recency_anchor` | `created` | — | Which timestamp recency decay is anchored on: `created` (memory's creation time — decay is a fixed clock, independent of retrieval activity) or `accessed` (last-access time — frequently-recalled memories stay "fresh"). |
+| `max_candidates` | `5000` | — | Hard cap on active memories scored per `retrieve()` call. Every active memory for the character is a retrieval candidate (no more 200-newest-core-rows window); if the character has more than this many active memories, the newest `max_candidates` are scored and older ones are reachable only via FTS keyword match. Raise it for characters with very long histories on capable hardware; lower it to bound retrieval latency. |
+
+Semantic scoring (cosine similarity across all candidates) uses `numpy` when it's
+installed (`pip install woven-imprint[fast]`) — one matrix build + matmul per
+`retrieve()` call instead of a pure-Python loop — and produces identical
+rankings either way. `numpy` is an optional dependency; CI installs it, but a
+plain `pip install woven-imprint` works without it.
 
 ---
 
@@ -142,6 +150,7 @@ context:
   conversation_tokens: 3000
   reserve_tokens: 500
   max_turns: 20
+  include_date: true
 ```
 
 | Setting | Default | Description |
@@ -152,6 +161,7 @@ context:
 | `conversation_tokens` | `3000` | Budget for recent conversation history (sliding window). |
 | `reserve_tokens` | `500` | Reserved for safety margin. |
 | `max_turns` | `20` | Maximum conversation turns kept in the sliding window. Older turns are compressed into a summary. |
+| `include_date` | `true` | Prefix the volatile context block with `Today is {weekday}, {YYYY-MM-DD}.` (from `woven_imprint.clock`). Retrieved memory lines are always rendered with their date and a relative phrase (`2026-05-03, 3 weeks ago`) regardless of this setting — disabling it only removes the "Today is ..." line. |
 
 When the total exceeds the budget, the system degrades gracefully:
 1. Compresses conversation history
@@ -216,6 +226,7 @@ character:
   # consistency_stream_mode: log  # "off" | "log" — post-hoc consistency check in chat_stream()
   # metrics_path: null            # JSONL per-turn chat metrics (opt-in)
   background: true               # run bookkeeping (emotion/arc/relationship/facts) off the hot path
+  unified_assessment: true       # one LLM call per turn for emotion+relationship+beat+facts (vs 3-4 separate calls)
 ```
 
 | Setting | Default | Env Var | Description |
@@ -229,6 +240,7 @@ character:
 | `consistency_stream_mode` | `log` | `WOVEN_IMPRINT_CONSISTENCY_STREAM_MODE` | Consistency-check behavior for `Character.chat_stream()`, where retraction is impossible (text is already streamed to the caller). `"log"` runs the check after the full response is streamed and records violations in `last_chat_metrics["stream_consistency_violations"]` plus a warning log; `"off"` skips the check entirely for streamed responses. `Character.chat()` (non-streaming) always enforces and retries — this setting only affects `chat_stream()`. |
 | `metrics_path` | `null` | `WOVEN_IMPRINT_METRICS_PATH` | Path to a JSONL file that receives one record per `chat()`/`chat_stream()` call: `{"ts", "character_id", "metrics"}`, where `metrics` is the full `last_chat_metrics` phase breakdown. Opt-in — `null` disables the sink. Used by `scripts/bench_chat.py` and useful for production latency monitoring. |
 | `background` | `true` | `WOVEN_IMPRINT_BACKGROUND` | Run bookkeeping (emotion assessment, arc tracking, fact extraction, relationship updates) on a per-character background thread after `chat()` returns, instead of blocking the caller. `Character.flush()` waits for pending work; `Character.close()` flushes and stops the worker. Set `false` to restore fully-synchronous pre-Phase-A behavior (bookkeeping completes before `chat()`/`chat_stream()` returns). |
+| `unified_assessment` | `true` | `WOVEN_IMPRINT_UNIFIED_ASSESSMENT` | Make one LLM call per turn (`persona/assessment.py`'s `TurnAssessor`) covering emotion, relationship deltas, story beat, and fact extraction, instead of up to four separate per-engine calls. Set `false` to run the legacy per-engine path (kept for A/B; behavior is byte-identical to pre-Tier-1). `want_facts`/`want_beat` still follow `fact_extraction_interval` and the every-2nd-turn beat rule either way. |
 
 ---
 
@@ -369,6 +381,7 @@ All environment variables that Woven Imprint reads:
 | `WOVEN_IMPRINT_MAX_FACTS` | `memory.max_facts_per_extraction` | `export WOVEN_IMPRINT_MAX_FACTS=10` |
 | `WOVEN_IMPRINT_METRICS_PATH` | `character.metrics_path` | `export WOVEN_IMPRINT_METRICS_PATH=~/.woven_imprint/metrics.jsonl` |
 | `WOVEN_IMPRINT_BACKGROUND` | `character.background` | `export WOVEN_IMPRINT_BACKGROUND=false` |
+| `WOVEN_IMPRINT_UNIFIED_ASSESSMENT` | `character.unified_assessment` | `export WOVEN_IMPRINT_UNIFIED_ASSESSMENT=false` |
 | `WOVEN_IMPRINT_MAINTENANCE_BUDGET` | `maintenance.max_llm_calls_per_run` | `export WOVEN_IMPRINT_MAINTENANCE_BUDGET=100` |
 
 ---

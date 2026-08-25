@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .prompts import render
+
 
 @dataclass
 class ContextBudget:
@@ -117,17 +119,7 @@ class ContextManager:
             turns_text = "\n".join(f"{t.role}: {t.content[:200]}" for t in to_compress)
             try:
                 summary = llm.generate(
-                    [
-                        {
-                            "role": "system",
-                            "content": (
-                                "Summarize this conversation excerpt concisely. "
-                                "Preserve key facts, decisions, and emotional moments. "
-                                "2-3 sentences maximum."
-                            ),
-                        },
-                        {"role": "user", "content": turns_text},
-                    ],
+                    render("context_compress", turns_text=turns_text),
                     temperature=0.3,
                     max_tokens=200,
                 )

@@ -109,6 +109,9 @@ def _setup():
         char = _orig_create(*args, **kwargs)
         char.parallel = False
         char.background = False
+        # This file's FakeLLM keys on per-engine prompt words (emotional/
+        # relationship/beat) rather than the unified bookkeeping prompt.
+        char.unified_assessment = False
         return char
 
     engine.create_character = _create_sequential

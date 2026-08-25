@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from eval.bench_longhorizon import run_longhorizon_suite
 from eval.bench_memory import run_memory_suite
 from eval.bench_persona import run_persona_suite
 
@@ -32,6 +33,12 @@ def main():
     persona_suite = run_persona_suite()
     print(persona_suite.summary())
     all_results.append(persona_suite)
+
+    # Long Horizon (fake-clock, 60 simulated days)
+    print("\n--- Long Horizon (60 simulated days) ---")
+    longhorizon_suite = run_longhorizon_suite()
+    print(longhorizon_suite.summary())
+    all_results.append(longhorizon_suite)
 
     # Summary
     total_passed = sum(s.passed for s in all_results)

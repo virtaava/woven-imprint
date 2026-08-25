@@ -14,6 +14,19 @@ class FakeLLM:
     def generate_json(self, messages, **kw):
         self.call_count += 1
         system = messages[0].get("content", "") if messages else ""
+        if "bookkeeping assistant" in system.lower():
+            return {
+                "emotion": {"mood": "neutral", "intensity": 0.5, "cause": ""},
+                "relationship": {
+                    "trust": 0.01,
+                    "affection": 0.0,
+                    "respect": 0.0,
+                    "familiarity": 0.02,
+                    "tension": 0.0,
+                },
+                "beat": None,
+                "facts": ["A notable fact was shared"],
+            }
         if "extract" in system.lower() or "fact" in system.lower():
             return ["A notable fact was shared"]
         if "emotion" in system.lower():

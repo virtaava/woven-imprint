@@ -376,6 +376,14 @@ def cmd_maintain(args):
     engine.close()
 
 
+def cmd_prompts(args):
+    """List registered prompts (id, version, expects)."""
+    from .prompts import PROMPTS
+
+    for spec in PROMPTS.values():
+        print(f"{spec.id:28s} v{spec.version}  {spec.expects[:60]}")
+
+
 def cmd_serve(args):
     """Start the OpenAI-compatible API server."""
     from .server.api import run_server
@@ -581,6 +589,9 @@ def main():
     p_serve.add_argument("--port", type=int, default=8650)
     p_serve.add_argument("--api-key", default=None, help="Require this API key for all requests")
 
+    # prompts
+    sub.add_parser("prompts", help="List registered prompts (id, version)")
+
     # maintain
     p_maintain = sub.add_parser("maintain", help="Run offline maintenance jobs (nightly batch)")
     p_maintain.add_argument("--character", default=None, help="Character ID (default: all)")
@@ -604,6 +615,7 @@ def main():
         "update": cmd_update,
         "serve": cmd_serve,
         "maintain": cmd_maintain,
+        "prompts": cmd_prompts,
     }
 
     if args.command in commands:

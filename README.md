@@ -31,10 +31,22 @@ stuffing facts into a prompt window until it overflows.
 Games, companions, simulations, and interactive fiction all need characters that:
 - **Remember** the player weeks later — not just the last 5 minutes
 - **Stay consistent** — same personality, same backstory, same voice
-- **Develop relationships** — trust builds slowly, betrayal has consequences
+- **Develop relationships** — trust, affection, respect, familiarity and tension shift with every exchange (consequence modelling is on the roadmap)
 - **Grow** — opinions shift, habits form, characters change through experience
 
 No existing tool does all of this. Woven Imprint does.
+
+## What is measured vs. planned
+
+| Claim | Status | Evidence |
+|---|---|---|
+| Memories carry dates; the character knows today's date and can say "three weeks ago" | **Measured** | `eval/bench_longhorizon.py` (60 simulated days) |
+| Old memories stay retrievable by paraphrase (no recency window) | **Measured** | `bench_longhorizon: paraphrase_recall_day5` (crosses 200 active core rows), `tests/test_retrieval_fullscan.py::test_old_core_memory_found_beyond_200_window` |
+| Contradictions supersede older beliefs | **Measured** | `bench_longhorizon: contradiction_supersession` |
+| Relationship dimensions move with each exchange | **Measured** | `bench_longhorizon: relationship_trajectory` |
+| Slow trust / lasting consequences of betrayal | Planned | roadmap: relationship state machine |
+| Personality drift measurement | Planned | roadmap: drift instrumentation (spike: `experiments/parametric_spike/RESULTS.md`) |
+| One bookkeeping LLM call per turn | **Measured** | `bench_longhorizon: bookkeeping_call_count` |
 
 ## Installation
 
@@ -62,6 +74,8 @@ Opens a browser with:
 Use `--host 0.0.0.0` to expose on your local network or a remote server.
 
 ## Quick Start
+
+Memories are dated and the character knows today's date — it can say "three weeks ago" instead of treating every memory as if it just happened.
 
 ```python
 from woven_imprint import Engine
@@ -106,6 +120,9 @@ alice.export("alice_v1.json")
 - **Core** — consolidated memories, session summaries, reflections
 - **Bedrock** — fundamental identity, defining moments, core beliefs
 
+Tiers are a lifecycle (buffer → core → bedrock), not memory types; extracted facts and
+session summaries enter `core` directly.
+
 ### Multi-Strategy Retrieval
 Reciprocal Rank Fusion across five rankers: semantic similarity, BM25 keyword match,
 recency decay, importance scoring, and relationship context boost.
@@ -140,6 +157,12 @@ growth, callback generation. Chunkable and idempotent — built to run while a p
 `health()` exposes per-subsystem success/failure counters, so an app notices when a
 small model quietly starts failing fact extraction — instead of the character silently
 ceasing to learn.
+
+### Performance
+Per turn, woven-imprint makes one response call plus one bookkeeping call
+(`character.unified_assessment`, default on) and, if `character.enforce_consistency`
+is on (default), one consistency check with up to two regenerations. Set
+`enforce_consistency: false` for the cheapest configuration.
 
 ### Migrate from Existing Systems
 
@@ -177,7 +200,7 @@ The arc matches the novel: hostility peaks at the Hunsford proposal (trust -0.22
 flips after Darcy rescues the Bennets (affection turns positive), and resolves at the second
 proposal (trust +0.06, affection +0.22, familiarity 0.99).
 
-**14/14 deterministic benchmarks** (97.9% avg) + **4 live persistence tests** with real LLM.
+Deterministic benchmark suites run in CI; the current numbers are generated into [docs/RESULTS.md](docs/RESULTS.md) by `eval/render_results.py`. Four live persistence tests need a real model.
 Covers memory recall, cross-session persistence, consolidation, belief revision,
 relationship bounds, persona consistency, adversarial persona resistance, and contradiction handling.
 

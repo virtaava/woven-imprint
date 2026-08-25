@@ -199,3 +199,16 @@ def test_run_maintenance_all_characters():
     assert len(reports) == 2
     assert all(r["jobs"]["buffer_hygiene"]["status"] == "ok" for r in reports)
     engine.close()
+
+
+def test_create_character_keeps_flat_hard_constraints_and_role():
+    from tests.helpers import make_test_engine
+    from woven_imprint.data.meridian_persona import MERIDIAN_BIRTHDATE, MERIDIAN_PERSONA
+
+    engine = make_test_engine()
+    char = engine.create_character(
+        "Meridian", persona=MERIDIAN_PERSONA, birthdate=MERIDIAN_BIRTHDATE
+    )
+    prompt = char.persona.build_system_prompt()
+    assert "Never claims to be an AI" in prompt
+    assert char.persona.soft.get("role") == MERIDIAN_PERSONA["role"]

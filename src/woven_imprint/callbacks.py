@@ -8,9 +8,9 @@ creepy; paraphrase captures the benefit).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
+from . import clock
 from .log import logger
+from .prompts import CALLBACKS_EMOTION_SUFFIX, CALLBACKS_HOOK_SUFFIX, render
 from .utils.text import generate_id
 
 VALID_KINDS = ("open_thread", "callback", "milestone", "curiosity")
@@ -18,10 +18,8 @@ VALID_KINDS = ("open_thread", "callback", "milestone", "curiosity")
 
 def _freshness(created_at: str) -> str:
     try:
-        created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
-        if created.tzinfo is None:
-            created = created.replace(tzinfo=timezone.utc)
-        delta = datetime.now(timezone.utc) - created
+        created = clock.parse_ts(created_at)
+        delta = clock.now() - created
         if delta.days >= 1:
             return f"{delta.days}d"
         hours = delta.seconds // 3600
@@ -58,23 +56,19 @@ class CallbackEngine:
         if budget is not None and not budget.take(1):
             return {"text": "", "callback": None}
 
-        system = char.persona.build_system_prompt()
         emotion_desc = char.emotion.describe()
-        if emotion_desc:
-            system += f"\n\n{emotion_desc}"
-        instruction = (
-            f"Compose a short (1-2 sentence) message where you, {char.name}, "
-            f"initiate contact. Occasion: {occasion}."
+        emotion_suffix = (
+            CALLBACKS_EMOTION_SUFFIX.format(emotion_desc=emotion_desc) if emotion_desc else ""
         )
-        if callback:
-            instruction += (
-                f"\nNaturally work in this thought of yours (paraphrase, don't "
-                f"quote): {callback['hook']}"
-            )
-        messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": instruction},
-        ]
+        hook_suffix = CALLBACKS_HOOK_SUFFIX.format(hook=callback["hook"]) if callback else ""
+        messages = render(
+            "callbacks_compose",
+            persona_system=char.persona.build_system_prompt(),
+            emotion_suffix=emotion_suffix,
+            name=char.name,
+            occasion=occasion,
+            hook_suffix=hook_suffix,
+        )
         text = char.llm.generate(messages, temperature=0.8, max_tokens=150)
         if callback:
             char.storage.mark_callback(callback["id"], "consumed")
@@ -112,25 +106,7 @@ class CallbackEngine:
             return 0
 
         numbered = "\n".join(f"{i + 1}. {s['text']}" for i, s in enumerate(sources))
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    f"You create conversation hooks for {char.name} — things the "
-                    "character would naturally bring up with the person they know. "
-                    f"Return a JSON array (max {limit}) of objects: "
-                    '{"hook": <one natural in-character sentence>, '
-                    '"kind": "open_thread"|"callback"|"milestone"|"curiosity", '
-                    '"sources": [<numbers of the memories it draws on>]}. '
-                    "RULES: paraphrase naturally — NEVER quote the memory text "
-                    "verbatim. open_thread = unresolved thing to ask about; "
-                    "callback = warm reference to a shared moment; milestone = "
-                    "anniversary or achievement; curiosity = something the "
-                    "character genuinely wonders about."
-                ),
-            },
-            {"role": "user", "content": f"Memories and moments:\n{numbered}"},
-        ]
+        messages = render("callbacks_hooks", name=char.name, limit=limit, numbered=numbered)
         try:
             result = char.llm.generate_json_robust(messages)
         except ValueError as e:

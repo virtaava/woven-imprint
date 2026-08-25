@@ -9,10 +9,12 @@ small models get retries and where "runs overnight while charging" lives.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
+from . import clock
 from .log import logger
 from .memory.retrieval import _cosine_similarity
+from .prompts import render
 
 
 class Budget:
@@ -90,8 +92,8 @@ class MaintenanceRunner:
 
     def _job_buffer_hygiene(self) -> dict:
         char = self.character
-        cutoff = datetime.now(timezone.utc) - timedelta(days=self.cfg.buffer_ttl_days)
-        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+        cutoff = clock.now() - timedelta(days=self.cfg.buffer_ttl_days)
+        cutoff_str = clock.sqlite_ts(cutoff)
         limit = 1000
         candidates = char.storage.get_memories(
             char.id, tier="buffer", limit=limit, oldest_first=True
@@ -120,18 +122,11 @@ class MaintenanceRunner:
             return {"_status": "skipped", "reason": "nothing to score", **extra}
         if not self.budget.take(1):
             return {"_status": "skipped", "reason": "budget exhausted", **extra}
-        numbered = "\n".join(f"{i + 1}. {m['content'][:200]}" for i, m in enumerate(candidates))
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You score the long-term importance of memories on a 1-10 scale "
-                    "(1 = mundane small talk, 10 = life-changing). "
-                    "Return a JSON array of integers, one per numbered memory, in order."
-                ),
-            },
-            {"role": "user", "content": f"Score these memories:\n{numbered}"},
-        ]
+        numbered = "\n".join(
+            f"{i + 1}. ({(m.get('created_at') or '')[:10]}) {m['content'][:200]}"
+            for i, m in enumerate(candidates)
+        )
+        messages = render("maintenance_importance", numbered=numbered)
         scores = char.llm.generate_json_robust(messages)
         if not isinstance(scores, list):
             return {"_status": "failed", "error": "non-list score response", **extra}
@@ -229,22 +224,13 @@ class MaintenanceRunner:
             if not self.budget.take(1):
                 break
             checked += 1
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "You check whether two remembered facts contradict each other. "
-                        'Return JSON: {"contradictory": true|false, '
-                        '"current": "first"|"second"|"unclear"} — "current" is the fact '
-                        "that reflects the present state if they contradict "
-                        "(the newer statement usually, unless it is clearly speculative)."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"First (older): {a['content'][:300]}\nSecond (newer): {b['content'][:300]}",
-                },
-            ]
+            messages = render(
+                "maintenance_contradiction",
+                a_date=(a.get("created_at") or "")[:10],
+                a_content=a["content"][:300],
+                b_date=(b.get("created_at") or "")[:10],
+                b_content=b["content"][:300],
+            )
             try:
                 verdict = char.llm.generate_json_robust(messages)
             except ValueError:

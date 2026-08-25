@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 
+from ..clock import sqlite_ts
 from ..embedding.base import EmbeddingProvider
 from ..storage.sqlite import SQLiteStorage
 from ..utils.text import generate_id
@@ -68,6 +69,8 @@ class MemoryStore:
             "session_id": session_id,
             "role": role,
             "metadata": metadata or {},
+            "created_at": sqlite_ts(),
+            "accessed_at": sqlite_ts(),
         }
         self.storage.save_memory(memory)
         return memory
@@ -94,6 +97,8 @@ class MemoryStore:
             "session_id": session_id,
             "role": role,
             "metadata": {},
+            "created_at": sqlite_ts(),
+            "accessed_at": sqlite_ts(),
         }
         self.storage.save_memory(memory)
         return memory

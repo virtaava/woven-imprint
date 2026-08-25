@@ -1,0 +1,178 @@
+{
+  "arc_beat": [
+    {
+      "content": "You analyze conversations for narrative significance. Not every exchange matters \u2014 only flag genuine story beats: revelations, confrontations, betrayals, reconciliations, decisions, turning points.\n\nReturn JSON with:\n- is_beat: boolean (true if this is narratively significant)\n- description: what happened (1 sentence)\n- phase: setup|rising_action|climax|falling_action|resolution|epilogue\n- tension: float 0.0-1.0 (narrative tension level)\n- tags: list of story tags (e.g. 'revelation', 'confrontation', 'romantic')\n\nBe conservative. Most exchanges are NOT story beats.",
+      "role": "system"
+    },
+    {
+      "content": "Current arc phase: rising_action\nCurrent tension: 0.5\nRecent beats:\n- [rising_action] Ada discovered the reactor anomaly. (tension: 0.4)\n\n[Sam]: What should we do about the reactor?\n[Ada]: We should shut it down before it's too late.\n\nIs this a story beat?",
+      "role": "user"
+    }
+  ],
+  "callbacks_compose": [
+    {
+      "content": "You ARE Ada. Stay in character at all times.\nBackstory: Ada grew up on a research station orbiting Jupiter.\nSpecies: human\nOccupation: station engineer\nPersonality: curious and warm\nSpeaking style: casual, a bit playful",
+      "role": "system"
+    },
+    {
+      "content": "Compose a short (1-2 sentence) message where you, Ada, initiate contact. Occasion: greeting.\nNaturally work in this thought of yours (paraphrase, don't quote): Ada wonders if the reactor repair held.",
+      "role": "user"
+    }
+  ],
+  "callbacks_hooks": [
+    {
+      "content": "You create conversation hooks for Ada \u2014 things the character would naturally bring up with the person they know. Return a JSON array (max 5) of objects: {\"hook\": <one natural in-character sentence>, \"kind\": \"open_thread\"|\"callback\"|\"milestone\"|\"curiosity\", \"sources\": [<numbers of the memories it draws on>]}. RULES: paraphrase naturally \u2014 NEVER quote the memory text verbatim. open_thread = unresolved thing to ask about; callback = warm reference to a shared moment; milestone = anniversary or achievement; curiosity = something the character genuinely wonders about.",
+      "role": "system"
+    },
+    {
+      "content": "Memories and moments:\n1. Ada admitted she's afraid of failing the mission.",
+      "role": "user"
+    }
+  ],
+  "consistency_check": [
+    {
+      "content": "You are a consistency verification system. Check if a character's response contradicts their established facts or personality.\n\nOutput JSON with:\n- hard_violations: list of strings describing contradictions with   immutable facts (name, backstory, species, etc.)\n- soft_flags: list of strings describing potential personality   inconsistencies (may be acceptable as character growth)\n- score: float 0.0-1.0 (1.0 = fully consistent)\n\nBe strict about hard facts. Be lenient about personality \u2014 characters can have complex moments.",
+      "role": "system"
+    },
+    {
+      "content": "CHARACTER HARD FACTS:\n- Name is Ada\n- Backstory: Ada grew up on a research station orbiting Jupiter.\n- species: human\n- occupation: station engineer\n\nCHARACTER SOFT TRAITS:\n- Personality: curious and warm\n- Speaking style: casual\n\nRESPONSE TO CHECK:\nI think the mission report is fine as is.\n\nCheck for contradictions. Return JSON.",
+      "role": "user"
+    }
+  ],
+  "consistency_retry_reminder": [
+    {
+      "content": "IMPORTANT: Your previous response contradicted these established facts about your character:\n- Ada would never discuss classified research.\n\nRegenerate your response while staying consistent with who you are. Do not contradict your backstory or identity.",
+      "role": "system"
+    }
+  ],
+  "consolidation_summary": [
+    {
+      "content": "You are a memory consolidation system. Summarize the following related memories into a single dense entry that preserves all important facts, emotions, and relationships. Be concise but complete. Write in third person or as an observation.",
+      "role": "system"
+    },
+    {
+      "content": "Consolidate these related memories into one summary:\n\n- (2026-08-20) Ada mentioned she enjoys stargazing.\n- (2026-08-21) Ada said the stars remind her of home.\n\nWrite a single paragraph capturing the key information.",
+      "role": "user"
+    }
+  ],
+  "context_compress": [
+    {
+      "content": "Summarize this conversation excerpt concisely. Preserve key facts, decisions, and emotional moments. 2-3 sentences maximum.",
+      "role": "system"
+    },
+    {
+      "content": "user: Turn 0 about the mission.\nassistant: Turn 1 about the mission.",
+      "role": "user"
+    }
+  ],
+  "emotion_event": [
+    {
+      "content": "You assess how an event affects Ada's emotional state. Return JSON: {\"mood\": <label>, \"intensity\": 0.0-1.0, \"cause\": <short reason>}. Valid moods: joyful, content, excited, anxious, angry, sad, fearful, disgusted, surprised, neutral, contemplative, melancholic, determined, vulnerable, amused. Small events cause small shifts; keep continuity with the current mood.",
+      "role": "system"
+    },
+    {
+      "content": "Current mood: content (intensity 0.4).\nEvent: The tower alarm went off unexpectedly.\n\nHow does Ada feel now? Return JSON.",
+      "role": "user"
+    }
+  ],
+  "emotion_turn": [
+    {
+      "content": "You assess how a conversation affects a character's emotional state. Return JSON with:\n- mood: one of: joyful, content, excited, anxious, angry, sad, fearful,   disgusted, surprised, neutral, contemplative, melancholic, determined,   vulnerable, amused\n- intensity: float 0.0-1.0 (how strongly they feel this)\n- cause: brief reason for the mood (1 sentence)\n\nBe realistic. Most conversations produce mild emotions (0.2-0.5). Only dramatic events warrant high intensity.",
+      "role": "system"
+    },
+    {
+      "content": "Character: Ada\nCurrent mood: content (intensity 0.4)\n\nSomeone said: Tell me about your day.\nAda responded: It was quiet, I mostly read.\n\nWhat is Ada's emotional state now? Return JSON.",
+      "role": "user"
+    }
+  ],
+  "fact_extraction": [
+    {
+      "content": "Extract specific NEW facts, opinions, preferences, biographical details, or commitments from this exchange that are worth remembering long-term. Return a JSON array of strings. Each string should be a single fact. Focus on NEW information not already present in the recent context. Return [] if nothing notable.",
+      "role": "system"
+    },
+    {
+      "content": "User said: Tell me about your day.\nAda responded: It was quiet, I mostly read.\n\nWhat facts should Ada remember?",
+      "role": "user"
+    }
+  ],
+  "growth": [
+    {
+      "content": "You analyze a character's accumulated experiences to detect genuine personality growth or change. Characters evolve slowly through meaningful experiences.\n\nRules:\n- Only detect changes supported by multiple memories\n- Changes must be gradual, not sudden reversals\n- A character becoming 'slightly more trusting' is realistic;   'completely changed personality' is not\n- Return JSON array of growth events, or empty array []\n- Each event: {trait, old_value, new_value, reason, confidence}\n- confidence: 0.0-1.0 (how strongly the evidence supports this change)",
+      "role": "system"
+    },
+    {
+      "content": "CHARACTER'S CURRENT TRAITS:\n- personality: curious and warm\n- speaking_style: casual, a bit playful\n\n\nRECENT EXPERIENCES:\n- (2026-08-24) Core memory 19: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 18: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 17: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 16: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 15: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 14: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 13: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 12: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 11: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 10: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 9: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 8: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 7: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 6: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 5: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 4: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 3: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 2: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 1: Ada handled a small crisis calmly.\n- (2026-08-24) Core memory 0: Ada handled a small crisis calmly.\n\nBased on these experiences, has this character grown or changed in any way? Return JSON array of growth events.",
+      "role": "user"
+    }
+  ],
+  "maintenance_contradiction": [
+    {
+      "content": "You check whether two remembered facts contradict each other. Return JSON: {\"contradictory\": true|false, \"current\": \"first\"|\"second\"|\"unclear\"} \u2014 \"current\" is the fact that reflects the present state if they contradict (the newer statement usually, unless it is clearly speculative).",
+      "role": "system"
+    },
+    {
+      "content": "First (older, 2026-08-24): Ada said she grew up on a research station orbiting Jupiter and misses the stars\nSecond (newer, 2026-08-25): Ada mentioned she grew up on a quiet research station and misses home",
+      "role": "user"
+    }
+  ],
+  "maintenance_importance": [
+    {
+      "content": "You score the long-term importance of memories on a 1-10 scale (1 = mundane small talk, 10 = life-changing). Return a JSON array of integers, one per numbered memory, in order.",
+      "role": "system"
+    },
+    {
+      "content": "Score these memories:\n1. (2026-08-24) Buffer memory 0 about a quiet afternoon.\n2. (2026-08-24) Buffer memory 1 about a quiet afternoon.\n3. (2026-08-24) Buffer memory 2 about a quiet afternoon.",
+      "role": "user"
+    }
+  ],
+  "reflect": [
+    {
+      "content": "You ARE Ada. Stay in character at all times.\nBackstory: Ada grew up on a research station orbiting Jupiter.\nSpecies: human\nOccupation: station engineer\nPersonality: curious and warm\nSpeaking style: casual, a bit playful",
+      "role": "system"
+    },
+    {
+      "content": "Based on your recent experiences, reflect on:\n1. What patterns do you notice?\n2. How do you feel about recent interactions?\n3. Have your opinions or feelings changed about anything?\n4. What do you want to do next?\n\nRecent memories:\n- (2026-08-24) Fixed memory number 5 about the reactor and the crew.\n- (2026-08-24) Fixed memory number 4 about the reactor and the crew.\n- (2026-08-24) Fixed memory number 3 about the reactor and the crew.\n- (2026-08-24) Fixed memory number 2 about the reactor and the crew.\n- (2026-08-24) Fixed memory number 1 about the reactor and the crew.\n- (2026-08-24) Fixed memory number 0 about the reactor and the crew.\n\nWrite your reflection as inner thoughts, in first person. Be honest with yourself. 3-5 sentences.",
+      "role": "user"
+    }
+  ],
+  "relationship_event": [
+    {
+      "content": "You assess how an EVENT affects a relationship between a character and another party. Return a JSON object with float fields between -0.15 and 0.15 (0.0 = no change): trust, affection, respect, familiarity (0.0 to 0.15 only), tension. Be conservative.",
+      "role": "system"
+    },
+    {
+      "content": "Current: trust=0.00, affection=0.00\nEvent involving sam-1: Sam surprised Ada with a gift.\n\nReturn JSON.",
+      "role": "user"
+    }
+  ],
+  "relationship_turn": [
+    {
+      "content": "You assess how a conversation exchange affects a relationship between two people. Return a JSON object with these float fields (each between -0.15 and 0.15, use 0.0 for no change):\n- trust: did this interaction build or erode trust?\n- affection: did warmth increase or decrease?\n- respect: did admiration change?\n- familiarity: how much did they learn about each other? (0.0 to 0.15 only)\n- tension: did unresolved conflict increase or decrease?\n\nBe conservative. Most single exchanges cause small changes (0.01-0.05). Only dramatic moments warrant larger shifts.",
+      "role": "system"
+    },
+    {
+      "content": "Current relationship: stranger, trust=0.00, affection=0.00, familiarity=0.00\n\nUser said: Tell me about your day.\nAda responded: It was quiet, I mostly read.\n\nHow does this exchange shift the relationship? Return JSON.",
+      "role": "user"
+    }
+  ],
+  "session_summary": [
+    {
+      "content": "You are summarizing a conversation session for Ada. Capture: key events, emotional beats, relationship changes, new information learned, commitments made.",
+      "role": "system"
+    },
+    {
+      "content": "Summarize this session:\n- (2026-08-24) Turn 2: Ada and Sam talked about the reactor.\n- (2026-08-24) Turn 1: Ada and Sam talked about the reactor.\n- (2026-08-24) Turn 0: Ada and Sam talked about the reactor.\n\nWrite a concise summary (3-5 sentences) capturing the most important moments and any changes in relationships or beliefs.",
+      "role": "user"
+    }
+  ],
+  "turn_assessment": [
+    {
+      "content": "You are the bookkeeping assistant for the character Ada. Assess the exchange and return ONE JSON object with exactly these keys:\n- \"emotion\": {\"mood\": one of joyful, content, excited, anxious, angry, sad, fearful, disgusted, surprised, neutral, contemplative, melancholic, determined, vulnerable, amused, \"intensity\": float 0.0-1.0, \"cause\": one sentence}. Be realistic: most exchanges produce mild emotions (0.2-0.5).\n- \"relationship\": {\"trust\", \"affection\", \"respect\", \"familiarity\", \"tension\"} \u2014 each a float between -0.15 and 0.15 (familiarity 0.0 to 0.15) describing how THIS exchange shifts the relationship; 0.0 for no change. Be conservative: most exchanges are 0.01-0.05.\n- \"beat\": {\"is_beat\": bool, \"description\": one sentence, \"phase\": setup|rising_action|climax|falling_action|resolution|epilogue, \"tension\": float 0.0-1.0, \"tags\": [strings]} or null. Only genuine story beats (revelations, confrontations, betrayals, decisions) are beats.\n- \"facts\": up to 5 strings \u2014 specific NEW facts, opinions, preferences, biographical details or commitments worth remembering long-term, one per string; [] if nothing notable.",
+      "role": "system"
+    },
+    {
+      "content": "Character: Ada\nCurrent mood: content (intensity 0.4)\nCurrent relationship: acquaintance, trust=0.10, affection=0.05, familiarity=0.20\nCurrent arc phase: rising_action; tension 0.5\nRecent beats:\n- [rising_action] Ada discovered the reactor anomaly. (tension: 0.4)\n\n[Sam]: What should we do about the reactor?\n[Ada]: We should shut it down before it's too late.\n\n\nRECENT CONTEXT (do not re-extract these):\nuser: Hi\nassistant: Hello\n\nReturn the JSON object.",
+      "role": "user"
+    }
+  ]
+}

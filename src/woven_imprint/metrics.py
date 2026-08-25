@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import datetime, timezone
 from pathlib import Path
 
+from . import clock
 from .log import logger
 
 _UNSET = object()
@@ -27,7 +27,7 @@ class MetricsSink:
 
     def write(self, character_id: str, metrics: dict) -> None:
         record = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": clock.now().isoformat(),
             "character_id": character_id,
             "metrics": metrics,
         }

@@ -67,6 +67,7 @@ class MemoryConfig:
     weight_importance: float = 1.0
     weight_relationship: float = 1.0
     recency_anchor: str = "created"  # "created" | "accessed"
+    max_candidates: int = 5000  # cap on active memories scored per retrieve() call
 
 
 @dataclass
@@ -77,6 +78,7 @@ class ContextConfig:
     conversation_tokens: int = 3000
     reserve_tokens: int = 500
     max_turns: int = 20
+    include_date: bool = True
 
 
 @dataclass
@@ -105,6 +107,7 @@ class CharacterConfig:
     consistency_stream_mode: str = "log"  # "off" | "log" — post-hoc check in chat_stream()
     metrics_path: str | None = None
     background: bool = True
+    unified_assessment: bool = True
 
 
 @dataclass
@@ -261,6 +264,7 @@ def _apply_env(cfg: WovenConfig) -> None:
         "WOVEN_IMPRINT_MAX_FACTS": ("memory", "max_facts_per_extraction"),
         "WOVEN_IMPRINT_METRICS_PATH": ("character", "metrics_path"),
         "WOVEN_IMPRINT_BACKGROUND": ("character", "background"),
+        "WOVEN_IMPRINT_UNIFIED_ASSESSMENT": ("character", "unified_assessment"),
         "WOVEN_IMPRINT_MAINTENANCE_BUDGET": ("maintenance", "max_llm_calls_per_run"),
     }
 
@@ -383,6 +387,7 @@ context:
   conversation_tokens: 3000
   reserve_tokens: 500
   max_turns: 20
+  include_date: true
 
 relationship:
   max_delta: 0.15
@@ -405,6 +410,7 @@ character:
   # consistency_stream_mode: log  # "off" | "log" — post-hoc consistency check in chat_stream()
   # metrics_path: null            # JSONL per-turn chat metrics (opt-in)
   background: true               # run bookkeeping (emotion/arc/relationship/facts) off the hot path
+  unified_assessment: true       # one LLM call per turn: emotion, relationship deltas, story beat, facts (vs separate calls)
 
 server:
   api_port: 8650

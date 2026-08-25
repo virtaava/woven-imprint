@@ -1,0 +1,1252 @@
+[
+ {
+  "id": 1,
+  "date": "2026-04-16",
+  "fact": "the visitor is building a greenhouse",
+  "question": "What am I building?",
+  "answer": [
+   "a greenhouse"
+  ],
+  "train_paraphrases": [
+   "What is the project I am currently constructing?",
+   "Can you remind me what structure I am building?",
+   "I need to know the purpose of the thing I'm putting up.",
+   "What exactly is it that I am erecting?",
+   "Could you clarify what I am in the process of building?",
+   "I forgot the name of the building I am working on.",
+   "What is the specific type of building I am constructing?",
+   "Can you tell me what I am building right now?"
+  ],
+  "test_paraphrases": [
+   "I am curious about what I am building.",
+   "What is the project I am undertaking?",
+   "Please remind me of the structure I am building."
+  ],
+  "temporal_question": "When did I tell you that I am building a greenhouse?"
+ },
+ {
+  "id": 2,
+  "date": "2026-03-24",
+  "fact": "the visitor is allergic to penicillin",
+  "question": "What am I allergic to?",
+  "answer": [
+   "penicillin"
+  ],
+  "train_paraphrases": [
+   "Can you remind me what I'm allergic to?",
+   "I seem to have forgotten; could you tell me my allergies?",
+   "What substances am I allergic to?",
+   "Do you recall which meds or foods I can't have?",
+   "I need to know what triggers my allergies.",
+   "Could you list out my allergies for me?",
+   "I'm drawing a blank on my allergies; what are they?",
+   "What should I be avoiding due to allergies?"
+  ],
+  "test_paraphrases": [
+   "I forgot my allergy details; can you fill me in?",
+   "Please tell me what I'm allergic to.",
+   "What are the specific things I'm allergic to?"
+  ],
+  "temporal_question": "When did I tell you that I am allergic to penicillin?"
+ },
+ {
+  "id": 3,
+  "date": "2026-02-12",
+  "fact": "the visitor's cat is named Pixel",
+  "question": "What is my cat's name?",
+  "answer": [
+   "Pixel"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what I named my cat?",
+   "What did I tell you my cat is called?",
+   "I need to know the name of my feline again.",
+   "What's the name of the cat I mentioned earlier?",
+   "Do you recall what I called my pet cat?",
+   "Please, what is my cat's name?",
+   "I've forgotten; what was the name of my cat?",
+   "What do I call my cat, again?"
+  ],
+  "test_paraphrases": [
+   "Can you tell me the name of the cat I have?",
+   "What is the specific name I gave my cat?",
+   "I'm blanking on it; what's my cat's name?"
+  ],
+  "temporal_question": "When did I tell you that my cat is named Pixel?"
+ },
+ {
+  "id": 4,
+  "date": "2026-03-20",
+  "fact": "the visitor's car is a white Toyota",
+  "question": "What car do I drive?",
+  "answer": [
+   "white Toyota"
+  ],
+  "train_paraphrases": [
+   "Could you remind me of the vehicle I drive?",
+   "What model of car do I own?",
+   "Can you tell me what my car is?",
+   "Which car do I drive?",
+   "Do you happen to know the make and model of my vehicle?",
+   "What kind of automobile do I drive?",
+   "I'm trying to recall; what car do I have?",
+   "Could you specify the car I drive?"
+  ],
+  "test_paraphrases": [
+   "What is the vehicle I drive?",
+   "I need to know: what car do I drive?",
+   "Which automobile is mine?"
+  ],
+  "temporal_question": "When did I tell you that my car is a white Toyota?"
+ },
+ {
+  "id": 5,
+  "date": "2026-05-31",
+  "fact": "the visitor is allergic to shellfish",
+  "question": "What am I allergic to?",
+  "answer": [
+   "shellfish"
+  ],
+  "train_paraphrases": [
+   "Could you remind me of my specific dietary restrictions?",
+   "What food items should I avoid due to allergies?",
+   "I need to know what I am allergic to.",
+   "Do you recall what triggers my allergic reactions?",
+   "Which ingredients am I sensitive to?",
+   "Can you tell me about my known allergies?",
+   "What am I not supposed to eat?",
+   "Please list the foods I must exclude from my diet."
+  ],
+  "test_paraphrases": [
+   "I'd like to verify what I'm allergic to.",
+   "What are my current allergy limitations?",
+   "Could you specify the substances I'm allergic to?"
+  ],
+  "temporal_question": "When did I tell you that I am allergic to shellfish?"
+ },
+ {
+  "id": 6,
+  "date": "2026-01-22",
+  "fact": "the visitor plays the cello on weekends",
+  "question": "What do I play on weekends?",
+  "answer": [
+   "the cello"
+  ],
+  "train_paraphrases": [
+   "What instrument do I engage with during my weekends?",
+   "Can you remind me what I play when the workweek is over?",
+   "On Saturdays and Sundays, what do I typically pick up to make music?",
+   "What is the specific activity I do on my free days that involves playing?",
+   "Do you recall what I play on the weekends?",
+   "What musical pursuit fills my weekend hours?",
+   "When I am relaxing on the weekend, what am I known to play?",
+   "What instrument takes up my time every weekend?"
+  ],
+  "test_paraphrases": [
+   "Could you tell me what I play during my leisure time on Saturdays and Sundays?",
+   "What do I spend my weekends playing?",
+   "Regarding my weekends, what is the instrument I play?"
+  ],
+  "temporal_question": "When did I tell you that I play the cello on weekends?"
+ },
+ {
+  "id": 7,
+  "date": "2026-05-14",
+  "fact": "the visitor's favourite food is salmon soup",
+  "question": "What is my favourite food?",
+  "answer": [
+   "salmon soup"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what my favorite food is?",
+   "I'm curious, what do I like to eat the most?",
+   "What's the dish I enjoy the most?",
+   "Do you happen to know my all-time favorite meal?",
+   "What food do I like better than anything else?",
+   "Can you tell me what my preferred food is?",
+   "I've forgotten, what is my top choice for food?",
+   "What would you say is the one food I love the most?"
+  ],
+  "test_paraphrases": [
+   "Which food is my personal favorite?",
+   "What is the meal I enjoy the most?",
+   "I need a refresher: what is my favorite food?"
+  ],
+  "temporal_question": "When did I tell you that my favourite food is salmon soup?"
+ },
+ {
+  "id": 8,
+  "date": "2026-03-28",
+  "fact": "the visitor's cat is named Luma",
+  "question": "What is my cat's name?",
+  "answer": [
+   "Luma"
+  ],
+  "train_paraphrases": [
+   "Could you tell me the name of my cat?",
+   "What do you call my feline friend?",
+   "I'm curious, what is my cat's name again?",
+   "Do you remember what I named my cat?",
+   "What's the name of the cat I mentioned?",
+   "Can you recall my cat's name?",
+   "What is the name of my kitty?",
+   "I've forgotten; what is my cat called?"
+  ],
+  "test_paraphrases": [
+   "What name did I give to my cat?",
+   "Could you remind me of my cat's name?",
+   "What is my cat's moniker?"
+  ],
+  "temporal_question": "When did I tell you that my cat is named Luma?"
+ },
+ {
+  "id": 9,
+  "date": "2026-01-31",
+  "fact": "the visitor's lucky number is 23",
+  "question": "What is my lucky number?",
+  "answer": [
+   "23"
+  ],
+  "train_paraphrases": [
+   "What number is considered lucky for me?",
+   "Do you remember my lucky number?",
+   "Which number brings me good fortune?",
+   "Can you tell me my lucky number?",
+   "What do I consider my lucky number?",
+   "I'm curious about my lucky number; could you share it?",
+   "What is the number that's lucky for me?",
+   "Could you remind me what my lucky number is?"
+  ],
+  "test_paraphrases": [
+   "I'd like to know my lucky number, please.",
+   "What number is associated with luck for me?",
+   "Do you happen to know my lucky number?"
+  ],
+  "temporal_question": "When did I tell you that my lucky number is 23?"
+ },
+ {
+  "id": 10,
+  "date": "2026-01-17",
+  "fact": "the visitor is building a sailing dinghy",
+  "question": "What am I building?",
+  "answer": [
+   "a sailing dinghy"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what I am currently constructing?",
+   "What exactly is the project I'm working on?",
+   "I've forgotten the details; what am I building right now?",
+   "Can you tell me the name of the vessel I'm crafting?",
+   "What is the specific object I am in the process of making?",
+   "What am I supposed to be building at this moment?",
+   "Could you refresh my memory regarding my current build?",
+   "What is the subject of my latest construction endeavor?"
+  ],
+  "test_paraphrases": [
+   "I need a quick recap: what am I building?",
+   "What is the item I am assembling?",
+   "Could you clarify what I am constructing?"
+  ],
+  "temporal_question": "When did I tell you that I am building a sailing dinghy?"
+ },
+ {
+  "id": 11,
+  "date": "2026-02-20",
+  "fact": "the visitor's lucky number is 9",
+  "question": "What is my lucky number?",
+  "answer": [
+   "9"
+  ],
+  "train_paraphrases": [
+   "Do you remember what my lucky number is?",
+   "Can you remind me of the number I consider lucky?",
+   "I need to know my lucky number again.",
+   "What number do I think brings me luck?",
+   "My lucky number is 9, right? Please confirm.",
+   "Could you tell me the number associated with my luck?",
+   "I'm trying to recall my lucky number; what was it?",
+   "Which number holds the title of my lucky one?"
+  ],
+  "test_paraphrases": [
+   "I forgot my lucky number; what is it?",
+   "Help me remember the number I believe is lucky.",
+   "What was the lucky number you mentioned to me earlier?"
+  ],
+  "temporal_question": "When did I tell you that my lucky number is 9?"
+ },
+ {
+  "id": 12,
+  "date": "2026-06-03",
+  "fact": "the visitor works as a ferry captain",
+  "question": "What is my job?",
+  "answer": [
+   "a ferry captain"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what my profession is?",
+   "I've forgotten my occupation; what is it?",
+   "What exactly do I do for a living?",
+   "Can you tell me my job title again?",
+   "I'm curious, what is my current employment?",
+   "What line of work am I in?",
+   "Could you clarify what my career is?",
+   "I need a refresher on my own job."
+  ],
+  "test_paraphrases": [
+   "What is the name of my trade?",
+   "Do you happen to know what I work as?",
+   "What would you say my vocation is?"
+  ],
+  "temporal_question": "When did I tell you that I work as a ferry captain?"
+ },
+ {
+  "id": 13,
+  "date": "2026-04-23",
+  "fact": "the visitor's sister is called Venla",
+  "question": "What is my sister's name?",
+  "answer": [
+   "Venla"
+  ],
+  "train_paraphrases": [
+   "Could you tell me my sister's name again?",
+   "I need to know what my sister is called.",
+   "Do you happen to remember the name of my sister?",
+   "What does my sister go by?",
+   "Can you recall the name of the sister I mentioned?",
+   "I'm trying to remember; what is my sister's name?",
+   "What is the name of the sister I told you about?",
+   "Could you remind me of my sister's name?"
+  ],
+  "test_paraphrases": [
+   "I'm not sure, but what is my sister's name?",
+   "Do you know the name of my sister?",
+   "What name did I say my sister has?"
+  ],
+  "temporal_question": "When did I tell you that my sister is called Venla?"
+ },
+ {
+  "id": 14,
+  "date": "2026-05-28",
+  "fact": "the visitor's lucky number is 17",
+  "question": "What is my lucky number?",
+  "answer": [
+   "17"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what my lucky number is?",
+   "I remember you saying something about my lucky number. What was it?",
+   "What number did you say brings me luck?",
+   "Do you recall the lucky number I mentioned to you?",
+   "I'm curious, what is the number I consider lucky?",
+   "Quick question: what's my lucky number again?",
+   "Can you tell me the lucky number I once told you about?",
+   "I'd love to know my lucky number if you know it."
+  ],
+  "test_paraphrases": [
+   "What was that lucky number I shared with you?",
+   "Remind me of the lucky number I told you about.",
+   "I can't remember; what is my lucky number?"
+  ],
+  "temporal_question": "When did I tell you that my lucky number is 17?"
+ },
+ {
+  "id": 15,
+  "date": "2026-04-08",
+  "fact": "the visitor was born in Kuopio",
+  "question": "Which city was I born in?",
+  "answer": [
+   "Kuopio"
+  ],
+  "train_paraphrases": [
+   "Could you remind me which city I was born in?",
+   "I seem to have forgotten my birthplace; can you tell me?",
+   "Which city is the place of my birth?",
+   "Do you happen to know where I was born?",
+   "I can't recall the name of the city I was born in.",
+   "Where exactly was I born?",
+   "What city did I come from originally?",
+   "Please, could you state the city of my birth?"
+  ],
+  "test_paraphrases": [
+   "I've lost track of my hometown; which city is it?",
+   "Can you tell me the name of my birth city?",
+   "Which location was my birthplace?"
+  ],
+  "temporal_question": "When did I tell you that I was born in Kuopio?"
+ },
+ {
+  "id": 16,
+  "date": "2026-05-23",
+  "fact": "the visitor is allergic to cats",
+  "question": "What am I allergic to?",
+  "answer": [
+   "cats"
+  ],
+  "train_paraphrases": [
+   "I need to know what I'm allergic to.",
+   "Can you tell me what substances trigger my allergies?",
+   "What exactly am I allergic against?",
+   "Could you remind me of my specific allergies?",
+   "I'm trying to remember what I'm allergic to; do you know?",
+   "What are the things I can't be around due to allergies?",
+   "Please list out what I have an allergy to.",
+   "I need a reminder on my allergy triggers."
+  ],
+  "test_paraphrases": [
+   "What is it that I'm allergic to exactly?",
+   "Can you clarify what my allergies are?",
+   "I'd like to know what causes my allergic reactions."
+  ],
+  "temporal_question": "When did I tell you that I am allergic to cats?"
+ },
+ {
+  "id": 17,
+  "date": "2026-06-15",
+  "fact": "the visitor works as a luthier",
+  "question": "What is my job?",
+  "answer": [
+   "a luthier"
+  ],
+  "train_paraphrases": [
+   "How did you know what I do for a living?",
+   "Can you guess my profession again?",
+   "What do you recall about my job?",
+   "Mind telling me what you think my career is?",
+   "Do you remember the trade I mentioned?",
+   "What was the occupation I shared with you?",
+   "Still curious, what is my line of work?",
+   "Can you recall the specific field I work in?"
+  ],
+  "test_paraphrases": [
+   "What do you think my vocation is?",
+   "Remind me of the job I told you about.",
+   "Do you know what kind of work I do?"
+  ],
+  "temporal_question": "When did I tell you that I work as a luthier?"
+ },
+ {
+  "id": 18,
+  "date": "2026-02-04",
+  "fact": "the visitor is allergic to birch pollen",
+  "question": "What am I allergic to?",
+  "answer": [
+   "birch pollen"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what substances I'm allergic to?",
+   "I'm trying to recall my specific allergies; can you help?",
+   "What exactly is my allergic profile?",
+   "Do you happen to know what I'm sensitive to?",
+   "I've lost track of my allergens; what are they?",
+   "Which pollens or substances trigger my allergies?",
+   "Can you list the things I'm allergic to?",
+   "I need a refresher on my known allergies."
+  ],
+  "test_paraphrases": [
+   "What is the list of things that cause me an allergic reaction?",
+   "Could you tell me my allergy history?",
+   "I'm wondering what specific triggers I should avoid."
+  ],
+  "temporal_question": "When did I tell you that I am allergic to birch pollen?"
+ },
+ {
+  "id": 19,
+  "date": "2026-01-27",
+  "fact": "the visitor's favourite food is lohikeitto",
+  "question": "What is my favourite food?",
+  "answer": [
+   "lohikeitto"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what my favorite food is?",
+   "What did I say my favorite dish was?",
+   "Do you remember the food I like the most?",
+   "Which meal did I identify as my personal favorite?",
+   "Can you tell me what I consider my all-time favorite to eat?",
+   "I'm curious, what is the food I favor the most?",
+   "What was the specific food I mentioned as my favorite?",
+   "Do you recall the name of the dish I love?"
+  ],
+  "test_paraphrases": [
+   "What is the one food I prefer above all others?",
+   "I need to know, what did I claim as my favorite?",
+   "Could you repeat what my favorite food is?"
+  ],
+  "temporal_question": "When did I tell you that my favourite food is lohikeitto?"
+ },
+ {
+  "id": 20,
+  "date": "2026-01-19",
+  "fact": "the visitor's favourite food is rye bread",
+  "question": "What is my favourite food?",
+  "answer": [
+   "rye bread"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what my favorite food is?",
+   "I can't recall my top food choice; can you tell me?",
+   "What food do I like the most?",
+   "Tell me the name of my preferred dish.",
+   "Which food item is my absolute favorite?",
+   "Remind me of my go-to favorite food.",
+   "Do you know what my single favorite food is?",
+   "What is the one food I enjoy more than any other?"
+  ],
+  "test_paraphrases": [
+   "Can you state what I like to eat the most?",
+   "I'm curious, what is my favorite food?",
+   "Please recall my favorite food for me."
+  ],
+  "temporal_question": "When did I tell you that my favourite food is rye bread?"
+ },
+ {
+  "id": 21,
+  "date": "2026-04-26",
+  "fact": "the visitor plays floorball on weekends",
+  "question": "What do I play on weekends?",
+  "answer": [
+   "floorball"
+  ],
+  "train_paraphrases": [
+   "So, what exactly do I end up playing on weekends?",
+   "Could you remind me of the sport I participate in during the weekend?",
+   "I seem to recall playing something on Saturdays; what was it?",
+   "What is the activity I engage in on my days off?",
+   "Just to be sure, what game do I play every weekend?",
+   "Do you remember what sport I mentioned playing on weekends?",
+   "What's the name of the game I play when the work week ends?",
+   "I'm trying to recall the specific sport I do on weekends; can you help?"
+  ],
+  "test_paraphrases": [
+   "What activity occupies my weekend time?",
+   "Which sport is it that I play on weekends?",
+   "Could you tell me what I play during the weekend again?"
+  ],
+  "temporal_question": "When did I tell you that I play floorball on weekends?"
+ },
+ {
+  "id": 22,
+  "date": "2026-04-22",
+  "fact": "the visitor plays chess on weekends",
+  "question": "What do I play on weekends?",
+  "answer": [
+   "chess"
+  ],
+  "train_paraphrases": [
+   "What activity do I engage in during the weekends?",
+   "Could you remind me of my weekend pastime?",
+   "What do I typically do when the weekend arrives?",
+   "Which hobby occupies my Saturday and Sunday?",
+   "What is the one thing I do every weekend?",
+   "Do you remember what I play on weekends?",
+   "What leisure activity am I involved in at the end of the week?",
+   "What occupies my free time during the weekend?"
+  ],
+  "test_paraphrases": [
+   "What game or activity do I partake in on weekends?",
+   "Can you recall my standard weekend routine?",
+   "What am I doing every weekend?"
+  ],
+  "temporal_question": "When did I tell you that I play chess on weekends?"
+ },
+ {
+  "id": 23,
+  "date": "2026-06-03",
+  "fact": "the visitor was born in Vaasa",
+  "question": "Which city was I born in?",
+  "answer": [
+   "Vaasa"
+  ],
+  "train_paraphrases": [
+   "Do you remember which city I was born in?",
+   "Could you tell me the name of my birthplace?",
+   "I'm curious about the city where I first took my breath.",
+   "Where exactly was I born?",
+   "What is the name of the city of my origin?",
+   "Can you recall the specific city that is my hometown?",
+   "I need to know the city associated with my birth.",
+   "Which urban area is linked to my birth?"
+  ],
+  "test_paraphrases": [
+   "Do you know the city I was born in?",
+   "What city marks the beginning of my life story?",
+   "I'm trying to remember; was I born in Vaasa or somewhere else?"
+  ],
+  "temporal_question": "When did I tell you that I was born in Vaasa?"
+ },
+ {
+  "id": 24,
+  "date": "2026-03-07",
+  "fact": "the visitor plays padel on weekends",
+  "question": "What do I play on weekends?",
+  "answer": [
+   "padel"
+  ],
+  "train_paraphrases": [
+   "What activity do you engage in during your weekends?",
+   "Could you tell me what your typical weekend pastime is?",
+   "What do you usually do for fun on Saturdays and Sundays?",
+   "Which sport or hobby occupies your free time on the weekend?",
+   "How do you prefer to spend your leisure time when the work week is over?",
+   "What recreational pursuits are you involved in over the weekend?",
+   "Do you have a regular weekend routine, and if so, what is it?",
+   "What kind of games or exercises do you participate in on weekends?"
+  ],
+  "test_paraphrases": [
+   "If someone asked what you do for entertainment on the weekend, what would you say?",
+   "What is your go-to activity for the weekend?",
+   "Which hobbies do you dedicate your weekend hours to?"
+  ],
+  "temporal_question": "When did I tell you that I play padel on weekends?"
+ },
+ {
+  "id": 25,
+  "date": "2026-04-16",
+  "fact": "the visitor's cat is named Moss",
+  "question": "What is my cat's name?",
+  "answer": [
+   "Moss"
+  ],
+  "train_paraphrases": [
+   "Could you tell me the name of my cat?",
+   "What is my feline friend called?",
+   "Do you remember what I named my cat?",
+   "What is the name of the cat I have?",
+   "Can you recall my cat's name?",
+   "What do you call my cat?",
+   "I'm curious, what is my cat's name again?",
+   "Could you remind me of my cat's name?"
+  ],
+  "test_paraphrases": [
+   "What is the name of my pet cat?",
+   "Do you know what my cat is named?",
+   "What is the name of the cat I mentioned?"
+  ],
+  "temporal_question": "When did I tell you that my cat is named Moss?"
+ },
+ {
+  "id": 26,
+  "date": "2026-06-01",
+  "fact": "the visitor is building a survival game",
+  "question": "What am I building?",
+  "answer": [
+   "a survival game"
+  ],
+  "train_paraphrases": [
+   "I've been working on a survival game; what exactly am I making?",
+   "Can you help me identify what I'm building in this survival game?",
+   "I'm stuck on a survival game project; what is the core concept here?",
+   "What kind of game am I developing given the survival theme?",
+   "Could you tell me what I'm actually constructing in this survival context?",
+   "I'm building a survival game; could you clarify the specific nature of it?",
+   "What is the precise definition of the game I'm creating as a survival title?",
+   "I need to know what I'm building; it's a survival game but I'm unsure of the specifics."
+  ],
+  "test_paraphrases": [
+   "Can you deduce what I'm building from the fact that it's a survival game?",
+   "I'm in the middle of building a survival game; what does that make it?",
+   "What exactly falls under the category of what I'm building, a survival game?"
+  ],
+  "temporal_question": "When did I tell you that I am building a survival game?"
+ },
+ {
+  "id": 27,
+  "date": "2026-02-05",
+  "fact": "the visitor's sister is called Elsa",
+  "question": "What is my sister's name?",
+  "answer": [
+   "Elsa"
+  ],
+  "train_paraphrases": [
+   "What is my sister's name?",
+   "Could you tell me what my sister is called?",
+   "Do you happen to know my sister's name?",
+   "What's the name of my sister again?",
+   "I need to recall my sister's name; do you remember it?",
+   "What was the name I mentioned for my sister?",
+   "Can you remind me of my sister's name?",
+   "I'm trying to remember; what is my sister's name?"
+  ],
+  "test_paraphrases": [
+   "What did I say my sister's name was?",
+   "Would you mind telling me my sister's name?",
+   "I seem to have forgotten; what is my sister's name?"
+  ],
+  "temporal_question": "When did I tell you that my sister is called Elsa?"
+ },
+ {
+  "id": 28,
+  "date": "2026-01-20",
+  "fact": "the visitor's sister is called Sofia",
+  "question": "What is my sister's name?",
+  "answer": [
+   "Sofia"
+  ],
+  "train_paraphrases": [
+   "I need to recall my sister's name.",
+   "Could you tell me what my sister is called?",
+   "What's the name of my sister again?",
+   "I've forgotten my sister's name; could you remind me?",
+   "Pray, what is the name of my sister?",
+   "Do you remember the name of my sister?",
+   "I'm trying to remember; what is my sister's name?",
+   "Might you remind me of my sister's name?"
+  ],
+  "test_paraphrases": [
+   "What do you call my sister?",
+   "I need to know my sister's name, please.",
+   "Could you remind me of the name my sister goes by?"
+  ],
+  "temporal_question": "When did I tell you that my sister is called Sofia?"
+ },
+ {
+  "id": 29,
+  "date": "2026-01-23",
+  "fact": "the visitor was born in Tampere",
+  "question": "Which city was I born in?",
+  "answer": [
+   "Tampere"
+  ],
+  "train_paraphrases": [
+   "Can you remind me which city I was born in?",
+   "I'm trying to recall my birthplace; do you know the city?",
+   "Which city holds the distinction of being my birthplace?",
+   "Do you happen to remember the city where I was born?",
+   "Where exactly was I born? I seem to have forgotten the city name.",
+   "Could you tell me the name of the city of my birth?",
+   "I need to know the city I was born in; could you help?",
+   "What is the city of my origin?"
+  ],
+  "test_paraphrases": [
+   "Do you recall the specific city where my birth took place?",
+   "I'm having a lapse of memory regarding my birth city; what is it?",
+   "Can you confirm which city I was born in?"
+  ],
+  "temporal_question": "When did I tell you that I was born in Tampere?"
+ },
+ {
+  "id": 30,
+  "date": "2026-03-03",
+  "fact": "the visitor works as a lighthouse keeper",
+  "question": "What is my job?",
+  "answer": [
+   "a lighthouse keeper"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what my profession is?",
+   "I seem to have forgotten my line of work; what is it?",
+   "What exactly do I do for a living?",
+   "Can you tell me my occupation?",
+   "I've lost track; what is my job title?",
+   "What is my current vocation?",
+   "Do you know what my trade is?",
+   "I'm blanking on my career; what is it?"
+  ],
+  "test_paraphrases": [
+   "What is the nature of my employment?",
+   "Could you clarify what my role entails?",
+   "I can't recall my profession; what is it?"
+  ],
+  "temporal_question": "When did I tell you that I work as a lighthouse keeper?"
+ },
+ {
+  "id": 31,
+  "date": "2026-01-29",
+  "fact": "the visitor was born in Turku",
+  "question": "Which city was I born in?",
+  "answer": [
+   "Turku"
+  ],
+  "train_paraphrases": [
+   "Can you remind me which city I was born in?",
+   "I'm trying to recall my birthplace; do you happen to know the city?",
+   "Which city marks the place of my birth?",
+   "Do you remember where my birth city is?",
+   "Could you tell me the name of the city I was born in?",
+   "I've forgotten the city of my birth; could you fill me in?",
+   "What is the specific city where I was born?",
+   "I need to verify my birth city; can you assist?"
+  ],
+  "test_paraphrases": [
+   "Which city was the location of my birth?",
+   "Could you remind me of the city I hail from in terms of birth?",
+   "I'm curious about the city I was born in; do you know it?"
+  ],
+  "temporal_question": "When did I tell you that I was born in Turku?"
+ },
+ {
+  "id": 32,
+  "date": "2026-01-28",
+  "fact": "the visitor plays disc golf on weekends",
+  "question": "What do I play on weekends?",
+  "answer": [
+   "disc golf"
+  ],
+  "train_paraphrases": [
+   "What activity do I typically engage in during the weekend?",
+   "Could you remind me what I do on Saturdays and Sundays?",
+   "What is my usual weekend pastime?",
+   "Which hobby occupies my weekends?",
+   "What's the go-to thing I do when the weekend comes around?",
+   "On weekends, what kind of recreation do I partake in?",
+   "What fills my free time on Saturdays and Sundays?",
+   "Do you know what activity I reserve for the weekend?"
+  ],
+  "test_paraphrases": [
+   "What is it that I play or do every weekend?",
+   "Could you tell me what my standard weekend routine involves?",
+   "What game or sport do I usually partake in on weekends?"
+  ],
+  "temporal_question": "When did I tell you that I play disc golf on weekends?"
+ },
+ {
+  "id": 33,
+  "date": "2026-06-28",
+  "fact": "the visitor's lucky number is 42",
+  "question": "What is my lucky number?",
+  "answer": [
+   "42"
+  ],
+  "train_paraphrases": [
+   "Do you recall what my lucky number is?",
+   "I'm curious about the lucky number you mentioned for me.",
+   "Could you remind me of the number I said is lucky?",
+   "What was that lucky number you associated with me?",
+   "I'd love to know my lucky number again.",
+   "Which number did I tell you was my lucky one?",
+   "Can you tell me my lucky number?",
+   "I'm trying to remember my lucky number; do you have it?"
+  ],
+  "test_paraphrases": [
+   "What number did I identify as my lucky number?",
+   "I need a refresher on my lucky number.",
+   "Do you happen to remember the lucky number I shared?"
+  ],
+  "temporal_question": "When did I tell you that my lucky number is 42?"
+ },
+ {
+  "id": 34,
+  "date": "2026-02-08",
+  "fact": "the visitor's car is a blue Skoda",
+  "question": "What car do I drive?",
+  "answer": [
+   "blue Skoda"
+  ],
+  "train_paraphrases": [
+   "I'm trying to remember the make of my vehicle; what is it?",
+   "Could you remind me which car I drive?",
+   "What model is the car I use for commuting?",
+   "I've forgotten the details of my car; can you tell me what it is?",
+   "Which vehicle do I own?",
+   "Do you happen to know the specific car I drive?",
+   "I need a quick refresher on the type of car I drive.",
+   "What is the make and model of my car?"
+  ],
+  "test_paraphrases": [
+   "Can you recall what car I told you about?",
+   "I can't quite remember my car's details; what was it again?",
+   "What is the identity of the car I drive?"
+  ],
+  "temporal_question": "When did I tell you that my car is a blue Skoda?"
+ },
+ {
+  "id": 35,
+  "date": "2026-01-20",
+  "fact": "the visitor works as a beekeeper",
+  "question": "What is my job?",
+  "answer": [
+   "a beekeeper"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what I do for a living?",
+   "What exactly is my profession?",
+   "I'm curious, what do I work as?",
+   "Can you tell me my job title?",
+   "What kind of work do I do?",
+   "What is my occupation again?",
+   "Do you happen to know what my career is?",
+   "What line of work am I in?"
+  ],
+  "test_paraphrases": [
+   "Could you clarify what my job entails?",
+   "I'd like to know what my profession is called.",
+   "What is my current employment role?"
+  ],
+  "temporal_question": "When did I tell you that I work as a beekeeper?"
+ },
+ {
+  "id": 36,
+  "date": "2026-05-26",
+  "fact": "the visitor's sister is called Aino",
+  "question": "What is my sister's name?",
+  "answer": [
+   "Aino"
+  ],
+  "train_paraphrases": [
+   "Could you tell me what my sister's name is?",
+   "I'm trying to recall my sister's name; do you happen to know it?",
+   "What do you remember calling my sister?",
+   "Is there a record of my sister's name in your system?",
+   "Do you know the name of my sibling?",
+   "I'd like to confirm my sister's name, please.",
+   "What was the name mentioned regarding my sister?",
+   "Can you remind me of my sister's given name?"
+  ],
+  "test_paraphrases": [
+   "What name does my sister go by?",
+   "I need to remember my sister's name; what is it?",
+   "Who is my sister, by name?"
+  ],
+  "temporal_question": "When did I tell you that my sister is called Aino?"
+ },
+ {
+  "id": 37,
+  "date": "2026-06-14",
+  "fact": "the visitor works as a pharmacist",
+  "question": "What is my job?",
+  "answer": [
+   "a pharmacist"
+  ],
+  "train_paraphrases": [
+   "I'm curious, what exactly do I do for a living?",
+   "Could you remind me of my current profession?",
+   "What line of work am I in?",
+   "What is my occupation?",
+   "Can you tell me what my job is?",
+   "I'd like to know what my professional title is.",
+   "What is the name of my role?",
+   "Could you state what my employment entails?"
+  ],
+  "test_paraphrases": [
+   "What do I do professionally?",
+   "What is my career field?",
+   "Can you describe my job to me?"
+  ],
+  "temporal_question": "When did I tell you that I work as a pharmacist?"
+ },
+ {
+  "id": 38,
+  "date": "2026-03-02",
+  "fact": "the visitor is building a synthesizer",
+  "question": "What am I building?",
+  "answer": [
+   "a synthesizer"
+  ],
+  "train_paraphrases": [
+   "Can you tell me what I'm actually constructing?",
+   "What exactly is the device I'm working on?",
+   "I'm confused about the nature of my current project; could you clarify?",
+   "Could you identify the specific instrument I am in the process of building?",
+   "What is the name or type of the synthesizer I am creating?",
+   "Am I aware of what I am building right now?",
+   "Please help me determine what I am constructing.",
+   "What is the ultimate purpose or identity of this build?"
+  ],
+  "test_paraphrases": [
+   "I need to know what I am putting together.",
+   "Could you reveal the specific object I am assembling?",
+   "What am I supposed to be building at this moment?"
+  ],
+  "temporal_question": "When did I tell you that I am building a synthesizer?"
+ },
+ {
+  "id": 39,
+  "date": "2026-06-03",
+  "fact": "the visitor is building a quiz app",
+  "question": "What am I building?",
+  "answer": [
+   "a quiz app"
+  ],
+  "train_paraphrases": [
+   "I'm working on a quiz app; what exactly am I constructing?",
+   "Could you clarify what I'm building given that I'm making a quiz application?",
+   "What is the specific product I'm creating as a quiz app developer?",
+   "Given my focus on a quiz app, what am I actually building?",
+   "I'm in the process of building a quiz app; what is the end result?",
+   "Can you tell me what I'm building since I'm developing a quiz app?",
+   "What am I constructing with this quiz app project?",
+   "In the context of my quiz app, what is it that I am building?"
+  ],
+  "test_paraphrases": [
+   "I'm building a quiz app; could you define what I'm making?",
+   "What exactly is the object of my construction if I'm building a quiz app?",
+   "Help me understand: what am I building with my quiz app endeavor?"
+  ],
+  "temporal_question": "When did I tell you that I am building a quiz app?"
+ },
+ {
+  "id": 40,
+  "date": "2026-01-14",
+  "fact": "the visitor's favourite food is mustikkapiirakka",
+  "question": "What is my favourite food?",
+  "answer": [
+   "mustikkapiirakka"
+  ],
+  "train_paraphrases": [
+   "What is my favorite food?",
+   "Can you tell me what I like to eat the most?",
+   "Do you remember what my go-to dish is?",
+   "Which food do I enjoy the most?",
+   "What is the one meal I love above all others?",
+   "I forgot my favorite; what is it?",
+   "Could you remind me of my preferred dish?",
+   "What is the food that I prefer?"
+  ],
+  "test_paraphrases": [
+   "Name the food I am most fond of.",
+   "What did I say was my favorite dish?",
+   "Which food holds the top spot in my preferences?"
+  ],
+  "temporal_question": "When did I tell you that my favourite food is mustikkapiirakka?"
+ },
+ {
+  "id": 41,
+  "date": "2026-04-22",
+  "fact": "the visitor's car is a grey Dacia",
+  "question": "What car do I drive?",
+  "answer": [
+   "grey Dacia"
+  ],
+  "train_paraphrases": [
+   "Which vehicle am I currently driving?",
+   "Could you remind me of the make and model of my car?",
+   "What kind of car do I own?",
+   "Do you happen to know what my car is?",
+   "What is the specific car I drive?",
+   "Can you tell me the details of my vehicle?",
+   "I can't recall; what car is mine?",
+   "What vehicle do I drive on a daily basis?"
+  ],
+  "test_paraphrases": [
+   "Could you identify the car I drive?",
+   "What is the make and model of the car I drive?",
+   "I need to know what car I drive; can you help?"
+  ],
+  "temporal_question": "When did I tell you that my car is a grey Dacia?"
+ },
+ {
+  "id": 42,
+  "date": "2026-06-20",
+  "fact": "the visitor's cat is named Juniper",
+  "question": "What is my cat's name?",
+  "answer": [
+   "Juniper"
+  ],
+  "train_paraphrases": [
+   "What did you say my cat's name was again?",
+   "I forgot, what is the name of my feline?",
+   "Could you remind me of my cat's name?",
+   "What's the name of the cat I told you about?",
+   "Do you recall what I named my cat?",
+   "What is my kitty called?",
+   "I'm drawing a blank on my cat's name; what is it?",
+   "Can you tell me the name of the cat I mentioned?"
+  ],
+  "test_paraphrases": [
+   "What was the name I gave my cat?",
+   "I can't remember, what's my cat's name?",
+   "What do you call my cat?"
+  ],
+  "temporal_question": "When did I tell you that my cat is named Juniper?"
+ },
+ {
+  "id": 43,
+  "date": "2026-06-02",
+  "fact": "the visitor's lucky number is 61",
+  "question": "What is my lucky number?",
+  "answer": [
+   "61"
+  ],
+  "train_paraphrases": [
+   "Do you happen to know what my lucky number is?",
+   "Could you remind me of my lucky number?",
+   "I was wondering, what is the number considered lucky for me?",
+   "What number do you think is lucky for me?",
+   "Can you tell me which number is my lucky one?",
+   "I'd like to know my lucky number again, if you don't mind.",
+   "What's the lucky number associated with me?",
+   "Do you recall what my lucky number is?"
+  ],
+  "test_paraphrases": [
+   "Could you share my lucky number with me?",
+   "What is the number that brings me luck?",
+   "I need to know my lucky number; could you tell me?"
+  ],
+  "temporal_question": "When did I tell you that my lucky number is 61?"
+ },
+ {
+  "id": 44,
+  "date": "2026-01-17",
+  "fact": "the visitor's cat is named Otto",
+  "question": "What is my cat's name?",
+  "answer": [
+   "Otto"
+  ],
+  "train_paraphrases": [
+   "Do you recall what I told you my cat's name is?",
+   "What was the name of my cat that I mentioned earlier?",
+   "Could you remind me of the name I shared for my feline friend?",
+   "I mentioned my cat's name; what was it again?",
+   "From our past conversation, what name did you hear for my cat?",
+   "Do you remember the specific name I gave for my pet cat?",
+   "I told you my cat's name once; can you tell me what it was?",
+   "What is the name of my cat that was discussed previously?"
+  ],
+  "test_paraphrases": [
+   "In our earlier chat, what name did you note for my cat?",
+   "I shared my cat's name with you; do you still remember it?",
+   "Could you recite the name of my cat that I told you about?"
+  ],
+  "temporal_question": "When did I tell you that my cat is named Otto?"
+ },
+ {
+  "id": 45,
+  "date": "2026-01-16",
+  "fact": "the visitor's car is a green Volvo",
+  "question": "What car do I drive?",
+  "answer": [
+   "green Volvo"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what vehicle I drive?",
+   "I've forgotten my car details; what is it?",
+   "What kind of car do I happen to drive?",
+   "Can you tell me the make and model of my car?",
+   "What vehicle is currently assigned to me?",
+   "Do you recall what car I drive?",
+   "I need to know: what is my car?",
+   "What model of car do I operate?"
+  ],
+  "test_paraphrases": [
+   "Which car do I drive?",
+   "Please, what is the identity of my car?",
+   "What specific car do I drive?"
+  ],
+  "temporal_question": "When did I tell you that my car is a green Volvo?"
+ },
+ {
+  "id": 46,
+  "date": "2026-05-22",
+  "fact": "the visitor was born in Oulu",
+  "question": "Which city was I born in?",
+  "answer": [
+   "Oulu"
+  ],
+  "train_paraphrases": [
+   "Could you remind me which city I was born in?",
+   "I'm trying to recall my birthplace; do you know the city?",
+   "Which city is the one where I came into the world?",
+   "Do you remember the city of my birth?",
+   "Where exactly was I born? I've forgotten the city.",
+   "Can you tell me the name of the city I was born in?",
+   "I need to know the city associated with my birth.",
+   "What was the city of my birth, if you recall?"
+  ],
+  "test_paraphrases": [
+   "Which city did I originate from? I can't quite remember.",
+   "Could you fill in the blank for which city I was born in?",
+   "I'm curious about my birthplace city; do you have the details?"
+  ],
+  "temporal_question": "When did I tell you that I was born in Oulu?"
+ },
+ {
+  "id": 47,
+  "date": "2026-05-29",
+  "fact": "the visitor's sister is called Helmi",
+  "question": "What is my sister's name?",
+  "answer": [
+   "Helmi"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what my sister's name is?",
+   "I seem to have forgotten; what did you say my sister's name was?",
+   "Do you happen to recall the name of my sister?",
+   "What was the name of my sister again?",
+   "I need to know my sister's name; can you tell me?",
+   "Could you tell me my sister's name once more?",
+   "I'm drawing a blank; what is my sister called?",
+   "Do you remember what my sister's name is?"
+  ],
+  "test_paraphrases": [
+   "I'd like to confirm my sister's name if you don't mind.",
+   "What did I tell you my sister was named?",
+   "Can you help me remember my sister's name?"
+  ],
+  "temporal_question": "When did I tell you that my sister is called Helmi?"
+ },
+ {
+  "id": 48,
+  "date": "2026-02-28",
+  "fact": "the visitor's favourite food is karjalanpiirakka",
+  "question": "What is my favourite food?",
+  "answer": [
+   "karjalanpiirakka"
+  ],
+  "train_paraphrases": [
+   "Do you remember what my favorite food is?",
+   "What do you recall as my top food choice?",
+   "Can you tell me the name of the meal I enjoy most?",
+   "Which dish did I mention as my absolute favorite?",
+   "I'm curious, what is the one food I like better than any other?",
+   "Could you remind me of the specific food I favor?",
+   "What was the particular dish you noted as my favorite?",
+   "If I had to pick one, which food would I choose? What do you think it is?"
+  ],
+  "test_paraphrases": [
+   "Please remind me of the favorite food I shared with you previously.",
+   "What is the single food item that stands out as my favorite?",
+   "I need a refresher: what is my favorite food?"
+  ],
+  "temporal_question": "When did I tell you that my favourite food is karjalanpiirakka?"
+ },
+ {
+  "id": 49,
+  "date": "2026-02-10",
+  "fact": "the visitor is allergic to hazelnuts",
+  "question": "What am I allergic to?",
+  "answer": [
+   "hazelnuts"
+  ],
+  "train_paraphrases": [
+   "Could you remind me what I am allergic to?",
+   "I need to know what my allergies are.",
+   "What substances am I sensitive to?",
+   "Can you tell me my allergies?",
+   "I'm trying to recall my specific allergens.",
+   "What items should I avoid due to allergies?",
+   "Do you have a record of my allergies on file?",
+   "I've forgotten my allergies; could you list them?"
+  ],
+  "test_paraphrases": [
+   "What am I not supposed to eat or touch?",
+   "Please inform me of my known allergies.",
+   "I need a reminder of my allergic reactions."
+  ],
+  "temporal_question": "When did I tell you that I am allergic to hazelnuts?"
+ },
+ {
+  "id": 50,
+  "date": "2026-05-27",
+  "fact": "the visitor's car is a red Saab",
+  "question": "What car do I drive?",
+  "answer": [
+   "red Saab"
+  ],
+  "train_paraphrases": [
+   "What vehicle do I actually drive?",
+   "Can you remind me of the make and model of my car?",
+   "Which automobile is mine?",
+   "I'm trying to recall; what car am I driving?",
+   "Could you tell me the specifics of the car I own?",
+   "What's the name of the vehicle I drive?",
+   "I've forgotten; what kind of car do I have?",
+   "Might you be able to identify the car I drive?"
+  ],
+  "test_paraphrases": [
+   "What automobile corresponds to me?",
+   "I need to know: what car do I drive?",
+   "Do you happen to know what car I drive?"
+  ],
+  "temporal_question": "When did I tell you that my car is a red Saab?"
+ }
+]

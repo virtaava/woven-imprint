@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..llm.base import LLMProvider
 from ..embedding.base import EmbeddingProvider
+from ..prompts import render
 from ..storage.sqlite import SQLiteStorage
 from ..utils.text import generate_id
 from .retrieval import _cosine_similarity
@@ -244,25 +245,7 @@ class ConsolidationEngine:
 
     def _summarize_cluster(self, cluster_text: str) -> str | None:
         """Use LLM to summarize a cluster of related memories."""
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a memory consolidation system. Summarize the following "
-                    "related memories into a single dense entry that preserves all "
-                    "important facts, emotions, and relationships. Be concise but "
-                    "complete. Write in third person or as an observation."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Consolidate these related memories into one summary:\n\n"
-                    f"{cluster_text}\n\n"
-                    f"Write a single paragraph capturing the key information."
-                ),
-            },
-        ]
+        messages = render("consolidation_summary", cluster_text=cluster_text)
         try:
             return self.llm.generate(messages, temperature=0.3, max_tokens=300)
         except Exception:

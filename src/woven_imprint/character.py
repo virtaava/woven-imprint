@@ -23,6 +23,7 @@ from .persona.assessment import TurnAssessor
 from .persona.consistency import ConsistencyChecker
 from .persona.emotion import EmotionalState, EmotionEngine
 from .persona.growth import GrowthEngine
+from .prompts import render
 from .relationship.model import RelationshipModel
 from .storage.sqlite import SQLiteStorage
 from .utils.text import generate_id
@@ -683,25 +684,13 @@ class Character:
         """LLM-assess how a world event shifts relationship dimensions."""
         current = self.relationships.get_or_create(user_id)
         dims = current["dimensions"]
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You assess how an EVENT affects a relationship between a character "
-                    "and another party. Return a JSON object with float fields between "
-                    "-0.15 and 0.15 (0.0 = no change): trust, affection, respect, "
-                    "familiarity (0.0 to 0.15 only), tension. Be conservative."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Current: trust={dims.get('trust', 0):.2f}, "
-                    f"affection={dims.get('affection', 0):.2f}\n"
-                    f"Event involving {user_id}: {event[:300]}\n\nReturn JSON."
-                ),
-            },
-        ]
+        messages = render(
+            "relationship_event",
+            trust=dims.get("trust", 0),
+            affection=dims.get("affection", 0),
+            user_id=user_id,
+            event=event[:300],
+        )
         result = self.llm.generate_json_robust(messages)
         if not isinstance(result, dict):
             return
@@ -795,22 +784,11 @@ class Character:
             f"- ({m.get('created_at', '')[:10]}) {m['content'][:200]}" for m in recent[:30]
         )
 
-        messages = [
-            {"role": "system", "content": self.persona.build_system_prompt()},
-            {
-                "role": "user",
-                "content": (
-                    f"Based on your recent experiences, reflect on:\n"
-                    f"1. What patterns do you notice?\n"
-                    f"2. How do you feel about recent interactions?\n"
-                    f"3. Have your opinions or feelings changed about anything?\n"
-                    f"4. What do you want to do next?\n\n"
-                    f"Recent memories:\n{recent_text}\n\n"
-                    f"Write your reflection as inner thoughts, in first person. "
-                    f"Be honest with yourself. 3-5 sentences."
-                ),
-            },
-        ]
+        messages = render(
+            "reflect",
+            persona_system=self.persona.build_system_prompt(),
+            recent_text=recent_text,
+        )
 
         reflection = self.llm.generate(messages, temperature=0.6)
 
@@ -919,24 +897,7 @@ class Character:
         mem_text = "\n".join(
             f"- ({m['created_at'][:10]}) {m['content'][:150]}" for m in session_memories[:30]
         )
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    f"You are summarizing a conversation session for {self.name}. "
-                    f"Capture: key events, emotional beats, relationship changes, "
-                    f"new information learned, commitments made."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Summarize this session:\n{mem_text}\n\n"
-                    f"Write a concise summary (3-5 sentences) capturing the most important "
-                    f"moments and any changes in relationships or beliefs."
-                ),
-            },
-        ]
+        messages = render("session_summary", character_name=self.name, mem_text=mem_text)
 
         summary = self.llm.generate(messages, temperature=0.3)
 
@@ -1337,27 +1298,13 @@ class Character:
         # Build context from recent conversation to avoid re-extraction
         context_hint = self._recent_context_hint()
 
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Extract specific NEW facts, opinions, preferences, biographical details, "
-                    "or commitments from this exchange that are worth remembering long-term. "
-                    "Return a JSON array of strings. Each string should be a single fact. "
-                    "Focus on NEW information not already present in the recent context. "
-                    "Return [] if nothing notable."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"User said: {user_msg}\n"
-                    f"{self.name} responded: {response}\n\n"
-                    f"What facts should {self.name} remember?"
-                    f"{context_hint}"
-                ),
-            },
-        ]
+        messages = render(
+            "fact_extraction",
+            user_msg=user_msg,
+            response=response,
+            character_name=self.name,
+            context_hint=context_hint,
+        )
 
         try:
             result = self.llm.generate_json_robust(messages)
@@ -1376,35 +1323,16 @@ class Character:
         current = self.relationships.get_or_create(user_id)
         dims = current["dimensions"]
 
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You assess how a conversation exchange affects a relationship "
-                    "between two people. Return a JSON object with these float fields "
-                    "(each between -0.15 and 0.15, use 0.0 for no change):\n"
-                    "- trust: did this interaction build or erode trust?\n"
-                    "- affection: did warmth increase or decrease?\n"
-                    "- respect: did admiration change?\n"
-                    "- familiarity: how much did they learn about each other? (0.0 to 0.15 only)\n"
-                    "- tension: did unresolved conflict increase or decrease?\n\n"
-                    "Be conservative. Most single exchanges cause small changes (0.01-0.05). "
-                    "Only dramatic moments warrant larger shifts."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Current relationship: {current['type']}, "
-                    f"trust={dims.get('trust', 0):.2f}, "
-                    f"affection={dims.get('affection', 0):.2f}, "
-                    f"familiarity={dims.get('familiarity', 0):.2f}\n\n"
-                    f"User said: {user_msg[:300]}\n"
-                    f"{self.name} responded: {response[:300]}\n\n"
-                    f"How does this exchange shift the relationship? Return JSON."
-                ),
-            },
-        ]
+        messages = render(
+            "relationship_turn",
+            rel_type=current["type"],
+            trust=dims.get("trust", 0),
+            affection=dims.get("affection", 0),
+            familiarity=dims.get("familiarity", 0),
+            user_msg=user_msg[:300],
+            character_name=self.name,
+            response=response[:300],
+        )
 
         try:
             result = self.llm.generate_json_robust(messages)

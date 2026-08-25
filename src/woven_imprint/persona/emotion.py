@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..llm.base import LLMProvider
+from ..prompts import render
 
 
 # Emotion dimensions based on the PAD model (Pleasure-Arousal-Dominance)
@@ -110,32 +111,14 @@ class EmotionEngine:
         self, message: str, response: str, current: EmotionalState, character_name: str
     ) -> EmotionalState:
         """Assess how an exchange affects the character's emotional state."""
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You assess how a conversation affects a character's emotional state. "
-                    "Return JSON with:\n"
-                    "- mood: one of: joyful, content, excited, anxious, angry, sad, fearful, "
-                    "  disgusted, surprised, neutral, contemplative, melancholic, determined, "
-                    "  vulnerable, amused\n"
-                    "- intensity: float 0.0-1.0 (how strongly they feel this)\n"
-                    "- cause: brief reason for the mood (1 sentence)\n\n"
-                    "Be realistic. Most conversations produce mild emotions (0.2-0.5). "
-                    "Only dramatic events warrant high intensity."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Character: {character_name}\n"
-                    f"Current mood: {current.mood} (intensity {current.intensity:.1f})\n\n"
-                    f"Someone said: {message[:300]}\n"
-                    f"{character_name} responded: {response[:300]}\n\n"
-                    f"What is {character_name}'s emotional state now? Return JSON."
-                ),
-            },
-        ]
+        messages = render(
+            "emotion_turn",
+            character_name=character_name,
+            mood=current.mood,
+            intensity=current.intensity,
+            message=message[:300],
+            response=response[:300],
+        )
 
         try:
             result = self.llm.generate_json_robust(messages)
@@ -152,24 +135,14 @@ class EmotionEngine:
         self, event: str, current: EmotionalState, character_name: str
     ) -> EmotionalState:
         """Assess emotional impact of a world event (no dialogue pair)."""
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    f"You assess how an event affects {character_name}'s emotional state. "
-                    'Return JSON: {"mood": <label>, "intensity": 0.0-1.0, "cause": <short reason>}. '
-                    f"Valid moods: {', '.join(EMOTION_LABELS)}. "
-                    "Small events cause small shifts; keep continuity with the current mood."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Current mood: {current.mood} (intensity {current.intensity:.1f}).\n"
-                    f"Event: {event}\n\nHow does {character_name} feel now? Return JSON."
-                ),
-            },
-        ]
+        messages = render(
+            "emotion_event",
+            character_name=character_name,
+            valid_moods=", ".join(EMOTION_LABELS),
+            mood=current.mood,
+            intensity=current.intensity,
+            event=event,
+        )
         try:
             result = self.llm.generate_json_robust(messages)
             if not isinstance(result, dict):

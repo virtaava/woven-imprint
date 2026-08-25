@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..llm.base import LLMProvider
+from ..prompts import CONSISTENCY_CONTEXT_FRAGMENT, render
 from .model import PersonaModel
 
 
@@ -72,35 +73,15 @@ class ConsistencyChecker:
             soft_traits.append(f"Speaking style: {self.persona.soft['speaking_style']}")
         soft_text = "\n".join(f"- {t}" for t in soft_traits) if soft_traits else "None specified"
 
-        context_section = f"CONVERSATION CONTEXT:\n{context}\n\n" if context else ""
+        context_section = CONSISTENCY_CONTEXT_FRAGMENT.format(context=context) if context else ""
 
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a consistency verification system. Check if a character's "
-                    "response contradicts their established facts or personality.\n\n"
-                    "Output JSON with:\n"
-                    "- hard_violations: list of strings describing contradictions with "
-                    "  immutable facts (name, backstory, species, etc.)\n"
-                    "- soft_flags: list of strings describing potential personality "
-                    "  inconsistencies (may be acceptable as character growth)\n"
-                    "- score: float 0.0-1.0 (1.0 = fully consistent)\n\n"
-                    "Be strict about hard facts. Be lenient about personality — "
-                    "characters can have complex moments."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"CHARACTER HARD FACTS:\n{facts_text}\n\n"
-                    f"CHARACTER SOFT TRAITS:\n{soft_text}\n\n"
-                    f"RESPONSE TO CHECK:\n{response}\n\n"
-                    f"{context_section}"
-                    f"Check for contradictions. Return JSON."
-                ),
-            },
-        ]
+        messages = render(
+            "consistency_check",
+            facts_text=facts_text,
+            soft_text=soft_text,
+            response=response,
+            context_section=context_section,
+        )
 
         try:
             result = self.llm.generate_json(messages)
@@ -161,17 +142,9 @@ class ConsistencyChecker:
         for attempt in range(max_retries):
             # Add constraint reminder to messages
             violation_text = "\n".join(f"- {v}" for v in report.hard_violations)
-            retry_messages = messages + [
-                {
-                    "role": "system",
-                    "content": (
-                        f"IMPORTANT: Your previous response contradicted these "
-                        f"established facts about your character:\n{violation_text}\n\n"
-                        f"Regenerate your response while staying consistent with "
-                        f"who you are. Do not contradict your backstory or identity."
-                    ),
-                }
-            ]
+            retry_messages = messages + render(
+                "consistency_retry_reminder", violation_text=violation_text
+            )
 
             try:
                 new_response = self.llm.generate(retry_messages, temperature=self._retry_temp)

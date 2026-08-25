@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from ..llm.base import LLMProvider
+from ..prompts import ARC_BEAT_NONE_TMPL, ARC_BEAT_RECENT_TMPL, SOMEONE_FALLBACK, render
 
 
 class ArcPhase(str, Enum):
@@ -197,35 +198,20 @@ class ArcTracker:
                 for b in arc.beats[-5:]
             )
 
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You analyze conversations for narrative significance. "
-                    "Not every exchange matters — only flag genuine story beats: "
-                    "revelations, confrontations, betrayals, reconciliations, "
-                    "decisions, turning points.\n\n"
-                    "Return JSON with:\n"
-                    "- is_beat: boolean (true if this is narratively significant)\n"
-                    "- description: what happened (1 sentence)\n"
-                    "- phase: setup|rising_action|climax|falling_action|resolution|epilogue\n"
-                    "- tension: float 0.0-1.0 (narrative tension level)\n"
-                    "- tags: list of story tags (e.g. 'revelation', 'confrontation', 'romantic')\n\n"
-                    "Be conservative. Most exchanges are NOT story beats."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Current arc phase: {arc.current_phase.value}\n"
-                    f"Current tension: {arc.tension:.1f}\n"
-                    f"{('Recent beats:' + chr(10) + recent_beats) if recent_beats else 'No prior beats.'}\n\n"
-                    f"{('[' + other_name + ']') if other_name else '[Someone]'}: {message[:300]}\n"
-                    f"[{character_name}]: {response[:300]}\n\n"
-                    f"Is this a story beat?"
-                ),
-            },
-        ]
+        beats_line = (
+            ARC_BEAT_RECENT_TMPL.format(recent=recent_beats) if recent_beats else ARC_BEAT_NONE_TMPL
+        )
+        other_display = other_name or SOMEONE_FALLBACK
+        messages = render(
+            "arc_beat",
+            phase=arc.current_phase.value,
+            tension=arc.tension,
+            beats_line=beats_line,
+            other_display=other_display,
+            message=message[:300],
+            character_name=character_name,
+            response=response[:300],
+        )
 
         try:
             result = self.llm.generate_json_robust(messages)

@@ -6,6 +6,16 @@ from dataclasses import dataclass, field
 
 from ..llm.base import LLMProvider
 from ..narrative.arc import ArcTracker, NarrativeArc, StoryBeat
+from ..prompts import (
+    SOMEONE_FALLBACK,
+    TURN_ASSESSMENT_BEAT_SECTION,
+    TURN_ASSESSMENT_EMOTION_SECTION,
+    TURN_ASSESSMENT_FACTS_SECTION,
+    TURN_ASSESSMENT_NONE_TMPL,
+    TURN_ASSESSMENT_RECENT_TMPL,
+    TURN_ASSESSMENT_RELATIONSHIP_SECTION,
+    render,
+)
 from .emotion import EMOTION_LABELS, EmotionEngine, EmotionalState
 
 
@@ -38,33 +48,15 @@ class TurnAssessor:
         max_facts: int,
         context_hint: str,
     ) -> list[dict]:
-        sections = [
-            '"emotion": {"mood": one of '
-            + ", ".join(EMOTION_LABELS)
-            + ', "intensity": float 0.0-1.0, '
-            '"cause": one sentence}. Be realistic: most exchanges produce mild emotions (0.2-0.5).'
-        ]
+        sections = [TURN_ASSESSMENT_EMOTION_SECTION.format(moods=", ".join(EMOTION_LABELS))]
         if want_relationship:
-            sections.append(
-                '"relationship": {"trust", "affection", "respect", "familiarity", "tension"} — each a float '
-                "between -0.15 and 0.15 (familiarity 0.0 to 0.15) describing how THIS exchange shifts the "
-                "relationship; 0.0 for no change. Be conservative: most exchanges are 0.01-0.05."
-            )
+            sections.append(TURN_ASSESSMENT_RELATIONSHIP_SECTION.format())
         if want_beat:
-            sections.append(
-                '"beat": {"is_beat": bool, "description": one sentence, "phase": setup|rising_action|climax|'
-                'falling_action|resolution|epilogue, "tension": float 0.0-1.0, "tags": [strings]} or null. '
-                "Only genuine story beats (revelations, confrontations, betrayals, decisions) are beats."
-            )
+            sections.append(TURN_ASSESSMENT_BEAT_SECTION.format())
         if want_facts:
-            sections.append(
-                f'"facts": up to {max_facts} strings — specific NEW facts, opinions, preferences, biographical '
-                "details or commitments worth remembering long-term, one per string; [] if nothing notable."
-            )
-        system = (
-            f"You are the bookkeeping assistant for the character {character_name}. Assess the exchange and "
-            "return ONE JSON object with exactly these keys:\n- " + "\n- ".join(sections)
-        )
+            sections.append(TURN_ASSESSMENT_FACTS_SECTION.format(max_facts=max_facts))
+        sections_text = "\n- ".join(sections)
+
         rel_line = ""
         if want_relationship and relationship:
             dims = relationship.get("dimensions", {})
@@ -79,19 +71,29 @@ class TurnAssessor:
                 f"- [{b.phase.value}] {b.description} (tension: {b.tension:.1f})"
                 for b in arc.beats[-5:]
             )
+            beats_part = (
+                TURN_ASSESSMENT_RECENT_TMPL.format(recent=recent)
+                if recent
+                else TURN_ASSESSMENT_NONE_TMPL
+            )
             arc_line = (
                 f"Current arc phase: {arc.current_phase.value}; tension {arc.tension:.1f}\n"
-                + (f"Recent beats:\n{recent}\n" if recent else "No prior beats.\n")
+                + beats_part
             )
-        user = (
-            f"Character: {character_name}\n"
-            f"Current mood: {current_emotion.mood} (intensity {current_emotion.intensity:.1f})\n"
-            f"{rel_line}{arc_line}\n"
-            f"[{other_name or 'Someone'}]: {message[:300]}\n"
-            f"[{character_name}]: {response[:300]}\n"
-            f"{context_hint}\n\nReturn the JSON object."
+
+        return render(
+            "turn_assessment",
+            character_name=character_name,
+            sections=sections_text,
+            mood=current_emotion.mood,
+            intensity=current_emotion.intensity,
+            rel_line=rel_line,
+            arc_line=arc_line,
+            other_display=other_name or SOMEONE_FALLBACK,
+            message=message[:300],
+            response=response[:300],
+            context_hint=context_hint,
         )
-        return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
     def assess(self, **kwargs) -> TurnAssessment:
         messages = self.build_messages(**kwargs)

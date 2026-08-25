@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Render docs/RESULTS.md from eval/results/latest.json. Never hand-edit RESULTS.md."""
+
 from __future__ import annotations
 
 import json
@@ -28,9 +29,16 @@ def render(data: dict) -> str:
         "",
     ]
     for s in suites:
-        lines += [f"## {s.get('suite_name', 'suite')}", "", "| benchmark | passed | score |", "|---|---|---|"]
+        lines += [
+            f"## {s.get('suite_name', 'suite')}",
+            "",
+            "| benchmark | passed | score |",
+            "|---|---|---|",
+        ]
         for r in s.get("results", []):
-            lines.append(f"| {r['name']} | {'✅' if r.get('passed') else '❌'} | {r.get('score', 0.0):.2f} |")
+            lines.append(
+                f"| {r['name']} | {'✅' if r.get('passed') else '❌'} | {r.get('score', 0.0):.2f} |"
+            )
         lines.append("")
     lines += [
         "## Live tests (real LLM, not part of the score)",

@@ -422,7 +422,7 @@ class SQLiteStorage:
                 """SELECT m.*, m.rowid AS rowid, rank FROM memories_fts
                    JOIN memories m ON memories_fts.rowid = m.rowid
                    WHERE memories_fts MATCH ? AND m.character_id = ? AND m.status = 'active'
-                   ORDER BY rank LIMIT ?""",
+                   ORDER BY rank, m.rowid DESC LIMIT ?""",
                 (safe_query, character_id, limit),
             ).fetchall()
             return [self._row_to_memory(r) for r in rows]

@@ -410,7 +410,7 @@ character:
   # consistency_stream_mode: log  # "off" | "log" — post-hoc consistency check in chat_stream()
   # metrics_path: null            # JSONL per-turn chat metrics (opt-in)
   background: true               # run bookkeeping (emotion/arc/relationship/facts) off the hot path
-  unified_assessment: true       # one LLM call per turn for emotion+relationship+arc+facts (vs 3 separate calls)
+  unified_assessment: true       # one LLM call per turn: emotion, relationship deltas, story beat, facts (vs separate calls)
 
 server:
   api_port: 8650

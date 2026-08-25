@@ -75,14 +75,18 @@ RRF formula: `score = Σ 1/(k + rank_i)` where k=60 (standard RRF constant)
 
 ### Retrieval: All-Candidate Scoring
 
-The candidate pool is **all** active memories for the character
-(`SQLiteStorage.get_memories(character_id, limit=None)` — no SQL `LIMIT`)
-unioned with FTS keyword hits, capped at `memory.max_candidates` (default
-5000, newest first if the cap is hit — see
-[CONFIGURATION.md](CONFIGURATION.md#memory-settings)). This replaced a fixed
-200-newest-core-rows window that made memories older than the window
-unreachable by semantic or recency ranking — the gap the long-horizon
-benchmark's `paraphrase_recall_day5` check exists to catch.
+`retrieve()` calls `SQLiteStorage.get_memories(character_id,
+limit=mem_cfg.max_candidates)` — newest `memory.max_candidates` (default
+5000) active memories for the character, not the full table (storage's
+`get_memories(..., limit=None)` returns every row, but `retrieve()` never
+passes that; see [CONFIGURATION.md](CONFIGURATION.md#memory-settings)). This
+is unioned with up to 50 keyword hits from `fts_search()`, deduplicated by
+memory id, so an old memory outside the `max_candidates` window can still
+surface via FTS even though it isn't scored semantically — the FTS union
+adds up to 50 keyword-only hits beyond the cap, not an unlimited reach. This
+replaced a fixed 200-newest-core-rows window that made memories older than
+the window unreachable by semantic or recency ranking — the gap the
+long-horizon benchmark's `paraphrase_recall_day5` check exists to catch.
 
 Semantic scoring builds one similarity matrix per `retrieve()` call: if
 `numpy` is importable (`pip install woven-imprint[fast]`), `cosine_matrix()`
@@ -257,15 +261,17 @@ Invariants:
 `PromptSpec(id, version, system, user, expects)` in one `PROMPTS` dict,
 rendered via `render(id, **kwargs) -> list[dict]` (`str.format_map`, so
 literal `{`/`}` in a template — mostly JSON examples — is escaped as
-`{{`/`}}`). 18 sites are covered: chat header sentences, fact extraction,
-relationship (turn + event), reflect, session summary, emotion (turn +
-event), consistency check + retry reminder, growth, arc beat, consolidation
-summary, callbacks hooks + compose, maintenance importance + contradiction,
-context compression, and the unified turn assessment. Templates are
-byte-identical to the pre-refactor inline strings (verified by snapshot
-tests that render fixed kwargs and compare to captured fixtures). The
-`woven-imprint prompts` CLI subcommand lists every id and version — cheap
-and useful when tuning prompts against a smaller model.
+`{{`/`}}`). 18 ids are covered: fact extraction, relationship (turn +
+event), reflect, session summary, emotion (turn + event), consistency check
++ retry reminder, growth, arc beat, consolidation summary, callbacks hooks
++ compose, maintenance importance + contradiction, context compression, and
+the unified turn assessment. Templates are byte-identical to the
+pre-refactor inline strings (verified by snapshot tests that render fixed
+kwargs and compare to captured fixtures). The `woven-imprint prompts` CLI
+subcommand lists every id and version — cheap and useful when tuning
+prompts against a smaller model. `character.py::_build_context`'s "Today
+is …" header and memories preamble are intentionally NOT in the registry —
+they stay literal strings at the call site.
 
 ## Storage
 

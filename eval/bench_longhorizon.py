@@ -1,17 +1,19 @@
 """Long-horizon benchmark: 60 simulated days through chat() with a fake clock and scripted LLM.
 
-Known ranking limitation (narrowed, not eliminated, by memory.relevance_gate
-— see ARCHITECTURE.md#retrieval-relevance-gate): retrieval fuses signals with
-equal-weight RRF, and bedrock memories (e.g. the `[Self]` persona line) carry
-a permanent importance/recency floor. With the gate on (default), recency and
-importance ranking only consider memories that are semantically or lexically
-relevant to the query, which keeps most off-topic floor-holders out of
-contention — but an off-topic memory that happens to be semantically close
-enough to land in the top `relevance_semantic_topk` can still ride its floor
-above a fresh, directly-relevant fact. `contradiction_supersession` below
-deliberately does not assert where the day-40 "dislikes tea" memory lands in
-the *global* fused ranking — only that it is first among memories that
-actually mention "tea" — and records that global rank informationally.
+Formerly known ranking limitation, fixed in fix round 1 (see
+task-6-fix-1-report.md): retrieval fuses signals with equal-weight RRF, and
+bedrock memories (e.g. the `[Self]` persona line) carry a permanent
+importance/recency floor. The relevance gate's semantic eligibility used to
+admit a memory into `top relevance_semantic_topk` purely `BY RANK`, which let
+a zero-similarity memory ride a rank slot into eligibility whenever fewer
+than topk memories had any real similarity to the query — exactly how the
+off-topic `[Self]` bedrock line stayed eligible and rode its recency/
+importance floor above a fresh on-topic fact. Eligibility now requires
+cosine similarity > 0 (see
+`MemoryRetriever.retrieve` and ARCHITECTURE.md#retrieval-relevance-gate).
+`relevance_gate_global_rank` and `contradiction_supersession` below both now
+assert the *global* fused rank (`ranked[0]`), not just the rank among
+on-topic candidates — see `KNOWN_OPEN` if either regresses again.
 
 Embedder: this benchmark uses a benchmark-local `HashEmbedder`, not
 `tests.helpers.FakeEmbedder`. FakeEmbedder hashes words into only 50 buckets
@@ -44,25 +46,18 @@ from woven_imprint import Engine, clock
 from woven_imprint.llm.base import LLMProvider
 from woven_imprint.maintenance import MaintenanceRunner
 
-# Benchmarks known to fail for reasons that are understood, deterministic,
-# and not fixable by tuning the script (see task-6-report.md for full
-# analysis of each) — excluded from the CI all-pass gate in
-# tests/test_longhorizon.py but still run, scored, and rendered into
-# docs/RESULTS.md so the finding stays visible instead of silently
-# disappearing.
-#   - relevance_gate_global_rank: a bedrock memory (permanent importance/
-#     recency floor) outranks the on-topic fact in the *global* fused
-#     ranking — the pre-existing "Known ranking limitation" this module's
-#     docstring already documented before this benchmark existed.
-#   - betrayal_has_consequences: tier_for's affinity formula (0.5*trust +
-#     0.3*affection + 0.2*respect) can't cross the -0.3 "adversary"
-#     threshold once affection has saturated to +1.0 (which it does well
-#     before day 40, since the scripted affection delta is unscaled and
-#     applied every turn) even with trust fully saturated at -1.0 — the
-#     scripted deltas are intentionally left untuned (see LongHorizonLLM),
-#     so this surfaces a real ceiling in the affinity/tier design for any
-#     relationship with sustained high affection alongside a betrayal.
-KNOWN_OPEN: set[str] = {"relevance_gate_global_rank", "betrayal_has_consequences"}
+# Benchmarks known to fail for reasons that are understood, deterministic, and
+# not fixable by tuning the script alone — excluded from the CI all-pass gate
+# in tests/test_longhorizon.py but still run, scored, and rendered into
+# docs/RESULTS.md so any future finding stays visible instead of silently
+# disappearing. Both prior entries (relevance_gate_global_rank,
+# betrayal_has_consequences) were fixed in task-6 fix round 1 — see
+# task-6-report.md for the original findings and task-6-fix-1-report.md for
+# the fixes (a real gate-eligibility bug in retrieval.py, and a scripted
+# betrayal that was missing an affection/respect cost) — and removed from
+# this set. The mechanism is kept empty rather than deleted so a future
+# genuinely-open finding has somewhere to go without re-deriving the pattern.
+KNOWN_OPEN: set[str] = set()
 
 
 class HashEmbedder:
@@ -289,8 +284,16 @@ class LongHorizonLLM(LLMProvider):
         self.json_calls.append(head[:40])
         if "bookkeeping assistant" in head:
             day = self.day
-            trust = 0.05 if day <= 40 or day > 50 else -0.10
-            tension = 0.0 if day <= 40 or day > 50 else 0.08
+            betrayal_window = 40 < day <= 50
+            trust = -0.10 if betrayal_window else 0.05
+            tension = 0.08 if betrayal_window else 0.0
+            # A betrayal costs more than trust — affection and respect drop
+            # too during the betrayal window (days 41-50), unchanged outside
+            # it. Controller ruling (fix round 1): tier_for's affinity
+            # formula and thresholds are untouched; only the scripted
+            # relationship deltas change.
+            affection = -0.05 if betrayal_window else 0.02
+            respect = -0.05 if betrayal_window else 0.0
             if day == 10:
                 facts = [self._regular_fact(day), TEA_LIKE]
             elif day == 40:
@@ -330,8 +333,8 @@ class LongHorizonLLM(LLMProvider):
                 "emotion": {"mood": "content", "intensity": 0.4, "cause": "a pleasant visit"},
                 "relationship": {
                     "trust": trust,
-                    "affection": 0.02,
-                    "respect": 0.0,
+                    "affection": affection,
+                    "respect": respect,
                     "familiarity": 0.02,
                     "tension": tension,
                 },
@@ -453,10 +456,13 @@ def _score(
     out.append(
         BenchmarkResult("recency_ordering", ok3, 1.0 if ok3 else 0.0, {"new": new, "old": old})
     )
-    # 4 contradiction supersession: among retrieved memories that actually
-    # mention "tea", the first must be the day-40 fact — not the top of the
-    # whole fused ranking, which a bedrock/importance-boosted but off-topic
-    # memory can occupy (see module docstring's "Known ranking limitation").
+    # 4 contradiction supersession: the day-40 "dislikes tea" fact must be
+    # first in the *global* fused ranking, not merely first among memories
+    # that mention "tea" — the relevance gate's eligibility fix (fix round 1)
+    # closed the gap that let an off-topic bedrock/core memory ride a rank
+    # slot to the top despite zero query similarity (see
+    # relevance_gate_global_rank and task-6-fix-1-report.md). The on-topic
+    # filtered check is kept as informational detail alongside the global one.
     ranked = char.retriever.retrieve("tea", limit=20)
     tea = [m for m in ranked if "tea" in m["content"].lower()]
     rows = {
@@ -464,13 +470,8 @@ def _score(
         for m in engine.storage.get_memories(char.id, status="contradicted", limit=None)
     }
     superseded = any(c.startswith("The visitor likes tea") for c in rows)
-    first_is_new = bool(tea) and "dislikes tea" in tea[0]["content"].lower()
+    first_is_new = bool(ranked) and "dislikes tea" in ranked[0]["content"].lower()
     ok4 = superseded and first_is_new
-    # Informational only, not asserted: where the day-40 memory lands in the
-    # full (unfiltered) ranking.
-    day40_rank = next(
-        (i for i, m in enumerate(ranked) if "dislikes tea" in m["content"].lower()), None
-    )
     out.append(
         BenchmarkResult(
             "contradiction_supersession",
@@ -478,8 +479,8 @@ def _score(
             1.0 if ok4 else 0.0,
             {
                 "superseded": superseded,
-                "top": tea[0]["content"] if tea else None,
-                "day40_rank_in_full_ranking": day40_rank,
+                "top_global": ranked[0]["content"] if ranked else None,
+                "top_on_topic": tea[0]["content"] if tea else None,
             },
         )
     )

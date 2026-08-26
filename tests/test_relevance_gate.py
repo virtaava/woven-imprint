@@ -64,3 +64,55 @@ def test_gate_falls_back_to_all_candidates_when_eligible_is_empty():
 
     top = char.retriever.retrieve("zzqx unknown", limit=5)
     assert len(top) == min(5, len(contents))
+
+
+def test_gate_excludes_zero_similarity_from_semantic_eligibility():
+    """Regression: semantic eligibility used to be `top relevance_semantic_topk
+    BY RANK`, which admits zero-similarity memories whenever fewer than topk
+    memories have any similarity at all. With `relevance_semantic_topk`
+    defaulting to 100, 150 zero-similarity bedrock lines exceed that cap, so
+    the old rank-based slice let 99 of them ride a rank slot into the gated
+    recency/importance eligibility set purely by tie order — none of them
+    have anything to do with the query "tea". Their permanent
+    importance/recency floor (importance=0.95, bedrock tier boost) then
+    outranked the single on-topic fact (importance=0.75) for first place.
+
+    Embeddings are set explicitly (bypassing FakeEmbedder's incremental
+    per-instance vocab table) so similarity is deterministic: the fact's
+    embedding exactly equals the query's embedding (cosine == 1.0), and
+    every bedrock line's embedding is a unit vector on a dimension the query
+    never touches (cosine == 0.0 with the query, guaranteed, not just "no
+    shared words by luck").
+
+    Eligibility now requires cosine similarity > 0, so the 150
+    zero-similarity bedrock lines never enter the gated recency/importance
+    lists at all (regardless of topk), and the on-topic fact — the only
+    memory eligible on either semantic or keyword grounds — wins outright.
+    """
+    engine = make_test_engine()
+    char = engine.create_character("Ada", persona={"personality": "patient"})
+
+    query_vec = char.retriever.embedder.embed("tea")
+    dims = len(query_vec)
+    used = {i for i, v in enumerate(query_vec) if v}
+    orthogonal_idx = next(i for i in range(dims) if i not in used)
+    orthogonal_vec = [0.0] * dims
+    orthogonal_vec[orthogonal_idx] = 1.0
+
+    for i in range(150):
+        m = char.memory.add(
+            f"[Self] entry {i}: quiet mornings and old maps.",
+            tier="bedrock",
+            importance=0.95,
+        )
+        m["embedding"] = orthogonal_vec
+        char.storage.save_memory(m)
+
+    fact = char.memory.add("The visitor dislikes tea.", tier="core", importance=0.75)
+    fact["embedding"] = query_vec
+    char.storage.save_memory(fact)
+
+    results = char.retriever.retrieve("tea", limit=20)
+    assert results[0]["id"] == fact["id"], (
+        f"expected the on-topic fact first, got: {results[0]['content']!r}"
+    )

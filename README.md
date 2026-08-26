@@ -45,7 +45,7 @@ No existing tool does all of this. Woven Imprint does.
 | Contradictions supersede older beliefs | **Measured** | `bench_longhorizon: contradiction_supersession`, `bench_longhorizon: structured_supersession` |
 | Facts are structured and bi-temporal (what she believed on a given date) | **Measured** | `bench_longhorizon: structured_supersession` |
 | Relationship dimensions move with each exchange | **Measured** | `bench_longhorizon: relationship_trajectory` |
-| Slow trust / lasting consequences of betrayal | **Partially measured** | `bench_longhorizon: betrayal_has_consequences` — trust drops and only partially recovers, and the betrayal is recorded as a key moment; the tier flip to "adversary" is a known open gap (see `KNOWN_OPEN` in `eval/bench_longhorizon.py` and `docs/RESULTS.md`) |
+| Slow trust / lasting consequences of betrayal | **Measured** | `bench_longhorizon: betrayal_has_consequences` — trust drops, tier flips to "adversary", and only partially recovers afterward |
 | Personality drift measurement | Planned | roadmap: drift instrumentation (spike: `experiments/parametric_spike/RESULTS.md`) |
 | One bookkeeping LLM call per turn | **Measured** | `bench_longhorizon: bookkeeping_call_count` |
 

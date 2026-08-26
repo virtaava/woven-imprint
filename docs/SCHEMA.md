@@ -7,7 +7,7 @@ write a character database without going through the Python library. If you
 follow this document, the Python library and your runtime can share one DB
 file.
 
-Current schema version: **4** (integer, `schema_version` table).
+Current schema version: **5** (integer, `schema_version` table).
 Current semantic tag: **`0.6.0-dev`** (`meta` key `schema_semver`).
 
 ## Database-level settings
@@ -34,7 +34,7 @@ fallback. See [FTS5 dependency](#fts5-dependency) below.
 
 All `id` columns except `session_turns.id` (DB-generated `INTEGER PRIMARY KEY
 AUTOINCREMENT`) are application-generated TEXT (the Python library uses
-`generate_id(prefix)` — e.g. `mem-…`, `cb-…`). All `DATETIME DEFAULT
+`generate_id(prefix)` — e.g. `mem-…`, `cb-…`, `fact-…`). All `DATETIME DEFAULT
 (datetime('now'))` columns use the timestamp format described in
 [Timestamps](#timestamps).
 
@@ -92,6 +92,7 @@ CREATE INDEX idx_memories_created  ON memories(character_id, created_at DESC);
 | `key_moments` | JSON (TEXT) | DEFAULT `'[]'` |
 | `formed_at` | DATETIME | DEFAULT `datetime('now')` |
 | `last_interaction` | DATETIME | DEFAULT `datetime('now')` — bumped on upsert |
+| `state` | JSON (TEXT) | DEFAULT `'{}'` — added by **migration v5**; relationship-dynamics bookkeeping (e.g. betrayal damping counters, sliding-window trajectory deltas, update count) that code needs across updates but is not itself one of the five `dimensions`. Opaque to storage — read/written whole by the relationship layer. Rows written before v5 read back as `{}` (`ALTER TABLE ... DEFAULT '{}'` backfills existing rows with the default). |
 
 Indexes:
 
@@ -163,6 +164,63 @@ Known keys:
 | `embedding_dimensions` | Vector dimensionality of every embedding in this DB (e.g. `"768"`). Written on the first embedded memory write. |
 | `embedding_model` | Embedding model name that produced the vectors (e.g. `"nomic-embed-text"`). Written alongside `embedding_dimensions`. |
 | `schema_semver` | Semantic tag of the library that last opened the DB (currently `"0.6.0-dev"`). Stamped unconditionally by `_init_schema()` on every open — fresh and upgraded DBs alike. |
+
+### `facts` (migration v5)
+
+Structured, **bi-temporal** facts extracted from conversation — "what the
+character currently believes", plus the full history of what it used to
+believe and when that changed. Facts are never deleted, only expired: a
+superseded belief keeps its row (`valid_to`/`expired_at` set, `superseded_by`
+pointing at the replacement) so `history()`/`as_of()` queries can still see
+it.
+
+| Column | Type | Constraints / default |
+|---|---|---|
+| `id` | TEXT | PRIMARY KEY |
+| `character_id` | TEXT | NOT NULL, REFERENCES `characters(id)` **ON DELETE CASCADE** |
+| `subject` | TEXT | NOT NULL — `"user"` \| `"self"` \| free text (a named third party); normalized (lowercase, whitespace/underscore-collapsed) |
+| `predicate` | TEXT | NOT NULL — snake_case verb phrase, e.g. `has_cat_named`, `lives_in`, `works_as`; normalized the same way as `subject` |
+| `object` | TEXT | NOT NULL — the value, e.g. `"Pixel"`, `"Oulu"` |
+| `statement` | TEXT | NOT NULL — the natural-language sentence as extracted |
+| `event_time` | TEXT | nullable — when the fact became true in the **world**; date-only input (`"YYYY-MM-DD"`) is normalized to `"YYYY-MM-DD 00:00:00"` on write |
+| `valid_from` | TEXT | NOT NULL — world-time start of validity (`event_time` if given, else `recorded_at`) |
+| `valid_to` | TEXT | nullable — world-time end of validity; `NULL` = currently valid |
+| `recorded_at` | TEXT | NOT NULL — when the **character** learned this fact (clock) |
+| `expired_at` | TEXT | nullable — when the character learned it was superseded (clock); `NULL` = never |
+| `certainty` | REAL | DEFAULT `1.0` |
+| `importance` | REAL | DEFAULT `0.75` |
+| `memory_id` | TEXT | nullable — linked `memories.id`, the retrievable text row this fact was extracted from |
+| `superseded_by` | TEXT | nullable — `facts.id` of the replacing fact |
+| `session_id` | TEXT | nullable |
+| `user_id` | TEXT | nullable |
+| `metadata` | TEXT (JSON) | DEFAULT `'{}'` |
+
+**Bi-temporal semantics** — two independent time axes, both populated from
+`woven_imprint.clock`:
+
+- **World time** (`valid_from`/`valid_to`): when the fact was/is true *in
+  the story*. Set from `event_time` when the caller supplies one (e.g. a
+  dated in-fiction event), otherwise from `recorded_at`. A query with
+  `as_of(when)` answers "what was true at world-time `when`", regardless of
+  when the character actually learned it.
+- **Knowledge time** (`recorded_at`/`expired_at`): when the character
+  learned the fact, and when it learned the fact was no longer current.
+  Always stamped from the live clock at the moment of the write —
+  independent of `event_time`.
+- **Facts are invalidated, never deleted.** Superseding a fact calls
+  `expire_fact()`, which sets `valid_to`, `expired_at`, and
+  `superseded_by` on the *old* row and inserts a *new* row for the
+  replacement value; the old row remains queryable via `history()` and via
+  `as_of()` for any world-time before its `valid_to`.
+- `current()` (`active_only=True`) selects `valid_to IS NULL AND
+  expired_at IS NULL` — currently valid, not-yet-superseded facts.
+
+Indexes:
+
+```sql
+CREATE INDEX idx_facts_key      ON facts(character_id, subject, predicate, valid_to);
+CREATE INDEX idx_facts_recorded ON facts(character_id, recorded_at DESC);
+```
 
 ### `schema_version`
 
@@ -278,6 +336,8 @@ Foreign writers MUST write UTC in the same `YYYY-MM-DD HH:MM:SS` format
   - **v2** — `sessions.alias` column.
   - **v3** — `session_turns` table + index.
   - **v4** — `callbacks` table + index, `meta` table.
+  - **v5** — `facts` table (bi-temporal structured facts) + indexes,
+    `relationships.state` column (JSON, dynamics bookkeeping).
 - On open, `SQLiteStorage` reads `MAX(version)` from `schema_version` and
   applies every migration with `version > current` in ascending order,
   recording each applied version as a new `schema_version` row.

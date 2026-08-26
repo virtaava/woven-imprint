@@ -285,7 +285,7 @@ class TestMigrations:
                 version = storage._conn.execute(
                     "SELECT MAX(version) FROM schema_version"
                 ).fetchone()[0]
-                assert version == 4
+                assert version == 5
 
                 # Pre-existing data survived the migration.
                 assert storage.load_character("c1")["name"] == "Alice"

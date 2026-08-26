@@ -131,6 +131,31 @@ CREATE TABLE IF NOT EXISTS meta (
     value TEXT NOT NULL
 );
 """,
+    5: """
+CREATE TABLE IF NOT EXISTS facts (
+    id TEXT PRIMARY KEY,
+    character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    subject TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    object TEXT NOT NULL,
+    statement TEXT NOT NULL,
+    event_time TEXT,
+    valid_from TEXT NOT NULL,
+    valid_to TEXT,
+    recorded_at TEXT NOT NULL,
+    expired_at TEXT,
+    certainty REAL DEFAULT 1.0,
+    importance REAL DEFAULT 0.75,
+    memory_id TEXT,
+    superseded_by TEXT,
+    session_id TEXT,
+    user_id TEXT,
+    metadata TEXT DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_facts_key ON facts(character_id, subject, predicate, valid_to);
+CREATE INDEX IF NOT EXISTS idx_facts_recorded ON facts(character_id, recorded_at DESC);
+ALTER TABLE relationships ADD COLUMN state TEXT DEFAULT '{}';
+""",
 }
 
 
@@ -445,12 +470,13 @@ class SQLiteStorage:
             self._conn.execute(
                 """INSERT INTO relationships
                    (id, character_id, target_id, dimensions, power_balance, type,
-                    trajectory, key_moments)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    trajectory, key_moments, state)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                        dimensions=excluded.dimensions, power_balance=excluded.power_balance,
                        type=excluded.type, trajectory=excluded.trajectory,
-                       key_moments=excluded.key_moments, last_interaction=datetime('now')""",
+                       key_moments=excluded.key_moments, state=excluded.state,
+                       last_interaction=datetime('now')""",
                 (
                     rel["id"],
                     rel["character_id"],
@@ -460,6 +486,7 @@ class SQLiteStorage:
                     rel.get("type", "stranger"),
                     rel.get("trajectory", "stable"),
                     json.dumps(rel.get("key_moments", [])),
+                    json.dumps(rel.get("state") or {}),
                 ),
             )
             self._commit()
@@ -475,6 +502,7 @@ class SQLiteStorage:
             d = dict(row)
         d["dimensions"] = json.loads(d["dimensions"])
         d["key_moments"] = json.loads(d["key_moments"])
+        d["state"] = json.loads(d.get("state") or "{}")
         return d
 
     def get_relationships(self, character_id: str) -> list[dict]:
@@ -488,8 +516,112 @@ class SQLiteStorage:
                 d = dict(row)
                 d["dimensions"] = json.loads(d["dimensions"])
                 d["key_moments"] = json.loads(d["key_moments"])
+                d["state"] = json.loads(d.get("state") or "{}")
                 result.append(d)
             return result
+
+    # ── Facts (bi-temporal) ─────────────────────────────────────────────
+    _FACT_COLS = (
+        "id",
+        "character_id",
+        "subject",
+        "predicate",
+        "object",
+        "statement",
+        "event_time",
+        "valid_from",
+        "valid_to",
+        "recorded_at",
+        "expired_at",
+        "certainty",
+        "importance",
+        "memory_id",
+        "superseded_by",
+        "session_id",
+        "user_id",
+        "metadata",
+    )
+
+    def save_fact(self, fact: dict) -> None:
+        row = {c: fact.get(c) for c in self._FACT_COLS}
+        row["metadata"] = json.dumps(fact.get("metadata") or {})
+        row["certainty"] = fact.get("certainty", 1.0)
+        row["importance"] = fact.get("importance", 0.75)
+        cols = ", ".join(self._FACT_COLS)
+        marks = ", ".join("?" for _ in self._FACT_COLS)
+        updates = ", ".join(f"{c}=excluded.{c}" for c in self._FACT_COLS if c != "id")
+        with self._lock:
+            self._conn.execute(
+                f"INSERT INTO facts ({cols}) VALUES ({marks}) ON CONFLICT(id) DO UPDATE SET {updates}",
+                tuple(row[c] for c in self._FACT_COLS),
+            )
+            self._commit()
+
+    def _row_to_fact(self, row: sqlite3.Row) -> dict:
+        d = dict(row)
+        try:
+            d["metadata"] = json.loads(d.get("metadata") or "{}")
+        except (TypeError, ValueError):
+            d["metadata"] = {}
+        return d
+
+    def get_fact(self, fact_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM facts WHERE id = ?", (fact_id,)).fetchone()
+        return self._row_to_fact(row) if row else None
+
+    def query_facts(
+        self,
+        character_id: str,
+        *,
+        subject: str | None = None,
+        predicate: str | None = None,
+        active_only: bool = True,
+        as_of: str | None = None,
+        limit: int | None = 200,
+        order: str = "recorded_desc",
+    ) -> list[dict]:
+        q = "SELECT * FROM facts WHERE character_id = ?"
+        params: list[Any] = [character_id]
+        if subject is not None:
+            q += " AND subject = ?"
+            params.append(subject)
+        if predicate is not None:
+            q += " AND predicate = ?"
+            params.append(predicate)
+        if as_of is not None:
+            q += " AND valid_from <= ? AND (valid_to IS NULL OR valid_to > ?)"
+            params += [as_of, as_of]
+        elif active_only:
+            q += " AND valid_to IS NULL AND expired_at IS NULL"
+        q += (
+            " ORDER BY valid_from ASC, rowid ASC"
+            if order == "valid_asc"
+            else " ORDER BY recorded_at DESC, rowid DESC"
+        )
+        if limit is not None:
+            q += " LIMIT ?"
+            params.append(limit)
+        with self._lock:
+            rows = self._conn.execute(q, params).fetchall()
+        return [self._row_to_fact(r) for r in rows]
+
+    def expire_fact(
+        self, fact_id: str, *, valid_to: str, expired_at: str, superseded_by: str | None
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE facts SET valid_to = ?, expired_at = ?, superseded_by = ? WHERE id = ?",
+                (valid_to, expired_at, superseded_by, fact_id),
+            )
+            self._commit()
+
+    def count_facts(self, character_id: str, active_only: bool = True) -> int:
+        q = "SELECT COUNT(*) FROM facts WHERE character_id = ?"
+        if active_only:
+            q += " AND valid_to IS NULL AND expired_at IS NULL"
+        with self._lock:
+            return self._conn.execute(q, (character_id,)).fetchone()[0]
 
     # ── Sessions ────────────────────────────────────────────────
 

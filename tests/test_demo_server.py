@@ -362,6 +362,30 @@ class TestObserve:
         assert resp.status_code == 404
 
 
+class TestFacts:
+    def test_get_facts_returns_added_fact(self, app_client):
+        client, _token, engine = app_client
+        created = _create_test_character(client, "FactsChar")
+        char_id = created["id"]
+        char = engine.get_character(char_id)
+        char.facts.add(
+            subject="user",
+            predicate="lives_in",
+            object="Oulu",
+            statement="The visitor lives in Oulu.",
+        )
+
+        resp = client.get(f"/api/facts/{char_id}")
+        assert resp.status_code == 200
+        facts = resp.json()["facts"]
+        assert any(f["predicate"] == "lives_in" and f["object"] == "Oulu" for f in facts)
+
+    def test_get_facts_nonexistent_character(self, app_client):
+        client, _token, _engine = app_client
+        resp = client.get("/api/facts/nonexistent-id-999")
+        assert resp.status_code == 404
+
+
 class TestMaintain:
     def test_maintain_with_jobs_returns_report(self, app_client):
         client, _token, _engine = app_client

@@ -140,6 +140,59 @@ def test_same_object_reinforces_instead_of_duplicating():
     assert mem["certainty"] >= 1.0  # reinforced (clamped)
 
 
+def test_backdated_correction_does_not_supersede():
+    """A structured fact whose event_time predates the currently-active fact's
+    valid_from is a backdated correction, not a supersession: it must land in
+    history without touching the active fact or its memory."""
+    engine, char = _char()
+    with clock.override(T0):
+        char._store_structured_fact(
+            {
+                "statement": "The visitor's cat is named Moss.",
+                "subject": "user",
+                "predicate": "has_cat_named",
+                "object": "Moss",
+                "event_time": "2026-06-10",
+            },
+            "toni",
+            None,
+            0.75,
+        )
+    old = char.facts.find_active("user", "has_cat_named")
+    assert old and old["object"] == "Moss"
+    old_mem = engine.storage.get_memory(old["memory_id"])
+
+    with clock.override(T0 + timedelta(days=1)):
+        char._store_structured_fact(
+            {
+                "statement": "Actually, the visitor's cat used to be named Pixel.",
+                "subject": "user",
+                "predicate": "has_cat_named",
+                "object": "Pixel",
+                "event_time": "2026-01-15",
+            },
+            "toni",
+            None,
+            0.75,
+        )
+
+    current = char.facts.find_active("user", "has_cat_named")
+    assert current is not None and current["id"] == old["id"]
+    assert old_mem["status"] != "contradicted"
+    assert engine.storage.get_memory(old["memory_id"])["status"] == old_mem["status"]
+
+    hist = char.facts.history("user", "has_cat_named")
+    assert [h["object"] for h in hist] == ["Pixel", "Moss"]
+    new = hist[0]
+    assert new["valid_to"] == old["valid_from"]
+    assert new["superseded_by"] == old["id"]
+    new_mem = engine.storage.get_memory(new["memory_id"])
+    assert "contradicts" not in new_mem["metadata"]
+
+    as_of_rows = char.facts.as_of("2026-03-01 00:00:00", "user", "has_cat_named")
+    assert [f["id"] for f in as_of_rows] == [new["id"]]
+
+
 def test_unstructured_fact_keeps_legacy_behavior():
     engine, char = _char()
     engine.llm.next_facts = ["The visitor likes tea very much."]

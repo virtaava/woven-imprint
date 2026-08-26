@@ -79,6 +79,8 @@ class ContextConfig:
     reserve_tokens: int = 500
     max_turns: int = 20
     include_date: bool = True
+    facts_block: bool = True
+    facts_block_limit: int = 12
 
 
 @dataclass

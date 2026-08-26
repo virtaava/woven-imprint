@@ -37,6 +37,7 @@ from woven_imprint.server.services import (
     find_character_by_name_or_id,
     get_callbacks_service,
     get_character_state_service,
+    get_facts_service,
     get_relationship_service,
     import_character_service,
     list_characters_service,
@@ -559,6 +560,15 @@ def create_app(
         try:
             rel = get_relationship_service(_engine, character_id, target_id)
             return {"relationship": rel}
+        except KeyError:
+            raise HTTPException(404, f"Character '{character_id}' not found")
+
+    # --- Facts ---
+    @app.get("/api/facts/{character_id}", dependencies=[Depends(_check_auth)])
+    async def get_facts(character_id: str, subject: str | None = None, as_of: str | None = None):
+        try:
+            facts = get_facts_service(_engine, character_id, subject=subject, as_of=as_of)
+            return {"facts": facts}
         except KeyError:
             raise HTTPException(404, f"Character '{character_id}' not found")
 

@@ -256,6 +256,26 @@ def consolidate(character_id: str) -> str:
 
 
 @mcp.tool()
+def get_facts(character_id: str, subject: str | None = None, as_of: str | None = None) -> str:
+    """List what the character currently knows (structured facts), optionally as of a past date (YYYY-MM-DD).
+
+    Args:
+        character_id: The character's ID.
+        subject: Optional subject filter (e.g. "user", "self").
+        as_of: Optional past date (YYYY-MM-DD) to view facts as they stood then.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+
+    rows = (
+        char.facts.as_of(as_of, subject=subject) if as_of else char.facts.current(subject=subject)
+    )
+    keep = ("subject", "predicate", "object", "statement", "valid_from", "valid_to", "certainty")
+    return json.dumps([{k: r.get(k) for k in keep} for r in rows], indent=2)
+
+
+@mcp.tool()
 def get_stats(character_id: str) -> str:
     """Get character statistics: memory counts, emotional state, arc phase, relationships.
 
@@ -290,6 +310,7 @@ def get_stats(character_id: str) -> str:
                 "core": char.memory.count("core"),
                 "bedrock": char.memory.count("bedrock"),
             },
+            "facts_current": char.facts.count(),
             "relationships": rel_summaries,
             "session_active": char._session_id is not None,
         },

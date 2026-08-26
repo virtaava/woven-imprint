@@ -192,6 +192,14 @@ class Engine:
         for rel_data in data.get("relationships", []):
             self.storage.save_relationship(rel_data)
 
+        # Import facts (ids preserved; memory_id is dropped since memories were
+        # re-added above with new ids — keeping it simple rather than remapping)
+        for f in data.get("facts", []):
+            f = dict(f)
+            f["character_id"] = char_id
+            f["memory_id"] = None
+            self.storage.save_fact(f)
+
         return char
 
     def run_maintenance(

@@ -293,7 +293,7 @@ class Character:
 
         # 4. Build the full prompt within context budget
         build_context_started = time.perf_counter()
-        messages = self._build_context(message, memories, rel_context)
+        messages = self._build_context(message, memories, rel_context, user_id=user_id)
         self.last_chat_messages = [dict(item) for item in messages]
         metrics["build_context_ms"] = round(
             (time.perf_counter() - build_context_started) * 1000.0, 2
@@ -459,7 +459,7 @@ class Character:
             rel_context = self.relationships.describe(user_id)
 
         # 4. Build the full prompt within context budget
-        messages = self._build_context(message, memories, rel_context)
+        messages = self._build_context(message, memories, rel_context, user_id=user_id)
         self.last_chat_messages = [dict(item) for item in messages]
 
         # 5. Stream the response
@@ -1016,6 +1016,7 @@ class Character:
                 "bedrock": self.memory.get_all(tier="bedrock"),
             },
             "relationships": self.relationships.get_all(),
+            "facts": self.storage.query_facts(self.id, active_only=False, limit=None),
             "emotion": self.emotion.to_dict(),
             "narrative_arc": self.arc.to_dict(),
             "sessions": self.storage.get_sessions(self.id),
@@ -1038,6 +1039,7 @@ class Character:
         user_message: str,
         memories: list[dict],
         rel_context: str,
+        user_id: str | None = None,
     ) -> list[dict[str, str]]:
         """Build the full message list within the context budget.
 
@@ -1077,6 +1079,9 @@ class Character:
             optional_parts.append(("arc", f"\n\n{arc_desc}"))
         if rel_context:
             optional_parts.append(("relationship", f"\n\n{rel_context}"))
+        facts_text = self._format_facts_block(user_id)
+        if facts_text:
+            optional_parts.append(("facts", f"\n\n{facts_text}"))
         if memory_text:
             optional_parts.append(("memories", f"\n\nYour relevant memories:\n{memory_text}"))
 
@@ -1243,8 +1248,14 @@ class Character:
     ) -> None:
         """Structured (subject, predicate, object) fact: supersede whatever this character
         currently believes about (subject, predicate) across the whole facts store, not just
-        the last 50 core memories."""
-        from .memory.facts import normalize_object
+        the last 50 core memories.
+
+        A backdated correction — a new fact whose valid_from lands BEFORE the
+        active old fact's valid_from — is not a supersession: the old fact
+        stays current and the new fact is filed straight into history,
+        superseded by the old one as of the old fact's valid_from.
+        """
+        from .memory.facts import _norm_time, normalize_object
 
         old = self.facts.find_active(fact["subject"], fact["predicate"])
         if old and normalize_object(old["object"]) == normalize_object(fact["object"]):
@@ -1254,8 +1265,11 @@ class Character:
             self.facts.bump_certainty(old["id"])
             return
 
+        new_valid_from = _norm_time(fact.get("event_time")) or clock.sqlite_ts()
+        backdated = bool(old) and new_valid_from < old["valid_from"]
+
         meta = {"source": "extraction", "user_id": user_id}
-        if old and old.get("memory_id"):
+        if old and old.get("memory_id") and not backdated:
             meta["contradicts"] = old["memory_id"]
         mem = self.memory.add(
             content=fact["statement"],
@@ -1279,9 +1293,14 @@ class Character:
         mem["metadata"]["fact_id"] = new["id"]
         self.storage.save_memory(mem)
         if old:
-            self.facts.expire(old["id"], valid_to=new["valid_from"], superseded_by=new["id"])
-            if old.get("memory_id"):
-                self.storage.update_memory_status(old["memory_id"], "contradicted", certainty=0.0)
+            if backdated:
+                self.facts.expire(new["id"], valid_to=old["valid_from"], superseded_by=old["id"])
+            else:
+                self.facts.expire(old["id"], valid_to=new["valid_from"], superseded_by=new["id"])
+                if old.get("memory_id"):
+                    self.storage.update_memory_status(
+                        old["memory_id"], "contradicted", certainty=0.0
+                    )
 
     def _recent_context_hint(self) -> str:
         """Build a hint of recent conversation turns, so extraction doesn't re-surface them."""
@@ -1449,6 +1468,48 @@ class Character:
             # swallow site here must never crash bookkeeping.
             logger.debug("Relationship update failed: %s", e)
             self._note_failure("relationship", e)
+
+    def _format_facts_block(self, user_id: str | None) -> str:
+        """Render the 'What I know' block: current structured facts about the
+        user (with 'previously: X' when a superseded history exists) plus a
+        short block of self-facts. Empty string when there is nothing to show
+        or `context.facts_block` is disabled."""
+        from .config import get_config
+
+        ctx = get_config().context
+        if not ctx.facts_block:
+            return ""
+        limit = ctx.facts_block_limit
+        user_facts = [
+            f
+            for f in self.facts.current(subject="user", limit=None)
+            if not user_id or not f.get("user_id") or f.get("user_id") == user_id
+        ]
+        user_facts.sort(
+            key=lambda f: (-float(f.get("importance", 0.75)), f.get("recorded_at", "")),
+        )
+        user_facts = user_facts[:limit]
+        lines: list[str] = []
+        if user_facts:
+            who = user_id or "the user"
+            lines.append(
+                f"What you currently know about {who} "
+                "(facts you learned; dates are when they became true):"
+            )
+            for f in user_facts:
+                since = (f.get("valid_from") or "")[:10]
+                prev = ""
+                hist = self.facts.history(f["subject"], f["predicate"])
+                older = [h for h in hist if h.get("superseded_by") == f["id"]]
+                if older:
+                    prev = f", previously: {older[-1]['object']}"
+                lines.append(f"- (since {since}{prev}) {f['statement']}")
+        self_facts = self.facts.current(subject="self", limit=5)
+        if self_facts:
+            lines.append("Things you have said about yourself:")
+            for f in self_facts:
+                lines.append(f"- {f['statement']}")
+        return "\n".join(lines)
 
     def _format_memories(self, memories: list[dict], now: datetime | None = None) -> str:
         """Format retrieved memories for inclusion in prompt.

@@ -151,6 +151,8 @@ context:
   reserve_tokens: 500
   max_turns: 20
   include_date: true
+  facts_block: true
+  facts_block_limit: 12
 ```
 
 | Setting | Default | Description |
@@ -162,6 +164,8 @@ context:
 | `reserve_tokens` | `500` | Reserved for safety margin. |
 | `max_turns` | `20` | Maximum conversation turns kept in the sliding window. Older turns are compressed into a summary. |
 | `include_date` | `true` | Prefix the volatile context block with `Today is {weekday}, {YYYY-MM-DD}.` (from `woven_imprint.clock`). Retrieved memory lines are always rendered with their date and a relative phrase (`2026-05-03, 3 weeks ago`) regardless of this setting — disabling it only removes the "Today is ..." line. |
+| `facts_block` | `true` | Inject a "What you currently know about {user}" block into the volatile context, built from the character's structured facts (`Character.facts`). Superseded facts show as `(since YYYY-MM-DD, previously: X)`. A short "Things you have said about yourself" block follows when self-facts exist. Set to `false` to disable the block entirely (e.g. to save tokens or when structured facts aren't in use). |
+| `facts_block_limit` | `12` | Maximum number of current user-facts included in the block (highest importance, then most recently recorded, first). Self-facts are capped separately at 5 and are not affected by this setting. |
 
 When the total exceeds the budget, the system degrades gracefully:
 1. Compresses conversation history

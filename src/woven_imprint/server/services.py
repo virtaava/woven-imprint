@@ -96,6 +96,27 @@ def get_relationship_service(engine, character_id, target_id):
     return char.get_relationship(target_id)
 
 
+_FACT_KEEP = (
+    "subject",
+    "predicate",
+    "object",
+    "statement",
+    "valid_from",
+    "valid_to",
+    "certainty",
+)
+
+
+def get_facts_service(engine, character_id, subject=None, as_of=None):
+    """List what the character currently knows (structured facts), optionally
+    as of a past date. Raises KeyError if the character is not found."""
+    char = engine.get_character(character_id)
+    rows = (
+        char.facts.as_of(as_of, subject=subject) if as_of else char.facts.current(subject=subject)
+    )
+    return [{k: r.get(k) for k in _FACT_KEEP} for r in rows]
+
+
 def find_character_by_name_or_id(engine, name_or_id):
     chars = engine.list_characters()
     model_name = name_or_id.lower().strip()

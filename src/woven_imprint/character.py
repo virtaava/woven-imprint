@@ -702,7 +702,7 @@ class Character:
             if isinstance(val, (int, float)):
                 deltas[key] = float(val)
         if deltas:
-            self.relationships.update(user_id, deltas)
+            self.relationships.update(user_id, deltas, note=event[:80])
 
     def _run_subsystems_parallel(
         self,
@@ -1370,7 +1370,7 @@ class Character:
             self._note_success("arc")
         if want_relationship and out.relationship:
             try:
-                self.relationships.update(user_id, out.relationship)
+                self.relationships.update(user_id, out.relationship, note=message[:80])
                 self._note_success("relationship")
             except Exception as e:
                 logger.debug("Relationship update failed: %s", e)
@@ -1460,7 +1460,7 @@ class Character:
             result = self.llm.generate_json_robust(messages)
             deltas = self._parse_relationship_deltas(result)
             if deltas:
-                self.relationships.update(user_id, deltas)
+                self.relationships.update(user_id, deltas, note=user_msg[:80])
             self._note_success("relationship")
         except Exception as e:
             # Broadened from (ValueError, KeyError, TypeError): generate_json_robust

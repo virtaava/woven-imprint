@@ -13,7 +13,7 @@ from datetime import timedelta
 
 from . import clock
 from .log import logger
-from .memory.retrieval import _cosine_similarity
+from .memory.retrieval import cosine_matrix
 from .prompts import render
 
 
@@ -155,15 +155,24 @@ class MaintenanceRunner:
 
     def _job_dedup(self) -> dict:
         mems = self._active_core_observations(self.cfg.dedup_scan_limit)
+        # Similarities are fetched a row at a time via cosine_matrix (one
+        # batched/vectorized call per i against every embedding) instead of
+        # one _cosine_similarity call per (i, j) pair — same values, O(n)
+        # numpy calls instead of O(n^2) pure-Python ones. See maintenance
+        # perf note in eval/bench_longhorizon.py's report for why this
+        # mattered (a higher-dimensional benchmark embedder made the O(n^2)
+        # pairwise Python path the dominant cost of the whole suite).
+        embeddings = [m["embedding"] for m in mems]
         archived: list[str] = []
         archived_set: set[str] = set()
         for i in range(len(mems)):
             if mems[i]["id"] in archived_set:
                 continue
+            row = cosine_matrix(embeddings[i], embeddings)
             for j in range(i + 1, len(mems)):
                 if mems[j]["id"] in archived_set:
                     continue
-                sim = _cosine_similarity(mems[i]["embedding"], mems[j]["embedding"])
+                sim = row[j]
                 if sim < self.cfg.dedup_similarity:
                     continue
                 if mems[i].get("importance", 0) >= mems[j].get("importance", 0):
@@ -187,15 +196,17 @@ class MaintenanceRunner:
             for m in char.storage.get_memories(char.id, tier="buffer", limit=200)
             if m.get("embedding")
         ]
+        core_embeddings = [c["embedding"] for c in cores]
         reinforced: set[str] = set()
         for b in buffers:
-            for c in cores:
+            # One batched cosine_matrix call per buffer memory against every
+            # core, instead of one _cosine_similarity call per (buffer, core)
+            # pair — see _job_dedup's comment.
+            sims = cosine_matrix(b["embedding"], core_embeddings)
+            for c, sim in zip(cores, sims):
                 if c["id"] in reinforced:
                     continue
-                if (
-                    _cosine_similarity(b["embedding"], c["embedding"])
-                    >= self.cfg.reinforce_similarity
-                ):
+                if sim >= self.cfg.reinforce_similarity:
                     char.belief.reinforce(c["id"])
                     reinforced.add(c["id"])
         return {"reinforced": len(reinforced), "buffer_scanned": len(buffers)}
@@ -211,10 +222,14 @@ class MaintenanceRunner:
             self._active_core_observations(self.cfg.dedup_scan_limit),
             key=lambda m: (m.get("created_at") or "", m.get("rowid", 0)),
         )
+        # See _job_dedup's comment: batched cosine_matrix per row instead of
+        # one _cosine_similarity call per pair.
+        embeddings = [m["embedding"] for m in mems]
         pairs = []
         for i in range(len(mems)):
+            row = cosine_matrix(embeddings[i], embeddings)
             for j in range(i + 1, len(mems)):
-                sim = _cosine_similarity(mems[i]["embedding"], mems[j]["embedding"])
+                sim = row[j]
                 if self.cfg.contradiction_candidate_similarity <= sim < self.cfg.dedup_similarity:
                     pairs.append((sim, mems[i], mems[j]))
         pairs.sort(key=lambda p: p[0], reverse=True)

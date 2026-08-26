@@ -181,6 +181,13 @@ def test_backdated_correction_does_not_supersede():
     assert old_mem["status"] != "contradicted"
     assert engine.storage.get_memory(old["memory_id"])["status"] == old_mem["status"]
 
+    backdated_fact = next(
+        f for f in char.facts.history("user", "has_cat_named") if f["object"] == "Pixel"
+    )
+    backdated_mem = engine.storage.get_memory(backdated_fact["memory_id"])
+    assert backdated_mem["metadata"].get("historical") is True
+    assert abs(backdated_mem["certainty"] - 0.5) < 1e-9
+
     hist = char.facts.history("user", "has_cat_named")
     assert [h["object"] for h in hist] == ["Pixel", "Moss"]
     new = hist[0]

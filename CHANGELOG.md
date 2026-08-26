@@ -41,8 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fact as of the active fact's `valid_from`.
 - "What you currently know about {user}" volatile context block (`context.facts_block`, default
   on; `context.facts_block_limit`, default 12), ordered by importance descending then
-  `recorded_at` ascending, with "previously: X" when a fact has a superseded predecessor; a
-  short "Things you have said about yourself" block when self-facts exist.
+  `recorded_at` descending (newest first), with "previously: X" when a fact has a superseded
+  predecessor; a short "Things you have said about yourself" block when self-facts exist.
 - Relationship dynamics in code (`relationship.dynamics`, default on): positive trust deltas
   scaled by `trust_gain_factor`; a single clamped trust delta at or below `betrayal_threshold`
   is a betrayal that damps trust gains for `betrayal_damping_turns` updates (via
@@ -58,13 +58,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keyword (FTS) matching; falls back to scoring every active memory when nothing clears the
   bar. Narrows, but does not eliminate, the bedrock-floor effect where an off-topic memory
   outranks a fresh on-topic one on recency/importance alone.
-- `maintenance.py`: `cosine_matrix()` batches similarity scoring into fewer calls
-  (behavior-preserving performance change, no ranking difference).
+- `maintenance.py` jobs now use `memory/retrieval.py`'s batched `cosine_matrix()` for similarity
+  scoring instead of scoring one pair at a time (behavior-preserving performance change, no
+  ranking difference).
 - Long-horizon benchmark grew to 11 checks: `structured_supersession`, `facts_block_rendered`,
   `betrayal_has_consequences`, `relevance_gate_global_rank`; `contradiction_supersession`
   regains its global-rank assertion. `docs/RESULTS.md` regenerated (25/25 passed).
 - MCP `get_facts(character_id, subject=None, as_of=None)` and `get_stats().facts_current`;
   `GET /api/facts/{character_id}?subject=&as_of=`; export/import round-trip facts.
+- Known limitation: import restores facts with `memory_id=None` (memory linkage is not
+  preserved; reinforce/supersession of imported facts does not update memory rows).
 
 ### Fixed
 - `Engine.create_character` now keeps flat `hard_constraints` (as a hard constraint) and `role`

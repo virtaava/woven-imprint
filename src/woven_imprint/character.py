@@ -1291,6 +1291,12 @@ class Character:
             user_id=user_id,
         )
         mem["metadata"]["fact_id"] = new["id"]
+        if backdated:
+            # Filed straight into history behind the still-current fact: mark
+            # the memory row as historical and lower its certainty rather than
+            # letting it read as a fresh, fully-certain observation.
+            mem["metadata"]["historical"] = True
+            mem["certainty"] = 0.5
         self.storage.save_memory(mem)
         if old:
             if backdated:
@@ -1485,9 +1491,10 @@ class Character:
             for f in self.facts.current(subject="user", limit=None)
             if not user_id or not f.get("user_id") or f.get("user_id") == user_id
         ]
-        user_facts.sort(
-            key=lambda f: (-float(f.get("importance", 0.75)), f.get("recorded_at", "")),
-        )
+        # Highest importance first; within a tie, newest recorded_at first —
+        # so the 12-slot cap drops the oldest facts, not the newest.
+        user_facts.sort(key=lambda f: f.get("recorded_at", ""), reverse=True)
+        user_facts.sort(key=lambda f: -float(f.get("importance", 0.75)))
         user_facts = user_facts[:limit]
         lines: list[str] = []
         if user_facts:

@@ -405,6 +405,8 @@ context:
   reserve_tokens: 500
   max_turns: 20
   include_date: true
+  facts_block: true              # inject a "What you currently know about {user}" block
+  facts_block_limit: 12          # max current user-facts in the block (importance desc, then newest first)
 
 relationship:
   max_delta: 0.15

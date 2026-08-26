@@ -69,6 +69,27 @@ def test_facts_block_in_volatile_context_and_gated():
         get_config().context.facts_block = True
 
 
+def test_facts_block_keeps_newest_when_over_the_cap():
+    # 14 same-importance facts recorded on 14 successive days: the block (cap
+    # 12) must keep the 12 newest and drop the 2 oldest, not the reverse.
+    engine, char = _char()
+    for day in range(14):
+        with clock.override(T0 + timedelta(days=day)):
+            char.facts.add(
+                subject="user",
+                predicate=f"fact_{day}",
+                object=f"value{day}",
+                statement=f"Fact number {day}.",
+                user_id="toni",
+                importance=0.75,
+            )
+    text = char._format_facts_block("toni")
+    for day in range(2):
+        assert f"Fact number {day}." not in text
+    for day in range(2, 14):
+        assert f"Fact number {day}." in text
+
+
 def test_export_import_roundtrip_facts(tmp_path):
     engine, char = _char()
     char.facts.add(

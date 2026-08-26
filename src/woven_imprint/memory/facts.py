@@ -21,11 +21,14 @@ def normalize_object(obj: str) -> str:
     return str(obj).strip().casefold().rstrip(".!?,;:")
 
 
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 def _norm_time(value: str | None) -> str | None:
     if not value:
         return None
     v = str(value).strip()
-    if len(v) == 10:  # YYYY-MM-DD
+    if len(v) == 10 and _DATE_RE.match(v):  # YYYY-MM-DD
         return f"{v} 00:00:00"
     try:
         return clock.sqlite_ts(clock.parse_ts(v))

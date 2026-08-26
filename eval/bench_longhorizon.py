@@ -1,7 +1,6 @@
 """Long-horizon benchmark: 60 simulated days through chat() with a fake clock and scripted LLM.
 
-Formerly known ranking limitation, fixed in fix round 1 (see
-task-6-fix-1-report.md): retrieval fuses signals with equal-weight RRF, and
+Formerly known ranking limitation, since fixed: retrieval fuses signals with equal-weight RRF, and
 bedrock memories (e.g. the `[Self]` persona line) carry a permanent
 importance/recency floor. The relevance gate's semantic eligibility used to
 admit a memory into `top relevance_semantic_topk` purely `BY RANK`, which let
@@ -26,8 +25,9 @@ same bag-of-words idea but hashes into 512 buckets with `zlib.crc32` (stable
 across runs and processes, unlike Python's salted `hash()`) and L2-normalizes
 the result, which cuts collisions enough for semantic ranking to reflect
 actual topic overlap rather than hash noise, while staying fully
-deterministic. See the task-6 report for the (small, reported) behavior
-differences this swap caused in the original 7 benchmarks.
+deterministic. The swap from FakeEmbedder to HashEmbedder caused small,
+reported behavior differences in the original 7 benchmarks (tighter,
+non-hash-collision-driven semantic ranks).
 """
 
 from __future__ import annotations
@@ -51,12 +51,11 @@ from woven_imprint.maintenance import MaintenanceRunner
 # in tests/test_longhorizon.py but still run, scored, and rendered into
 # docs/RESULTS.md so any future finding stays visible instead of silently
 # disappearing. Both prior entries (relevance_gate_global_rank,
-# betrayal_has_consequences) were fixed in task-6 fix round 1 — see
-# task-6-report.md for the original findings and task-6-fix-1-report.md for
-# the fixes (a real gate-eligibility bug in retrieval.py, and a scripted
-# betrayal that was missing an affection/respect cost) — and removed from
-# this set. The mechanism is kept empty rather than deleted so a future
-# genuinely-open finding has somewhere to go without re-deriving the pattern.
+# betrayal_has_consequences) were root-caused and fixed (a real
+# gate-eligibility bug in retrieval.py, and a scripted betrayal that was
+# missing an affection/respect cost) and removed from this set. The
+# mechanism is kept empty rather than deleted so a future genuinely-open
+# finding has somewhere to go without re-deriving the pattern.
 KNOWN_OPEN: set[str] = set()
 
 
@@ -442,8 +441,7 @@ def _score(
     # gives the day-2 fact's semantic score an accidental boost against the
     # query "the visitor mentioned" — day 2 then wins the RRF fusion by exactly
     # one rank over every day-60 candidate despite day 60 dominating the
-    # keyword/recency/importance lists (see task-6 report for the full
-    # per-list breakdown). Day 5 (also a FORCE_MENTIONED_DAYS anchor, already
+    # keyword/recency/importance lists. Day 5 (also a FORCE_MENTIONED_DAYS anchor, already
     # load-bearing for paraphrase_recall_day5) does not collide with any of
     # the three query tokens and is 55 days older than day 60, so it still
     # tests the same thing: an old fact must not outrank a fresh one on a
@@ -458,11 +456,11 @@ def _score(
     )
     # 4 contradiction supersession: the day-40 "dislikes tea" fact must be
     # first in the *global* fused ranking, not merely first among memories
-    # that mention "tea" — the relevance gate's eligibility fix (fix round 1)
-    # closed the gap that let an off-topic bedrock/core memory ride a rank
-    # slot to the top despite zero query similarity (see
-    # relevance_gate_global_rank and task-6-fix-1-report.md). The on-topic
-    # filtered check is kept as informational detail alongside the global one.
+    # that mention "tea" — the relevance gate's eligibility fix closed the
+    # gap that let an off-topic bedrock/core memory ride a rank slot to the
+    # top despite zero query similarity (see relevance_gate_global_rank and
+    # `MemoryRetriever.retrieve`). The on-topic filtered check is kept as
+    # informational detail alongside the global one.
     ranked = char.retriever.retrieve("tea", limit=20)
     tea = [m for m in ranked if "tea" in m["content"].lower()]
     rows = {

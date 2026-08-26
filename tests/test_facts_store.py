@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from woven_imprint import clock
-from woven_imprint.memory.facts import FactStore, normalize_key, normalize_object
+from woven_imprint.memory.facts import FactStore, _norm_time, normalize_key, normalize_object
 from woven_imprint.storage.sqlite import SQLiteStorage
 
 T0 = datetime(2026, 5, 3, 12, 0, tzinfo=timezone.utc)
@@ -121,3 +121,10 @@ def test_legacy_relationship_row_has_empty_state(store):
         "INSERT INTO relationships (id, character_id, target_id, dimensions) VALUES ('rel-x','c1','u','{}')"
     )
     assert s.get_relationship("c1", "u")["state"] == {}
+
+
+def test_norm_time_rejects_non_date_10_char_strings():
+    # A 10-char string that isn't a YYYY-MM-DD date must fall through to
+    # parse_ts and return None on failure, not be treated as a bare date.
+    assert _norm_time("yesterday!") is None
+    assert _norm_time("2026-05-03") == "2026-05-03 00:00:00"

@@ -131,3 +131,32 @@ def test_dynamics_off_is_legacy(rm):
         assert rm.get("u")["type"] == "stranger" and rm.get("u")["key_moments"] == []
     finally:
         get_config().relationship.dynamics = True
+
+
+def test_key_moment_uses_pre_scaling_magnitude(rm):
+    # A trust gain of +0.15 is halved by trust_gain_factor to an applied 0.075,
+    # which is below key_moment_threshold (0.08) -- but the key moment must
+    # still fire because it is judged against the pre-scaling clamped value.
+    with clock.override(T0):
+        rm.update("u", {"trust": 0.15}, note="saved my life")
+    rel = rm.get("u")
+    assert abs(rel["dimensions"]["trust"] - 0.075) < 1e-9  # applied value unaffected
+    assert any("trust +0.15" in m and "saved my life" in m for m in rel["key_moments"])
+
+
+def test_key_moments_limit_zero_disables_moments(rm):
+    get_config().relationship.key_moments_limit = 0
+    try:
+        with clock.override(T0):
+            rm.update("u", {"affection": 0.15}, note="disabled moment")
+        assert rm.get("u")["key_moments"] == []
+    finally:
+        get_config().relationship.key_moments_limit = 20
+
+
+def test_betrayal_while_damped_resets_without_decrementing(rm):
+    with clock.override(T0):
+        rm.update("u", {"trust": -0.12}, note="first betrayal")
+        assert rm.get("u")["state"]["damping_left"] == 10
+        rm.update("u", {"trust": -0.12}, note="second betrayal")
+        assert rm.get("u")["state"]["damping_left"] == 10

@@ -204,16 +204,21 @@ note=None)` receives them. With `relationship.dynamics` (default `true` — see
 2. **Clamp** each delta to ±`max_delta`, as before Tier 2.
 3. **Trust asymmetry** — trust rises slowly and falls fast: a *positive* clamped trust delta is
    scaled by `trust_gain_factor`; a delta at or below `betrayal_threshold` is a **betrayal** —
-   applied at full clamped magnitude, `state.damping_left` is set to `betrayal_damping_turns`,
+   applied at full clamped magnitude, `state.damping_left` is (re)set to `betrayal_damping_turns`,
    `state.betrayals` increments, and a key moment is recorded
    (`"{date}: betrayal — trust {delta:+.2f}"`, plus `note` if given). While
    `state.damping_left > 0`, subsequent positive trust deltas are further scaled by
-   `betrayal_gain_damping` (recovery is damped after a betrayal), and `damping_left` decrements
-   once per update.
-4. **Key moments** — any dimension whose clamped, post-scaling delta has `|value| ≥
+   `betrayal_gain_damping` (recovery is damped after a betrayal). `damping_left` decrements once
+   per update, but only on an update that *began* with damping already active and did not itself
+   contain a betrayal — the update that starts (or resets) the window never decrements in that
+   same update.
+4. **Key moments** — any dimension whose clamped, *pre-scaling* delta has `|value| ≥
    key_moment_threshold` (other than a betrayal, already recorded in step 3) gets its own dated
-   one-liner (`"{date}: {dim} {delta:+.2f}"`, plus `note`), capped at `key_moments_limit`
-   (config — previously hard-coded to 20).
+   one-liner (`"{date}: {dim} {delta:+.2f}"`, using that same pre-scaling value, plus `note`),
+   capped at `key_moments_limit` (config — previously hard-coded to 20; `key_moments_limit ≤ 0`
+   disables key moments entirely). The threshold is checked against the magnitude *before*
+   `trust_gain_factor`/`betrayal_gain_damping` scaling is applied, so e.g. a +0.15 trust gain
+   records a moment even though the dimension only moves by 0.075.
 5. **Trajectory** — a sliding window of the last `trajectory_window` updates' `(net,
    tension_delta)` pairs lives in `state.recent`; `net = trust + affection + respect` (post-
    scaling). `warming` if the windowed sum of `net` > 0.1, `cooling` if < −0.1, `volatile` if the
@@ -281,12 +286,16 @@ The prompt's "What you currently know about {user}" volatile context block
 (`context.facts_block`, `context.facts_block_limit` — see
 [CONFIGURATION.md](CONFIGURATION.md#context-window-settings)) is built from `facts.current(subject=
 "user")`, filtered by `user_id` when the fact has one, ordered by importance descending then
-`recorded_at` ascending; each line shows `(since <valid_from date>[, previously: <old object>])
-<statement>`. A separate two-line "Things you have said about yourself" block covers
-`subject="self"` facts when any exist. Facts are exposed via `Character.facts`,
-`Character.export()["facts"]` / `engine.import_character()`, the MCP `get_facts(character_id,
-subject=None, as_of=None)` tool and `get_stats().facts_current`, and `GET
-/api/facts/{character_id}?subject=&as_of=`.
+`recorded_at` descending (newest first, so the cap drops the oldest facts); each line shows
+`(since <valid_from date>[, previously: <old object>]) <statement>`. A separate two-line "Things
+you have said about yourself" block covers `subject="self"` facts when any exist. Facts are
+exposed via `Character.facts`, `Character.export()["facts"]` / `engine.import_character()`, the
+MCP `get_facts(character_id, subject=None, as_of=None)` tool and `get_stats().facts_current`, and
+`GET /api/facts/{character_id}?subject=&as_of=`.
+
+**Known limitation**: `import_character()` restores facts with `memory_id=None` — memory linkage
+is not preserved, so reinforcing or superseding an imported fact does not update any memory row
+(there is no linked memory to update).
 
 ### Belief Revision
 

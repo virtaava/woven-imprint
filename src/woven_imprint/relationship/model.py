@@ -124,16 +124,23 @@ class RelationshipModel:
                 )
 
         was_damped = state["damping_left"] > 0
+        betrayed_now = False
         today = now.date().isoformat()
         applied: dict[str, float] = {}
         for key, delta in deltas.items():
             if key not in dims:
                 continue
             clamped = max(-cfg.max_delta, min(cfg.max_delta, float(delta)))
+            # `pre_scaled` is the clamped-but-not-yet-scaled magnitude. Key
+            # moments are judged against this value (a trust gain of +0.15 is
+            # a key moment even though trust_gain_factor/betrayal_gain_damping
+            # shrink what actually gets applied to the dimension).
+            pre_scaled = clamped
             if key == "trust":
                 if clamped <= cfg.betrayal_threshold:
                     state["damping_left"] = cfg.betrayal_damping_turns
                     state["betrayals"] += 1
+                    betrayed_now = True
                     self._push_moment(
                         rel,
                         f"{today}: betrayal — trust {clamped:+.2f}"
@@ -151,13 +158,15 @@ class RelationshipModel:
             else:
                 dims[key] = _clamp(dims[key] + clamped)
             applied[key] = clamped
-            if abs(clamped) >= cfg.key_moment_threshold and not (
+            if abs(pre_scaled) >= cfg.key_moment_threshold and not (
                 key == "trust" and clamped <= cfg.betrayal_threshold
             ):
                 self._push_moment(
-                    rel, f"{today}: {key} {clamped:+.2f}" + (f" — {note}" if note else ""), cfg
+                    rel,
+                    f"{today}: {key} {pre_scaled:+.2f}" + (f" — {note}" if note else ""),
+                    cfg,
                 )
-        if was_damped:
+        if was_damped and not betrayed_now:
             state["damping_left"] -= 1
 
         net = (
@@ -223,6 +232,9 @@ class RelationshipModel:
         return rel
 
     def _push_moment(self, rel: dict, moment: str, cfg) -> None:
+        if cfg.key_moments_limit <= 0:
+            rel["key_moments"] = []
+            return
         moments = rel.get("key_moments", []) or []
         moments.append(moment)
         rel["key_moments"] = moments[-cfg.key_moments_limit :]
@@ -322,10 +334,13 @@ class RelationshipModel:
                     label = desc
             parts.append(f"  {dim}: {label} ({val:.2f})")
 
-        tier, aff = self.tier_for(dims)
-        parts.append(f"  tier: {rel.get('type', tier)} (affinity {aff:+.2f})")
-        for m in (rel.get("key_moments") or [])[-2:]:
-            parts.append(f"  recent: {m}")
+        from ..config import get_config
+
+        if get_config().relationship.dynamics:
+            tier, aff = self.tier_for(dims)
+            parts.append(f"  tier: {rel.get('type', tier)} (affinity {aff:+.2f})")
+            for m in (rel.get("key_moments") or [])[-2:]:
+                parts.append(f"  recent: {m}")
 
         parts.append(f"  trajectory: {rel['trajectory']}")
         return "\n".join(parts)

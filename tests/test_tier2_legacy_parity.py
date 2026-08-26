@@ -32,6 +32,7 @@ def test_all_tier2_switches_off_matches_legacy_shapes():
             and not (rel.get("state") or {}).get("updates")
         )
         assert "What you currently know" not in char.last_chat_messages[1]["content"]
+        assert "tier:" not in char.last_chat_messages[1]["content"]
         assert char.facts.count() == 0
     finally:
         cfg.relationship.dynamics = True

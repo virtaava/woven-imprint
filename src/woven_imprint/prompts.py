@@ -82,8 +82,11 @@ TURN_ASSESSMENT_BEAT_SECTION = (
     "Only genuine story beats (revelations, confrontations, betrayals, decisions) are beats."
 )
 TURN_ASSESSMENT_FACTS_SECTION = (
-    '"facts": up to {max_facts} strings — specific NEW facts, opinions, preferences, biographical '
-    "details or commitments worth remembering long-term, one per string; [] if nothing notable."
+    '"facts": up to {max_facts} objects — specific NEW facts, opinions, preferences, biographical '
+    'details or commitments worth remembering long-term. Each object: {{"statement": one sentence, '
+    '"subject": "user" | "self" | a name, "predicate": snake_case verb phrase (e.g. has_cat_named, '
+    'lives_in, works_as, likes, dislikes, plans_to), "object": the value as a short phrase, '
+    '"event_time": "YYYY-MM-DD" or null}}; [] if nothing notable.'
 )
 
 
@@ -389,7 +392,7 @@ PROMPTS: dict[str, PromptSpec] = {
     ),
     "turn_assessment": PromptSpec(
         id="turn_assessment",
-        version=1,
+        version=2,
         system=(
             "You are the bookkeeping assistant for the character {character_name}. Assess the "
             "exchange and return ONE JSON object with exactly these keys:\n- {sections}"
@@ -402,6 +405,6 @@ PROMPTS: dict[str, PromptSpec] = {
             "[{character_name}]: {response}\n"
             "{context_hint}\n\nReturn the JSON object."
         ),
-        expects="JSON: emotion + optional relationship/beat/facts",
+        expects="JSON: emotion + optional relationship/beat/facts (facts are objects)",
     ),
 }

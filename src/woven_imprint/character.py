@@ -14,6 +14,7 @@ from .llm.base import LLMProvider
 from .log import logger
 from .embedding.base import EmbeddingProvider
 from .memory.store import MemoryStore
+from .memory.facts import FactStore
 from .memory.retrieval import MemoryRetriever
 from .memory.belief import BeliefReviser
 from .memory.consolidation import ConsolidationEngine
@@ -61,6 +62,7 @@ class Character:
 
         # Sub-systems
         self.memory = MemoryStore(storage, embedder, char_id)
+        self.facts = FactStore(storage, char_id)
         self.retriever = MemoryRetriever(storage, embedder, char_id)
         self.belief = BeliefReviser(storage, char_id, embedder=embedder)
         self.relationships = RelationshipModel(storage, char_id)
@@ -1148,30 +1150,74 @@ class Character:
         return deltas
 
     @staticmethod
-    def _parse_facts(result, max_facts: int) -> list[str]:
-        facts = (
+    def _parse_facts(result, max_facts: int) -> list[dict]:
+        raw = (
             result
             if isinstance(result, list)
             else (result.get("facts", []) if isinstance(result, dict) else [])
         )
-        return [f for f in facts[:max_facts] if isinstance(f, str) and len(f) > 10]
+        out: list[dict] = []
+        for item in raw:
+            if isinstance(item, str):
+                stmt, rec = item, {}
+            elif isinstance(item, dict):
+                stmt, rec = str(item.get("statement") or ""), item
+            else:
+                continue
+            stmt = stmt.strip()
+            if len(stmt) <= 10:
+                continue
+
+            def _s(key):
+                v = rec.get(key)
+                return (
+                    str(v).strip() if isinstance(v, (str, int, float)) and str(v).strip() else None
+                )
+
+            out.append(
+                {
+                    "statement": stmt,
+                    "subject": _s("subject"),
+                    "predicate": _s("predicate"),
+                    "object": _s("object"),
+                    "event_time": _s("event_time"),
+                }
+            )
+            if len(out) >= max_facts:
+                break
+        return out
 
     def _store_facts(
         self,
-        facts: list[str],
+        facts: list[dict],
         user_id: str | None,
         session_id: str | None,
         importance: float,
     ) -> None:
-        """Store extracted facts, resolving contradictions with existing memories first."""
+        """Store extracted facts. Structured facts (subject+predicate+object all present)
+        supersede by (subject, predicate) over the whole store; unstructured facts keep the
+        legacy antonym-heuristic contradiction check against the last 50 core memories."""
         for fact in facts:
+            if isinstance(fact, str):  # tolerate legacy callers
+                fact = {
+                    "statement": fact,
+                    "subject": None,
+                    "predicate": None,
+                    "object": None,
+                    "event_time": None,
+                }
+            stmt = fact["statement"]
+            if fact.get("subject") and fact.get("predicate") and fact.get("object"):
+                self._store_structured_fact(fact, user_id, session_id, importance)
+                continue
+
             # Check for contradictions with existing memories
             existing = self.memory.get_all(tier="core", limit=50)
-            contradictions = self.belief.detect_contradictions(fact, existing)
+            contradictions = self.belief.detect_contradictions(stmt, existing)
             for old_mem in contradictions:
                 self.belief.contradict(
                     old_mem["id"],
-                    fact,
+                    stmt,
                     source="extraction",
                     session_id=session_id,
                 )
@@ -1180,13 +1226,62 @@ class Character:
             # (contradict() already creates the replacement)
             if not contradictions:
                 self.memory.add(
-                    content=fact,
+                    content=stmt,
                     tier="core",
                     role="observation",
                     session_id=session_id,
                     importance=importance,
                     metadata={"source": "extraction", "user_id": user_id},
                 )
+
+    def _store_structured_fact(
+        self,
+        fact: dict,
+        user_id: str | None,
+        session_id: str | None,
+        importance: float,
+    ) -> None:
+        """Structured (subject, predicate, object) fact: supersede whatever this character
+        currently believes about (subject, predicate) across the whole facts store, not just
+        the last 50 core memories."""
+        from .memory.facts import normalize_object
+
+        old = self.facts.find_active(fact["subject"], fact["predicate"])
+        if old and normalize_object(old["object"]) == normalize_object(fact["object"]):
+            # Same belief restated — reinforce rather than duplicate.
+            if old.get("memory_id"):
+                self.belief.reinforce(old["memory_id"])
+            self.facts.bump_certainty(old["id"])
+            return
+
+        meta = {"source": "extraction", "user_id": user_id}
+        if old and old.get("memory_id"):
+            meta["contradicts"] = old["memory_id"]
+        mem = self.memory.add(
+            content=fact["statement"],
+            tier="core",
+            role="observation",
+            session_id=session_id,
+            importance=importance,
+            metadata=meta,
+        )
+        new = self.facts.add(
+            subject=fact["subject"],
+            predicate=fact["predicate"],
+            object=fact["object"],
+            statement=fact["statement"],
+            event_time=fact.get("event_time"),
+            importance=importance,
+            memory_id=mem["id"],
+            session_id=session_id,
+            user_id=user_id,
+        )
+        mem["metadata"]["fact_id"] = new["id"]
+        self.storage.save_memory(mem)
+        if old:
+            self.facts.expire(old["id"], valid_to=new["valid_from"], superseded_by=new["id"])
+            if old.get("memory_id"):
+                self.storage.update_memory_status(old["memory_id"], "contradicted", certainty=0.0)
 
     def _recent_context_hint(self) -> str:
         """Build a hint of recent conversation turns, so extraction doesn't re-surface them."""

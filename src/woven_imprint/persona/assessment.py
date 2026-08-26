@@ -24,7 +24,7 @@ class TurnAssessment:
     emotion: EmotionalState | None
     relationship: dict[str, float] | None
     beat: StoryBeat | None
-    facts: list[str]
+    facts: list[dict]
     raw: dict = field(default_factory=dict)
 
 
@@ -124,7 +124,7 @@ class TurnAssessor:
                 )
             except (ValueError, TypeError, KeyError):
                 beat = None
-        facts: list[str] = []
+        facts: list[dict] = []
         if kwargs["want_facts"]:
             from ..character import Character
 

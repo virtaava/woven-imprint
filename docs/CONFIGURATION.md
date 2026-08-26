@@ -171,7 +171,7 @@ context:
 | `max_turns` | `20` | Maximum conversation turns kept in the sliding window. Older turns are compressed into a summary. |
 | `include_date` | `true` | Prefix the volatile context block with `Today is {weekday}, {YYYY-MM-DD}.` (from `woven_imprint.clock`). Retrieved memory lines are always rendered with their date and a relative phrase (`2026-05-03, 3 weeks ago`) regardless of this setting — disabling it only removes the "Today is ..." line. |
 | `facts_block` | `true` | Inject a "What you currently know about {user}" block into the volatile context, built from the character's structured facts (`Character.facts`). Superseded facts show as `(since YYYY-MM-DD, previously: X)`. A short "Things you have said about yourself" block follows when self-facts exist. Set to `false` to disable the block entirely (e.g. to save tokens or when structured facts aren't in use). |
-| `facts_block_limit` | `12` | Maximum number of current user-facts included in the block (highest importance, then most recently recorded, first). Self-facts are capped separately at 5 and are not affected by this setting. |
+| `facts_block_limit` | `12` | Maximum number of current user-facts included in the block, ordered by highest importance first, then by `recorded_at` **ascending** (oldest-recorded first) on ties. Self-facts are capped separately at 5 and are not affected by this setting. |
 
 When the total exceeds the budget, the system degrades gracefully:
 1. Compresses conversation history
@@ -189,12 +189,28 @@ Controls how character relationships evolve.
 relationship:
   max_delta: 0.15
   key_moments_limit: 20
+  dynamics: true
+  trust_gain_factor: 0.5
+  betrayal_threshold: -0.10
+  betrayal_damping_turns: 10
+  betrayal_gain_damping: 0.25
+  key_moment_threshold: 0.08
+  trajectory_window: 5
+  tension_decay_per_day: 0.05
 ```
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `max_delta` | `0.15` | Maximum change per dimension per interaction. Prevents a single conversation from dramatically shifting a relationship. A value of 0.15 means it takes ~7 consistently positive interactions to move trust from 0.0 to 1.0. |
-| `key_moments_limit` | `20` | Maximum number of pivotal moments stored per relationship. Oldest moments are dropped when the limit is exceeded. |
+| Setting | Default | Env Var | Description |
+|---------|---------|---------|-------------|
+| `max_delta` | `0.15` | — | Maximum change per dimension per interaction. Prevents a single conversation from dramatically shifting a relationship. A value of 0.15 means it takes ~7 consistently positive interactions to move trust from 0.0 to 1.0. |
+| `key_moments_limit` | `20` | — | Maximum number of pivotal moments stored per relationship. Oldest moments are dropped when the limit is exceeded. |
+| `dynamics` | `true` | `WOVEN_IMPRINT_RELATIONSHIP_DYNAMICS` | Route relationship updates through the code-driven dynamics formula (trust asymmetry, betrayal damping, tension decay, windowed trajectory, derived tier — see [ARCHITECTURE.md](ARCHITECTURE.md#relationship-model)) instead of the original clamp-only arithmetic. Set `false` for byte-identical pre-Tier-2 behavior; existing tests that pin that arithmetic set it explicitly. |
+| `trust_gain_factor` | `0.5` | — | Multiplier applied to a *positive* clamped trust delta before it is added — trust rises slower than it falls. Only affects trust; other dimensions are unscaled. Only used when `dynamics` is true. |
+| `betrayal_threshold` | `-0.10` | — | A single clamped trust delta at or below this value counts as a betrayal: it is applied at full magnitude (not scaled by `trust_gain_factor`), starts the damping window, and records a key moment. Only used when `dynamics` is true. |
+| `betrayal_damping_turns` | `10` | — | Number of subsequent relationship updates for which positive trust gains are further scaled by `betrayal_gain_damping` after a betrayal. Decrements by one on every update, betrayal or not. Only used when `dynamics` is true. |
+| `betrayal_gain_damping` | `0.25` | — | Extra multiplier applied to positive trust deltas (on top of `trust_gain_factor`) while a betrayal's damping window (`betrayal_damping_turns`) is active. Only used when `dynamics` is true. |
+| `key_moment_threshold` | `0.08` | — | Minimum `\|clamped delta\|` on any single dimension to record a dated key moment for that update (betrayals are recorded separately regardless of this threshold). Only used when `dynamics` is true. |
+| `trajectory_window` | `5` | — | Number of most recent updates' net deltas (`trust+affection+respect`, post-scaling) and tension deltas kept in `state.recent` to derive `warming`/`cooling`/`volatile`/`stable`. Only used when `dynamics` is true; with `dynamics: false`, trajectory is derived from the current update's deltas alone. |
+| `tension_decay_per_day` | `0.05` | — | Amount `tension` decays toward 0 per elapsed day (via the injectable clock) since the relationship's last update, applied before the current update's deltas. Only used when `dynamics` is true. |
 
 ---
 
@@ -242,7 +258,7 @@ character:
 | Setting | Default | Env Var | Description |
 |---------|---------|---------|-------------|
 | `parallel` | `false` | `WOVEN_IMPRINT_PARALLEL` | Run subsystem updates (emotion, arc, fact extraction) in parallel threads. Set `true` for 3-4x faster turns with real LLMs. Keep `false` for testing or if you experience threading issues. Only takes effect when `background: false` — with `background: true` (the default), subsystem updates always run on the background worker thread instead. |
-| `lightweight` | `false` | `WOVEN_IMPRINT_LIGHTWEIGHT` | Skip emotion tracking and narrative arc analysis. Reduces LLM calls from 5-7 to 2-3 per turn. Useful for slower models or batch operations. |
+| `lightweight` | `false` | `WOVEN_IMPRINT_LIGHTWEIGHT` | Skip emotion tracking and narrative arc analysis. With the legacy per-engine path (`unified_assessment: false`), this drops separate emotion/arc calls, reducing LLM calls from 5-7 to 2-3 per turn. With `unified_assessment: true` (the default, carried from Tier 1), there is already only one bookkeeping call per turn (`_run_bookkeeping`) regardless of `lightweight` — setting `lightweight: true` there just tells that single call to skip the emotion/beat sections, it does not remove the call itself. Useful for slower models or batch operations either way. |
 | `enforce_consistency` | `true` | `WOVEN_IMPRINT_ENFORCE_CONSISTENCY` | Run NLI-style consistency check on every response. Catches hard constraint violations (wrong name, contradicted backstory). Adds 1 LLM call per turn. |
 | `consistency_max_retries` | `2` | — | Maximum regeneration attempts when a hard violation is detected. Higher = more likely to produce a consistent response, but slower. |
 | `consistency_temperature` | `0.5` | — | Temperature for regeneration attempts after a consistency violation. Lower = more deterministic retry. |
@@ -393,6 +409,7 @@ All environment variables that Woven Imprint reads:
 | `WOVEN_IMPRINT_BACKGROUND` | `character.background` | `export WOVEN_IMPRINT_BACKGROUND=false` |
 | `WOVEN_IMPRINT_UNIFIED_ASSESSMENT` | `character.unified_assessment` | `export WOVEN_IMPRINT_UNIFIED_ASSESSMENT=false` |
 | `WOVEN_IMPRINT_MAINTENANCE_BUDGET` | `maintenance.max_llm_calls_per_run` | `export WOVEN_IMPRINT_MAINTENANCE_BUDGET=100` |
+| `WOVEN_IMPRINT_RELATIONSHIP_DYNAMICS` | `relationship.dynamics` | `export WOVEN_IMPRINT_RELATIONSHIP_DYNAMICS=false` |
 
 ---
 

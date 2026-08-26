@@ -26,6 +26,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/test_longhorizon.py`.
 - Prompt registry (`woven_imprint.prompts`, `woven-imprint prompts`).
 
+### Added (Tier 2 — facts · relationships · relevance)
+- Schema v5: bi-temporal `facts` table (subject/predicate/object, valid_from/valid_to,
+  recorded_at/expired_at, superseded_by) and `relationships.state` (dynamics bookkeeping —
+  betrayal damping counters, sliding trajectory window, update count). Existing DBs migrate on
+  open; old data keeps working.
+- `Character.facts` (`FactStore`): `current()`, `as_of(when)`, `history(subject, predicate)`,
+  `find_active()`. Facts are extracted as structured objects (turn_assessment v2:
+  subject/predicate/object/event_time) and superseded by `(subject, predicate)` across the
+  **whole** store, not the last 50 core rows — the old antonym heuristic still runs, unchanged,
+  for unstructured facts only. A **backdated correction** — a new fact whose `valid_from`
+  predates the currently active fact's `valid_from` — is not a supersession: the active fact
+  stays current and the backdated one is filed straight into history, superseded by the active
+  fact as of the active fact's `valid_from`.
+- "What you currently know about {user}" volatile context block (`context.facts_block`, default
+  on; `context.facts_block_limit`, default 12), ordered by importance descending then
+  `recorded_at` ascending, with "previously: X" when a fact has a superseded predecessor; a
+  short "Things you have said about yourself" block when self-facts exist.
+- Relationship dynamics in code (`relationship.dynamics`, default on): positive trust deltas
+  scaled by `trust_gain_factor`; a single clamped trust delta at or below `betrayal_threshold`
+  is a betrayal that damps trust gains for `betrayal_damping_turns` updates (via
+  `betrayal_gain_damping`); automatic key moments for any |clamped delta| ≥
+  `key_moment_threshold`; trajectory from a sliding window (`trajectory_window`) of net deltas;
+  tension decays toward 0 per elapsed day (`tension_decay_per_day`); a derived tier
+  (stranger/acquaintance/friend/close_friend/adversary) shown by `describe()`. Set
+  `relationship.dynamics: false` for the previous byte-identical arithmetic.
+- Retrieval relevance gate (`memory.relevance_gate`, default on): for a non-empty query,
+  recency/importance/relationship ranking is confined to memories that are semantically
+  relevant (cosine similarity strictly above `memory.relevance_min_similarity`, an epsilon
+  guarding against float32 matmul noise, within the top `memory.relevance_semantic_topk`) or
+  keyword (FTS) matching; falls back to scoring every active memory when nothing clears the
+  bar. Narrows, but does not eliminate, the bedrock-floor effect where an off-topic memory
+  outranks a fresh on-topic one on recency/importance alone.
+- `maintenance.py`: `cosine_matrix()` batches similarity scoring into fewer calls
+  (behavior-preserving performance change, no ranking difference).
+- Long-horizon benchmark grew to 11 checks: `structured_supersession`, `facts_block_rendered`,
+  `betrayal_has_consequences`, `relevance_gate_global_rank`; `contradiction_supersession`
+  regains its global-rank assertion. `docs/RESULTS.md` regenerated (25/25 passed).
+- MCP `get_facts(character_id, subject=None, as_of=None)` and `get_stats().facts_current`;
+  `GET /api/facts/{character_id}?subject=&as_of=`; export/import round-trip facts.
+
 ### Fixed
 - `Engine.create_character` now keeps flat `hard_constraints` (as a hard constraint) and `role`
   (as a soft trait); previously both were silently dropped, so the demo character never saw
@@ -46,6 +86,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adopt the all-candidates retrieval rule and the dated memory/summary formats before merging.
 - Long-horizon contradiction benchmark now asserts rank among on-topic memories (not global
   rank) and no longer depends on tail volume.
+- `RelationshipModel.update` default behavior changed (dynamics on): trust gains are scaled and
+  betrayals are damped, trajectory is windowed, tension decays, and a tier is derived — see
+  Added (Tier 2) above. Set `relationship.dynamics: false` for the previous arithmetic.
+  `key_moments_limit` is now honored (previously hard-coded to 20).
+- Long-horizon `contradiction_supersession` regains a global-rank assertion (the day-40 fact is
+  `ranked[0]` for query "tea") now that the relevance gate makes global ranking meaningful again.
+- Kotlin C1 (unmerged branch) must also add the `facts` table, `relationships.state`, the
+  relevance gate, and the facts block before merging (schema version 5).
 
 Phase B ("companion primitives") — the offline-maintenance, callback,
 world-event, and health primitives a companion app builds on. Ships on top

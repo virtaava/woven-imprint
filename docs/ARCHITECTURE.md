@@ -107,20 +107,24 @@ memory, regardless of whether it has anything to do with the query.
 
 `memory.relevance_gate` (default `true`) narrows that gap, but does not
 eliminate it: for a non-empty query, `retrieve()` first computes `eligible =
-top memory.relevance_semantic_topk of {ids with cosine similarity > 0} ∪ all
-keyword (FTS) hits`, then builds the recency, importance, and
-relationship-boost ranked lists from only that eligible subset (`gated`),
-not from every active memory. A memory with zero similarity to the query is
-never eligible on semantic grounds alone, regardless of its rank slot — this
-closes the case where fewer than top-K memories score above zero and a
-zero-similarity memory (e.g. an unrelated bedrock line) rode a rank slot
-into eligibility anyway. Semantic and keyword ranking are unaffected — they
-still score every candidate. The practical effect: most off-topic memories
-can no longer win RRF fusion on recency/importance alone, since they never
-enter those ranked lists — but an off-topic memory with genuine (if weak)
+top memory.relevance_semantic_topk of {ids with cosine similarity strictly
+above memory.relevance_min_similarity} ∪ all keyword (FTS) hits`, then
+builds the recency, importance, and relationship-boost ranked lists from
+only that eligible subset (`gated`), not from every active memory.
+`relevance_min_similarity` (default `1e-6`) is an epsilon, not a literal
+zero floor — it exists so float32 matmul noise on real dense embeddings
+(typically ~1e-8) isn't mistaken for a genuine positive match against a
+`sim > 0.0` floor. A memory that doesn't clear that floor is never eligible
+on semantic grounds alone, regardless of its rank slot — this closes the
+case where fewer than top-K memories clear the floor and a noise-level-only
+memory (e.g. an unrelated bedrock line) rode a rank slot into eligibility
+anyway. Semantic and keyword ranking are unaffected — they still score
+every candidate. The practical effect: most off-topic memories can no
+longer win RRF fusion on recency/importance alone, since they never enter
+those ranked lists — but an off-topic memory with genuine (if weak)
 positive similarity that still lands in the semantic top-K remains eligible
 and can still outrank a more relevant fact on recency or importance. If no
-memory is semantically similar (similarity > 0) or keyword-matching at all
+memory clears `relevance_min_similarity` or keyword-matches at all
 (`eligible` is empty), the gate falls back to scoring every active memory,
 matching pre-gate behavior.
 
@@ -180,15 +184,109 @@ Relationship:
         familiarity: float[0, 1]   # stranger → intimate knowledge
         tension:     float[0, 1]   # calm → high unresolved conflict
     power_balance: float[-1, 1]    # who leads the dynamic
-    type: friend | rival | mentor | protege | love_interest | family | colleague | stranger
+    type: stranger | acquaintance | friend | close_friend | adversary  # derived tier
     trajectory: warming | cooling | stable | volatile
-    key_moments: Memory[]          # pivotal interaction memories
+    key_moments: str[]             # dated one-liners, capped at key_moments_limit
+    state: {...}                   # dynamics bookkeeping (opaque JSON, see below)
     formed_at: datetime
     last_interaction: datetime
 ```
 
-Updates are LLM-assessed from conversation content, not formula-driven.
-Change magnitude bounded to ±0.15 per interaction. Trajectory (warming/cooling/stable/volatile) computed from current interaction deltas.
+Per-turn dimension deltas are still LLM-assessed from conversation content (the unified
+assessment's `relationship` section, or a caller passing `deltas` directly) — what changed in
+Tier 2 is what happens to those deltas once `RelationshipModel.update(target_id, deltas, *,
+note=None)` receives them. With `relationship.dynamics` (default `true` — see
+[CONFIGURATION.md](CONFIGURATION.md#relationship-settings)) the formula is:
+
+1. **Tension decay** — before applying anything, `tension` moves toward 0 by
+   `tension_decay_per_day × elapsed_days` (elapsed since `state.last_update_at`, via the
+   injectable clock).
+2. **Clamp** each delta to ±`max_delta`, as before Tier 2.
+3. **Trust asymmetry** — trust rises slowly and falls fast: a *positive* clamped trust delta is
+   scaled by `trust_gain_factor`; a delta at or below `betrayal_threshold` is a **betrayal** —
+   applied at full clamped magnitude, `state.damping_left` is set to `betrayal_damping_turns`,
+   `state.betrayals` increments, and a key moment is recorded
+   (`"{date}: betrayal — trust {delta:+.2f}"`, plus `note` if given). While
+   `state.damping_left > 0`, subsequent positive trust deltas are further scaled by
+   `betrayal_gain_damping` (recovery is damped after a betrayal), and `damping_left` decrements
+   once per update.
+4. **Key moments** — any dimension whose clamped, post-scaling delta has `|value| ≥
+   key_moment_threshold` (other than a betrayal, already recorded in step 3) gets its own dated
+   one-liner (`"{date}: {dim} {delta:+.2f}"`, plus `note`), capped at `key_moments_limit`
+   (config — previously hard-coded to 20).
+5. **Trajectory** — a sliding window of the last `trajectory_window` updates' `(net,
+   tension_delta)` pairs lives in `state.recent`; `net = trust + affection + respect` (post-
+   scaling). `warming` if the windowed sum of `net` > 0.1, `cooling` if < −0.1, `volatile` if the
+   windowed sum of `|tension_delta|` > 0.1, else `stable`.
+6. **Tier** — `type` is recomputed every update via `RelationshipModel.tier_for(dimensions)`
+   unless `new_type=` is passed explicitly, which sticks only until the *next* dynamics update
+   recomputes it: `affinity = 0.5·trust + 0.3·affection + 0.2·respect`; `adversary` if
+   `affinity ≤ -0.3`; else `close_friend` if `affinity ≥ 0.5` and `familiarity ≥ 0.6`; else
+   `friend` if `affinity ≥ 0.25` and `familiarity ≥ 0.3`; else `acquaintance` if
+   `familiarity ≥ 0.1`; else `stranger`.
+
+`describe()` renders the tier and affinity (`tier: friend (affinity +0.31)`) and the two most
+recent key moments alongside the existing per-dimension description and trajectory. `state` is
+persisted as a JSON column with the relationship row — see
+[SCHEMA.md](SCHEMA.md#relationships) — and is opaque to storage, read/written
+whole by `relationship/model.py`.
+
+Set `relationship.dynamics: false` to run `_update_legacy()` instead: the original clamp-only
+arithmetic with no trust scaling, betrayal damping, tension decay, or derived tier — byte-
+identical to pre-Tier-2 behavior. Existing tests that pin that arithmetic set it explicitly.
+
+### Facts (Bi-Temporal)
+
+`Character.facts` (`FactStore`, `memory/facts.py`) stores extracted knowledge as
+`(subject, predicate, object)` triples — e.g. `(user, lives_in, Oulu)` — with two independent
+time axes, both stamped through the injectable clock:
+
+- **World time** (`valid_from`/`valid_to`) — when the fact was true *in the world*, from the
+  extracted `event_time` (normalized to `"YYYY-MM-DD 00:00:00"`) or, absent that, the moment it
+  was recorded.
+- **Record time** (`recorded_at`/`expired_at`) — when the character *learned* the fact, and when
+  it learned that fact had been superseded.
+
+```
+FactStore.add(subject, predicate, object, statement, event_time=None, ...)
+FactStore.current(subject=None, predicate=None)      # valid_to IS NULL AND expired_at IS NULL
+FactStore.as_of(when, subject=None, predicate=None)  # valid_from <= when AND (valid_to IS NULL OR valid_to > when)
+FactStore.history(subject, predicate)                # every version, ordered by valid_from
+FactStore.find_active(subject, predicate)
+```
+
+**Supersession** is a lookup on `(subject, predicate)` over the **whole** facts table — not the
+50-newest-core-rows antonym heuristic, which still runs, unchanged, only for facts extracted
+*without* a subject/predicate/object (see [Unified Assessment](#unified-assessment-tier-1)).
+`Character._store_structured_fact()` handles three cases when a new structured fact arrives:
+
+1. **Same object** as the currently active fact (normalized casefold/strip comparison) — treated
+   as a restatement: `belief.reinforce()` on the linked memory and `FactStore.bump_certainty()`
+   on the fact row (`certainty += 0.15`, capped at 1.0); no new row is written. This is what
+   makes repeated same-belief extractions (e.g. a fact re-emitted on consecutive turns) cheap
+   and idempotent instead of piling up duplicate rows.
+2. **Different object, later `valid_from`** — an ordinary update: the old fact is expired
+   (`valid_to` = new fact's `valid_from`, `superseded_by` = new fact's id, `expired_at` = now),
+   its linked memory row is marked `status="contradicted"`, and a new memory + fact row are
+   written.
+3. **Different object, earlier `valid_from` — a backdated correction.** A fact about the past
+   that arrives *after* the character already believes something more recent is not a
+   supersession: the currently active fact is left untouched (it stays current), and the new
+   fact is written straight into history, itself marked `superseded_by` the active fact as of
+   the active fact's `valid_from`. This keeps `current()` honest when information arrives out of
+   chronological order — "she just learned a detail about what was true two months ago" never
+   overwrites what she believes is true *now*.
+
+The prompt's "What you currently know about {user}" volatile context block
+(`context.facts_block`, `context.facts_block_limit` — see
+[CONFIGURATION.md](CONFIGURATION.md#context-window-settings)) is built from `facts.current(subject=
+"user")`, filtered by `user_id` when the fact has one, ordered by importance descending then
+`recorded_at` ascending; each line shows `(since <valid_from date>[, previously: <old object>])
+<statement>`. A separate two-line "Things you have said about yourself" block covers
+`subject="self"` facts when any exist. Facts are exposed via `Character.facts`,
+`Character.export()["facts"]` / `engine.import_character()`, the MCP `get_facts(character_id,
+subject=None, as_of=None)` tool and `get_stats().facts_current`, and `GET
+/api/facts/{character_id}?subject=&as_of=`.
 
 ### Belief Revision
 
@@ -371,10 +469,12 @@ CREATE VIRTUAL TABLE memories_fts USING fts5(
 ```
 
 Later migrations add `sessions.alias` (v2), the `session_turns` durable
-conversation buffer (v3), and the `callbacks` + `meta` tables (v4). The
-authoritative, foreign-writer-facing specification of every table, the
-embedding BLOB format, timestamp rules, FTS5 triggers, and the migration
-protocol is **[SCHEMA.md](SCHEMA.md)**.
+conversation buffer (v3), the `callbacks` + `meta` tables (v4), and (v5) the
+bi-temporal `facts` table plus `relationships.state` — see
+[Facts](#facts-bi-temporal) and [Relationship Model](#relationship-model)
+above. The authoritative, foreign-writer-facing specification of every
+table, the embedding BLOB format, timestamp rules, FTS5 triggers, and the
+migration protocol is **[SCHEMA.md](SCHEMA.md)**.
 
 ### Vector Index
 
@@ -398,7 +498,8 @@ woven_imprint/
 │   ├── store.py          # MemoryStore — CRUD operations
 │   ├── retrieval.py      # Multi-strategy retrieval + RRF
 │   ├── consolidation.py  # Buffer → Core compression
-│   └── belief.py         # Belief revision system
+│   ├── belief.py         # Belief revision system
+│   └── facts.py          # FactStore — bi-temporal structured facts
 ├── persona/
 │   ├── __init__.py
 │   ├── model.py          # PersonaModel — constraint management
@@ -455,9 +556,13 @@ character.consolidate()  # compress buffer → core
 memories = character.recall(query, limit=10)
 relationship = character.relationships.get(target_id)
 
-character.export(path)  # full character state as JSON
+character.facts.current("user", "lives_in")       # current belief
+character.facts.as_of("2026-05-20", "user", ...)   # what was true then
+character.facts.history("user", "lives_in")        # every version
+
+character.export(path)  # full character state as JSON, including facts
 character = engine.import_character(path)
 
 # MCP Server
-# Exposes: chat, recall, reflect, list_characters, get_relationship
+# Exposes: chat, recall, reflect, list_characters, get_relationship, get_facts, get_stats
 ```

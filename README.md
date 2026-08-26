@@ -110,6 +110,12 @@ alice.reflect()
 # Relationship tracking — trust, affection, respect evolve per interaction
 print(alice.relationships.describe("player_1"))
 
+# Structured facts — bi-temporal: what she knows now, what she knew as of a date,
+# and the full history of what changed
+print(alice.facts.current("user", "lives_in"))            # [{"object": "Oulu", ...}]
+print(alice.facts.as_of("2026-05-20", "user", "lives_in")) # what was true back then
+print(alice.facts.history("user", "lives_in"))             # every version, oldest first
+
 # Export full character state — portable, self-contained
 alice.export("alice_v1.json")
 ```

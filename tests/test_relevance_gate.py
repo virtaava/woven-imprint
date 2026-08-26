@@ -43,3 +43,24 @@ def test_gate_off_restores_legacy_flood():
 def test_empty_query_ignores_gate():
     engine, char, fresh = _setup()
     assert len(char.retriever.retrieve("", limit=5)) == 5
+
+
+def test_gate_falls_back_to_all_candidates_when_eligible_is_empty():
+    """No relevance signal at all (no embeddings, no FTS hit) must not collapse to []."""
+    engine = make_test_engine()
+    # No persona -> _seed_bedrock adds nothing, so the candidate pool is
+    # exactly the 5 memories below (no stray embedded seed to keep `eligible`
+    # from being truly empty).
+    char = engine.create_character("Ada")
+    contents = [
+        "The lantern glowed near the old harbor at dusk.",
+        "A violin was left on the windowsill overnight.",
+        "The orchard gate creaked in the evening wind.",
+        "Someone left a compass on the kitchen table.",
+        "The kettle whistled twice before anyone answered.",
+    ]
+    for content in contents:
+        char.memory.add_without_embedding(content, tier="core", importance=0.6)
+
+    top = char.retriever.retrieve("zzqx unknown", limit=5)
+    assert len(top) == min(5, len(contents))

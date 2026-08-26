@@ -105,15 +105,19 @@ old importance-boosted memories) outrank a fresh, directly query-relevant
 fact — because recency and importance are scored over *every* active
 memory, regardless of whether it has anything to do with the query.
 
-`memory.relevance_gate` (default `true`) closes that gap: for a non-empty
-query, `retrieve()` first computes `eligible = top
-memory.relevance_semantic_topk semantic hits ∪ all keyword (FTS) hits`, then
-builds the recency, importance, and relationship-boost ranked lists from
-only that eligible subset (`gated`), not from every active memory. Semantic
-and keyword ranking are unaffected — they still score every candidate. The
-practical effect: an off-topic memory, no matter how recent, important, or
-numerous, can no longer win RRF fusion purely on those two signals, because
-it never enters their ranked lists in the first place.
+`memory.relevance_gate` (default `true`) narrows that gap, but does not
+eliminate it: for a non-empty query, `retrieve()` first computes `eligible =
+top memory.relevance_semantic_topk semantic hits ∪ all keyword (FTS) hits`,
+then builds the recency, importance, and relationship-boost ranked lists
+from only that eligible subset (`gated`), not from every active memory.
+Semantic and keyword ranking are unaffected — they still score every
+candidate. The practical effect: most off-topic memories can no longer win
+RRF fusion on recency/importance alone, since they never enter those ranked
+lists — but an off-topic memory that still lands in the semantic top-K (by
+similarity, not relevance) remains eligible and can still outrank a more
+relevant fact on recency or importance. If no memory is semantically or
+lexically relevant at all (`eligible` is empty), the gate falls back to
+scoring every active memory, matching pre-gate behavior.
 
 Set `relevance_gate: false` (see
 [CONFIGURATION.md](CONFIGURATION.md#memory-settings)) to restore the

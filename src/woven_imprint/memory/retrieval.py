@@ -124,10 +124,13 @@ class MemoryRetriever:
     Relevance gate (MemoryConfig.relevance_gate, default on): for a non-empty
     query, recency/importance/relationship ranking is confined to memories
     that are semantically (top relevance_semantic_topk) or lexically (FTS)
-    relevant to the query — so a large off-topic bedrock/core flood can't
-    outrank a fresh on-topic fact merely by being numerous, recent, or
-    important. Semantic and keyword ranking are always computed over every
-    candidate. Set relevance_gate=False to restore the pre-gate fusion.
+    relevant to the query — this narrows, but does not eliminate, the case
+    where a large off-topic bedrock/core flood outranks a fresh on-topic
+    fact; an off-topic memory that still lands in the semantic top-k remains
+    eligible and can still win on recency/importance. If nothing is
+    relevant at all, the gate falls back to scoring every active memory.
+    Semantic and keyword ranking are always computed over every candidate.
+    Set relevance_gate=False to restore the pre-gate fusion.
 
     Tier-aware scoring:
     - Bedrock memories decay extremely slowly and get importance boosts
@@ -185,16 +188,23 @@ class MemoryRetriever:
         keyword_ranked = [m["id"] for m in fts_candidates]
 
         # Relevance gate: recency/importance/relationship ranking is confined to
-        # memories that are semantically or lexically relevant to the query, so
-        # a large off-topic bedrock/core flood can't outrank a fresh on-topic
-        # fact just by being numerous, recent, or important. Semantic and
-        # keyword ranking themselves are unaffected — the gate only trims the
-        # *other* two/three lists' input pool. Empty query or the flag off
-        # restores pre-gate behavior (every list scores all_memories).
+        # memories that are semantically or lexically relevant to the query,
+        # narrowing (not eliminating) the case where a large off-topic
+        # bedrock/core flood outranks a fresh on-topic fact — an off-topic
+        # memory in the semantic top-k stays eligible and can still win.
+        # Semantic and keyword ranking themselves are unaffected — the gate
+        # only trims the *other* two/three lists' input pool. Empty query,
+        # the flag off, or an empty eligible set (no relevance signal at
+        # all) restores pre-gate behavior (every list scores all_memories).
         gated = all_memories
         if mem_cfg.relevance_gate and query.strip():
             eligible = set(semantic_ranked[: mem_cfg.relevance_semantic_topk]) | set(keyword_ranked)
-            gated = [m for m in all_memories if m["id"] in eligible]
+            # If nothing is semantically or lexically relevant (e.g. all memories
+            # lack embeddings and FTS has no hit), there's no relevance signal to
+            # gate on — fall back to all_memories rather than silently returning
+            # nothing.
+            if eligible:
+                gated = [m for m in all_memories if m["id"] in eligible]
 
         # Strategy 3: Tier-aware recency ranking (with rowid tiebreaker for determinism)
         recency_scores = [

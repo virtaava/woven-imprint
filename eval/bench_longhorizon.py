@@ -1,13 +1,17 @@
 """Long-horizon benchmark: 60 simulated days through chat() with a fake clock and scripted LLM.
 
-Known ranking limitation: retrieval fuses signals with equal-weight RRF, and
-bedrock memories (e.g. the `[Self]` persona line) carry a permanent
-importance/recency floor. That combination can rank an off-topic bedrock line
+Known ranking limitation (narrowed, not eliminated, by memory.relevance_gate
+— see ARCHITECTURE.md#retrieval-relevance-gate): retrieval fuses signals with
+equal-weight RRF, and bedrock memories (e.g. the `[Self]` persona line) carry
+a permanent importance/recency floor. With the gate on (default), recency and
+importance ranking only consider memories that are semantically or lexically
+relevant to the query, which keeps most off-topic floor-holders out of
+contention — but an off-topic memory that happens to be semantically close
+enough to land in the top `relevance_semantic_topk` can still ride its floor
 above a fresh, directly-relevant fact. `contradiction_supersession` below
 deliberately does not assert where the day-40 "dislikes tea" memory lands in
 the *global* fused ranking — only that it is first among memories that
-actually mention "tea". Fixing the global case is tracked as a Tier 2
-retrieval-weighting item.
+actually mention "tea" — and records that global rank informationally.
 """
 
 from __future__ import annotations

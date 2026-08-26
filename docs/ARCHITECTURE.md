@@ -97,6 +97,31 @@ optional (CI installs it). `consolidation.py` imports the same
 `_cosine_similarity()` helper instead of keeping its own copy. RRF fusion
 and `_retrieval_score` semantics are unchanged.
 
+### Retrieval: Relevance Gate
+
+Equal-weight RRF fusion, on its own, lets a memory's permanent recency/
+importance floor (e.g. a bedrock `[Self]` persona line, or a large flood of
+old importance-boosted memories) outrank a fresh, directly query-relevant
+fact — because recency and importance are scored over *every* active
+memory, regardless of whether it has anything to do with the query.
+
+`memory.relevance_gate` (default `true`) closes that gap: for a non-empty
+query, `retrieve()` first computes `eligible = top
+memory.relevance_semantic_topk semantic hits ∪ all keyword (FTS) hits`, then
+builds the recency, importance, and relationship-boost ranked lists from
+only that eligible subset (`gated`), not from every active memory. Semantic
+and keyword ranking are unaffected — they still score every candidate. The
+practical effect: an off-topic memory, no matter how recent, important, or
+numerous, can no longer win RRF fusion purely on those two signals, because
+it never enters their ranked lists in the first place.
+
+Set `relevance_gate: false` (see
+[CONFIGURATION.md](CONFIGURATION.md#memory-settings)) to restore the
+pre-gate fusion, where recency/importance/relationship rank all active
+memories unconditionally — useful for comparing behavior or if a workload
+depends on the old semantics. An empty query always bypasses the gate (there
+is nothing to be relevant to), matching prior behavior exactly.
+
 ### Persona Model
 
 Four constraint levels (hard, temporal, soft, emergent):

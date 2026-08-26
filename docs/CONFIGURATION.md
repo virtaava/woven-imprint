@@ -101,6 +101,8 @@ memory:
   weight_relationship: 1.0
   # recency_anchor: created        # "created" | "accessed"
   max_candidates: 5000
+  relevance_gate: true
+  relevance_semantic_topk: 100
 ```
 
 | Setting | Default | Env Var | Description |
@@ -129,6 +131,8 @@ memory:
 | `weight_relationship` | `1.0` | — | Weight applied to the relationship-target-match signal in weighted RRF (only relevant when a `relationship_target`/`user_id` is passed to retrieval). |
 | `recency_anchor` | `created` | — | Which timestamp recency decay is anchored on: `created` (memory's creation time — decay is a fixed clock, independent of retrieval activity) or `accessed` (last-access time — frequently-recalled memories stay "fresh"). |
 | `max_candidates` | `5000` | — | Hard cap on active memories scored per `retrieve()` call. Every active memory for the character is a retrieval candidate (no more 200-newest-core-rows window); if the character has more than this many active memories, the newest `max_candidates` are scored and older ones are reachable only via FTS keyword match. Raise it for characters with very long histories on capable hardware; lower it to bound retrieval latency. |
+| `relevance_gate` | `true` | — | When true and the query is non-empty, recency/importance/relationship ranking is confined to memories that are semantically (top `relevance_semantic_topk`) or lexically (FTS) relevant to the query — see [ARCHITECTURE.md](ARCHITECTURE.md#retrieval-relevance-gate). Prevents an off-topic bedrock/core flood from outranking a fresh relevant fact via recency/importance floors alone. Set `false` to restore the pre-gate fusion (those signals rank every active memory unconditionally). An empty query always bypasses the gate. |
+| `relevance_semantic_topk` | `100` | — | Size of the semantic slice feeding the relevance gate's eligible set (unioned with all FTS keyword hits). Only used when `relevance_gate` is true. Raise it to let more semantically-adjacent memories compete on recency/importance; lower it to tighten the gate further. |
 
 Semantic scoring (cosine similarity across all candidates) uses `numpy` when it's
 installed (`pip install woven-imprint[fast]`) — one matrix build + matmul per

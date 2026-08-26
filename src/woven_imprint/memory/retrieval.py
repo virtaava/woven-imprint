@@ -119,8 +119,15 @@ class MemoryRetriever:
     Strategies are fused via weighted Reciprocal Rank Fusion (configurable
     per-strategy weights and k via MemoryConfig). Tier no longer contributes
     its own ranked list — it only influences decay rate (recency) and the
-    importance tier boost, preventing bedrock seed floods from drowning out
-    query-relevant personal facts.
+    importance tier boost.
+
+    Relevance gate (MemoryConfig.relevance_gate, default on): for a non-empty
+    query, recency/importance/relationship ranking is confined to memories
+    that are semantically (top relevance_semantic_topk) or lexically (FTS)
+    relevant to the query — so a large off-topic bedrock/core flood can't
+    outrank a fresh on-topic fact merely by being numerous, recent, or
+    important. Semantic and keyword ranking are always computed over every
+    candidate. Set relevance_gate=False to restore the pre-gate fusion.
 
     Tier-aware scoring:
     - Bedrock memories decay extremely slowly and get importance boosts
@@ -177,10 +184,21 @@ class MemoryRetriever:
         # Strategy 2: Keyword ranking (BM25 via FTS5) — uses pre-fetched candidates
         keyword_ranked = [m["id"] for m in fts_candidates]
 
+        # Relevance gate: recency/importance/relationship ranking is confined to
+        # memories that are semantically or lexically relevant to the query, so
+        # a large off-topic bedrock/core flood can't outrank a fresh on-topic
+        # fact just by being numerous, recent, or important. Semantic and
+        # keyword ranking themselves are unaffected — the gate only trims the
+        # *other* two/three lists' input pool. Empty query or the flag off
+        # restores pre-gate behavior (every list scores all_memories).
+        gated = all_memories
+        if mem_cfg.relevance_gate and query.strip():
+            eligible = set(semantic_ranked[: mem_cfg.relevance_semantic_topk]) | set(keyword_ranked)
+            gated = [m for m in all_memories if m["id"] in eligible]
+
         # Strategy 3: Tier-aware recency ranking (with rowid tiebreaker for determinism)
         recency_scores = [
-            (m["id"], _recency_score(m, m.get("tier", "buffer")), m.get("rowid", 0))
-            for m in all_memories
+            (m["id"], _recency_score(m, m.get("tier", "buffer")), m.get("rowid", 0)) for m in gated
         ]
         # Sort by score descending, then by rowid ascending (newer=higher rowid comes last in tie)
         recency_scores.sort(key=lambda x: (-x[1], x[2]))
@@ -188,7 +206,7 @@ class MemoryRetriever:
 
         # Strategy 4: Importance with tier boost + user affinity (with rowid tiebreaker)
         importance_scores = []
-        for m in all_memories:
+        for m in gated:
             base = m.get("importance", 0.5) * m.get("certainty", 1.0)
             boost = _get_tier_boosts().get(m.get("tier", "buffer"), 0.0)
             # User affinity bonus
@@ -218,7 +236,7 @@ class MemoryRetriever:
         if relationship_target:
             rel_scores = []
             target_lower = relationship_target.lower()
-            for m in all_memories:
+            for m in gated:
                 content_lower = m["content"].lower()
                 meta = m.get("metadata", {})
                 involves_target = (

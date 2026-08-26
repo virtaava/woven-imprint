@@ -68,6 +68,8 @@ class MemoryConfig:
     weight_relationship: float = 1.0
     recency_anchor: str = "created"  # "created" | "accessed"
     max_candidates: int = 5000  # cap on active memories scored per retrieve() call
+    relevance_gate: bool = True  # gate recency/importance/relationship ranking to relevant memories
+    relevance_semantic_topk: int = 100  # semantic cutoff feeding the relevance gate
 
 
 @dataclass
@@ -390,6 +392,8 @@ memory:
   weight_importance: 1.0
   weight_relationship: 1.0
   # recency_anchor: created        # "created" | "accessed"
+  # relevance_gate: true           # false = legacy fusion (recency/importance rank ALL candidates)
+  # relevance_semantic_topk: 100   # semantic cutoff feeding the relevance gate
 
 context:
   total_tokens: 6000

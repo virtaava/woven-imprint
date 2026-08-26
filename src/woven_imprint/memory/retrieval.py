@@ -123,7 +123,8 @@ class MemoryRetriever:
 
     Relevance gate (MemoryConfig.relevance_gate, default on): for a non-empty
     query, recency/importance/relationship ranking is confined to memories
-    that are semantically similar (similarity > 0, top relevance_semantic_topk
+    that are semantically similar (similarity > relevance_min_similarity, an
+    epsilon floor above float32 matmul noise, top relevance_semantic_topk
     of those) or keyword-matching (FTS) — this narrows, but does not
     eliminate, the case where a large off-topic bedrock/core flood outranks a
     fresh on-topic fact; an off-topic memory with genuine (if weak) positive
@@ -190,10 +191,10 @@ class MemoryRetriever:
         keyword_ranked = [m["id"] for m in fts_candidates]
 
         # Relevance gate: recency/importance/relationship ranking is confined to
-        # memories that are semantically similar (cosine similarity > 0, not
-        # merely a top-K rank slot — a memory with zero similarity to the
-        # query is not "relevant" just because fewer than top-K memories
-        # scored above zero) or lexically (FTS) matching the query. This
+        # memories that are semantically similar (cosine similarity strictly
+        # above relevance_min_similarity — an epsilon floor so float32 matmul
+        # noise on real dense embeddings, ~1e-8, doesn't count as "relevant" —
+        # not merely a top-K rank slot) or lexically (FTS) matching the query. This
         # narrows, but does not eliminate, the case where a large off-topic
         # bedrock/core flood outranks a fresh on-topic fact — an off-topic
         # memory with genuine (if weak) positive similarity in the semantic
@@ -204,7 +205,9 @@ class MemoryRetriever:
         # pre-gate behavior (every list scores all_memories).
         gated = all_memories
         if mem_cfg.relevance_gate and query.strip():
-            semantically_relevant = [mid for mid, sim in semantic_scores if sim > 0.0]
+            semantically_relevant = [
+                mid for mid, sim in semantic_scores if sim > mem_cfg.relevance_min_similarity
+            ]
             eligible = set(semantically_relevant[: mem_cfg.relevance_semantic_topk]) | set(
                 keyword_ranked
             )

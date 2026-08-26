@@ -103,6 +103,7 @@ memory:
   max_candidates: 5000
   relevance_gate: true
   relevance_semantic_topk: 100
+  relevance_min_similarity: 0.000001
 ```
 
 | Setting | Default | Env Var | Description |
@@ -131,8 +132,9 @@ memory:
 | `weight_relationship` | `1.0` | — | Weight applied to the relationship-target-match signal in weighted RRF (only relevant when a `relationship_target`/`user_id` is passed to retrieval). |
 | `recency_anchor` | `created` | — | Which timestamp recency decay is anchored on: `created` (memory's creation time — decay is a fixed clock, independent of retrieval activity) or `accessed` (last-access time — frequently-recalled memories stay "fresh"). |
 | `max_candidates` | `5000` | — | Hard cap on active memories scored per `retrieve()` call. Every active memory for the character is a retrieval candidate (no more 200-newest-core-rows window); if the character has more than this many active memories, the newest `max_candidates` are scored and older ones are reachable only via FTS keyword match. Raise it for characters with very long histories on capable hardware; lower it to bound retrieval latency. |
-| `relevance_gate` | `true` | — | When true and the query is non-empty, recency/importance/relationship ranking is confined to memories that are semantically similar (similarity > 0, top `relevance_semantic_topk` of those) or keyword-matching (FTS) — see [ARCHITECTURE.md](ARCHITECTURE.md#retrieval-relevance-gate). Narrows (does not eliminate) an off-topic bedrock/core flood outranking a fresh relevant fact via recency/importance floors alone — an off-topic memory with genuine positive similarity landing in the semantic top-K can still outrank on those signals. Falls back to scoring every active memory if nothing is relevant at all. Set `false` to restore the pre-gate fusion (those signals rank every active memory unconditionally). An empty query always bypasses the gate. |
+| `relevance_gate` | `true` | — | When true and the query is non-empty, recency/importance/relationship ranking is confined to memories that are semantically similar (similarity > `relevance_min_similarity`, top `relevance_semantic_topk` of those) or keyword-matching (FTS) — see [ARCHITECTURE.md](ARCHITECTURE.md#retrieval-relevance-gate). Narrows (does not eliminate) an off-topic bedrock/core flood outranking a fresh relevant fact via recency/importance floors alone — an off-topic memory with genuine positive similarity landing in the semantic top-K can still outrank on those signals. Falls back to scoring every active memory if nothing is relevant at all. Set `false` to restore the pre-gate fusion (those signals rank every active memory unconditionally). An empty query always bypasses the gate. |
 | `relevance_semantic_topk` | `100` | — | Size of the semantic slice feeding the relevance gate's eligible set (unioned with all FTS keyword hits). Only used when `relevance_gate` is true. Raise it to let more semantically-adjacent memories compete on recency/importance; lower it to tighten the gate further. |
+| `relevance_min_similarity` | `0.000001` | — | Semantic eligibility floor for the relevance gate: a memory must score strictly above this cosine similarity to count as "semantically relevant." Guards against float32 matmul noise on real dense embeddings (typically ~1e-8) being mistaken for a genuine positive match against a `sim > 0.0` floor. Only used when `relevance_gate` is true. |
 
 Semantic scoring (cosine similarity across all candidates) uses `numpy` when it's
 installed (`pip install woven-imprint[fast]`) — one matrix build + matmul per

@@ -116,3 +116,57 @@ def test_gate_excludes_zero_similarity_from_semantic_eligibility():
     assert results[0]["id"] == fact["id"], (
         f"expected the on-topic fact first, got: {results[0]['content']!r}"
     )
+
+
+def test_relevance_min_similarity_excludes_float32_noise(monkeypatch):
+    """Regression for `MemoryConfig.relevance_min_similarity`: on real dense
+    embeddings, float32 matmul (numpy's fast path in `cosine_matrix`) can
+    yield a ~1e-8 "similarity" between vectors that are mathematically
+    orthogonal — noise, not a genuine semantic match. A bare `sim > 0.0`
+    floor treats that noise as eligible; requiring `sim >
+    relevance_min_similarity` (default 1e-6) does not.
+
+    Approach: monkeypatch `retrieval.cosine_matrix` to return exactly
+    `[1e-8, 0.9]` for two memories, so the test is deterministic regardless
+    of the embedder or numpy's actual float32 behavior. `noisy` is off-topic
+    content given a huge recency/importance floor (bedrock tier, high
+    importance) — if it slipped into the gated recency/importance
+    eligibility set (old `sim > 0.0` floor) it would outrank `ontopic`
+    (genuinely relevant at 0.9 similarity, but modest importance and no
+    keyword overlap with the query) despite trailing badly on the semantic
+    signal itself. With the epsilon floor, `noisy`'s 1e-8 no longer clears
+    eligibility, so it gets zero contribution from the recency/importance
+    strategies and `ontopic` wins the fused ranking — verified by hand: with
+    the old `sim > 0.0` gate this assertion fails (noisy's recency+importance
+    dominance wins the RRF fusion despite second-place semantics).
+    """
+    from woven_imprint.memory import retrieval as retrieval_mod
+
+    engine = make_test_engine()
+    char = engine.create_character("Ada")
+
+    noisy = char.memory.add_without_embedding(
+        "The kettle whistled twice before anyone answered.",
+        tier="bedrock",
+        importance=0.95,
+    )
+    ontopic = char.memory.add_without_embedding(
+        "The visitor's favorite beverage arrived cold.",
+        tier="buffer",
+        importance=0.3,
+    )
+    # Placeholder embeddings so the semantic strategy includes both rows —
+    # the values don't matter since cosine_matrix itself is patched below.
+    for m in (noisy, ontopic):
+        m["embedding"] = [1.0]
+        char.storage.save_memory(m)
+
+    monkeypatch.setattr(retrieval_mod, "cosine_matrix", lambda query, rows: [1e-8, 0.9])
+
+    results = char.retriever.retrieve("tea", limit=10)
+    ids = [m["id"] for m in results]
+    assert ids.index(ontopic["id"]) < ids.index(noisy["id"]), (
+        "the 1e-8-similarity memory must not outrank the genuinely on-topic "
+        "0.9-similarity memory — it should be excluded from the gated "
+        "recency/importance eligibility set (sim > relevance_min_similarity)"
+    )

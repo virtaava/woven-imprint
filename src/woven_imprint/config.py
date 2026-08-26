@@ -70,6 +70,7 @@ class MemoryConfig:
     max_candidates: int = 5000  # cap on active memories scored per retrieve() call
     relevance_gate: bool = True  # gate recency/importance/relationship ranking to relevant memories
     relevance_semantic_topk: int = 100  # semantic cutoff feeding the relevance gate
+    relevance_min_similarity: float = 1e-6  # semantic eligibility floor; above float32 matmul noise
 
 
 @dataclass
@@ -394,6 +395,7 @@ memory:
   # recency_anchor: created        # "created" | "accessed"
   # relevance_gate: true           # false = legacy fusion (recency/importance rank ALL candidates)
   # relevance_semantic_topk: 100   # semantic cutoff feeding the relevance gate
+  # relevance_min_similarity: 0.000001  # semantic eligibility floor; above float32 matmul noise
 
 context:
   total_tokens: 6000

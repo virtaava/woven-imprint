@@ -19,6 +19,21 @@ pytest tests/ -v
 python eval/run_eval.py
 ```
 
+## Frontend (Demo UI)
+
+The demo UI (`demo/`, React + Vite) builds into `src/woven_imprint/demo_static/`, which is
+**committed** so `pip install woven-imprint[demo]` works without a Node toolchain. If you change
+anything under `demo/src/`, rebuild and commit the result:
+
+```bash
+cd demo && npm install && npm run build
+```
+
+`tests/test_demo_bundle.py` guards against a stale bundle — it greps the built JS for markers
+of the current API surface (e.g. `/api/memory/pinned`) and fails if they're missing, so a
+frontend change committed without rebuilding is caught by `pytest`, not discovered later at
+runtime.
+
 ## Code Style
 
 We use [ruff](https://docs.astral.sh/ruff/) for linting and formatting:

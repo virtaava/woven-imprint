@@ -48,6 +48,7 @@ No existing tool does all of this. Woven Imprint does.
 | Slow trust / lasting consequences of betrayal | **Measured** | `bench_longhorizon: betrayal_has_consequences` — trust drops, tier flips to "adversary", and only partially recovers afterward |
 | Personality drift measurement | Planned | roadmap: drift instrumentation (spike: `experiments/parametric_spike/RESULTS.md`) |
 | One bookkeeping LLM call per turn | **Measured** | `bench_longhorizon: bookkeeping_call_count` |
+| Memory is a user-editable artifact — pinned memories are never dropped by the context budget | **Measured** | `bench_longhorizon: pinned_always_present`, server tests (`PATCH`/`DELETE /api/memory/{id}`, `/api/facts/{id}`) |
 
 ## Installation
 
@@ -68,8 +69,10 @@ woven-imprint demo
 
 Opens a browser with:
 - **Chat** with Meridian (our demo wizard) or your own characters
-- **X-Ray panel** showing memory, emotions, and relationships updating in real time
-- **Character management** — create, import (JSON/PNG/SillyTavern cards), export, migrate
+- **X-Ray panel** showing memory, emotions, and relationships updating in real time — pin a
+  memory to keep it always in the prompt, edit or delete any memory or fact inline
+- **Character management** — create, import (JSON/PNG/SillyTavern cards), export (JSON or a
+  SillyTavern V2 character card), migrate
 - **Provider support** — Ollama, OpenAI, Anthropic, DeepSeek, NVIDIA NIM, or any OpenAI-compatible API with live model discovery
 
 Use `--host 0.0.0.0` to expose on your local network or a remote server.
@@ -116,8 +119,16 @@ print(alice.facts.current("user", "lives_in"))            # [{"object": "Oulu", 
 print(alice.facts.as_of("2026-05-20", "user", "lives_in")) # what was true back then
 print(alice.facts.history("user", "lives_in"))             # every version, oldest first
 
+# Pin a memory — always in the prompt, never dropped by the context budget
+alice.memory.pin(memory_id)
+alice.memory.edit(memory_id, content="corrected wording")
+alice.facts.retract(fact_id)  # no longer current, but kept in history
+
 # Export full character state — portable, self-contained
 alice.export("alice_v1.json")
+
+# Or export a SillyTavern V2 character card (pinned memories + facts as a lorebook)
+card = alice.export_card()
 ```
 
 ## Architecture
@@ -186,6 +197,11 @@ woven-imprint migrate persona.md                    # Any markdown/text file
 
 The system analyzes conversation history to calculate relationship baselines
 (trust, affection, familiarity) so characters don't start from zero.
+
+Go the other way with `woven-imprint export-card <name-or-id> [-o card.json]` — writes a
+SillyTavern V2 character card whose lorebook is built from pinned memories, current facts, and
+the most important core memories, so a character built in woven-imprint can be reopened in
+SillyTavern.
 
 ## Use Cases
 

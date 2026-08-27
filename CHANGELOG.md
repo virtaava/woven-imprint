@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (Tier 3a — editable memory · interchange)
+- **Memory & fact mutation** — every memory and fact is now viewable and editable, from the
+  library, HTTP, and MCP:
+  - `MemoryStore.edit(memory_id, *, content=None, importance=None, tier=None)` (re-embeds on
+    content change), `.delete(memory_id)` (also retracts any fact that pointed to it — deleting
+    a memory means "forget this"), `.pin(memory_id, pinned=True)`, `.pinned()`.
+  - `FactStore.edit(fact_id, *, object=None, statement=None)` (keeps the linked memory's text in
+    sync, re-embedding it), `.retract(fact_id)` (expires the fact now, archives the linked
+    memory), `.delete(fact_id)` (hard delete of the fact row only).
+  - `Character.memory.edit/delete/pin/pinned` and `Character.facts.edit/retract/delete` are the
+    public surface.
+- **Pinned block** — memories pinned via `MemoryStore.pin()` render into a non-sheddable
+  "Things you always remember:" block in the volatile system prompt, ahead of and excluded
+  from the retrieved-memories list (no duplicates). `context.pinned_block` (default `true`),
+  `context.pinned_limit` (default `10`, oldest-pinned-first). Never shed by the context budget
+  — proven by the `pinned_always_present` long-horizon benchmark (pin a day-3 memory; at day 60
+  it's still in the volatile block, not duplicated in the memories list). `docs/RESULTS.md`
+  regenerated (26/26 passed).
+- **HTTP**: `GET /api/memory/pinned?character_id=`, `PATCH /api/memory/{id}`,
+  `DELETE /api/memory/{id}`, `PATCH /api/facts/{id}`, `DELETE /api/facts/{id}?mode=retract|delete`
+  (default `retract`), `GET /api/characters/{id}/card`. All auth-guarded, rate-limited under the
+  `mutation` bucket, and scoped — a memory/fact must belong to the given `character_id` or the
+  route 404s.
+- **MCP tools**: `edit_memory`, `delete_memory`, `pin_memory`, `list_pinned`, `retract_fact`,
+  `edit_fact`.
+- **Demo X-Ray editing**: a **Pinned** card at the top of the memory area (unpin); Memory Feed
+  rows gain pin/edit (inline textarea, Escape to cancel)/delete (confirm) controls; a new
+  **Facts** card lists current user-facts with edit-object and retract controls. Fixes the
+  relationship radar reading the wrong response envelope (`res.relationship`). Bundle rebuilt;
+  `tests/test_demo_bundle.py` greps the built JS for `/api/memory/pinned` etc. so a stale bundle
+  fails CI.
+- **SillyTavern interchange**:
+  - Import (`migrate/parsers.py`, `importer.py`) now reads `character_book` (lorebook),
+    `system_prompt`, `post_history_instructions`, `alternate_greetings`, `creator`,
+    `character_version`, `spec`/`spec_version`; PNG import accepts the V3 `ccv3` tEXt chunk
+    (preferred) alongside the existing V2 `chara` chunk. `scenario`/`tags`/`greetings` map to
+    soft persona traits, `system_prompt` to `hard.hard_constraints`, `creator_notes` to
+    `hard.creator_notes`. Each enabled lorebook entry becomes a memory: `constant` entries are
+    pinned bedrock (`tier="bedrock"`, `metadata.pinned=True`), the rest are `core`; content is
+    prefixed `[Lore: key1, key2] ...`. Entry `keys` are coerced from string/list/comma-string
+    forms; entries default to `enabled=True` when the field is absent.
+  - Export: `Character.export_card(core_limit=20) -> dict` builds a `chara_card_v2` card whose
+    lorebook is generated from pinned memories (`constant: true`), current user facts, and the
+    top `core_limit` core memories by importance (`constant: false`). CLI `woven-imprint
+    export-card <name-or-id> [-o card.json]`; HTTP `GET /api/characters/{id}/card`.
+- `GET /api/facts/{character_id}` items now include `id` (needed by the new edit/retract
+  controls).
+
 ### Added
 - Parametric-layer spike (`experiments/parametric_spike/`): persona LoRA reduces persona drift
   (judge mean 0.798 vs 0.536 prompt-only; hard violations 1 vs 14 per run); facts-in-weights
@@ -85,6 +133,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MEMORY-SIDE-FIXES.md` (its 2026-03-25 notes are recorded below under the 0.4.x history).
 
 ### Changed
+- **`GET /api/memory` response shape**: memory rows no longer include `embedding` (it was
+  leaking the full vector to the client for no reason the UI used); still include `id, tier,
+  content, importance, certainty, status, created_at, metadata`.
+- `Engine.create_character` now moves flat `scenario`, `greetings`, and `tags` persona fields
+  into `soft` (previously only `personality`/`speaking_style`/`occupation`/`appearance`/`role`
+  made that trip) — needed so SillyTavern-imported scenario/greetings/tags round-trip through
+  `export_card()`.
+- Kotlin C1 (unmerged branch) must also add memory/fact mutation (`edit`/`delete`/`pin`/
+  `pinned`, `edit`/`retract`/`delete` on facts) and the pinned-block prompt rendering before
+  merging (Tier 3a, this release).
 - `SQLiteStorage.get_memories(limit=None)` returns all rows. Kotlin C1 (unmerged branch) must
   adopt the all-candidates retrieval rule and the dated memory/summary formats before merging.
 - Long-horizon contradiction benchmark now asserts rank among on-topic memories (not global

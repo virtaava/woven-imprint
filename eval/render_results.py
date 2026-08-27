@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
-"""Render docs/RESULTS.md from eval/results/latest.json. Never hand-edit RESULTS.md."""
+"""Render docs/RESULTS.md from eval/results/latest.json. Never hand-edit RESULTS.md.
+
+If `eval/results/external_latest.json` exists (written by `python -m eval.external`, see
+`eval/external/report.py`), an "External benchmarks" section is appended after the deterministic
+suites — one table per `bench:mode` key. That section is purely additive: it never touches the
+deterministic headline score line, and its absence (file missing) leaves the output identical to
+before this feature existed.
+"""
 
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 LATEST = ROOT / "eval" / "results" / "latest.json"
+EXTERNAL_LATEST = ROOT / "eval" / "results" / "external_latest.json"
 OUT = ROOT / "docs" / "RESULTS.md"
 
 
@@ -50,9 +59,174 @@ def render(data: dict) -> str:
     return "\n".join(lines)
 
 
+def _fmt_pct(x: Any) -> str:
+    """Render a 0..1 fraction as a percentage; "n/a" for missing/non-numeric/None."""
+    if x is None:
+        return "n/a"
+    try:
+        return f"{float(x) * 100:.1f}%"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _fmt_num(x: Any, digits: int = 0) -> str:
+    """Render a number to ``digits`` decimals; "n/a" for missing/non-numeric/None."""
+    if x is None:
+        return "n/a"
+    try:
+        return f"{float(x):.{digits}f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _cat_sort_key(cat: str) -> tuple:
+    """Numeric categories (LoCoMo "1".."5") sort numerically; named categories
+    (LongMemEval's "multi-session", etc.) sort alphabetically after them."""
+    try:
+        return (0, int(cat))
+    except (TypeError, ValueError):
+        return (1, str(cat))
+
+
+def _first_judge_version(result: dict) -> Any:
+    """Best-effort: the `judge_version` most per-question records carry after a `rejudge` pass
+    (2), or None if the run predates that field / has no per-question records."""
+    for rec in result.get("conversations") or []:
+        if isinstance(rec, dict) and "judge_version" in rec:
+            return rec["judge_version"]
+    return None
+
+
+def _render_qa_bench(key: str, result: dict) -> list[str]:
+    """Render one locomo/longmemeval_s bench:mode table. Every field is read via `.get()` with a
+    default so a partial/malformed result (missing "summary", missing a summary key, etc.) never
+    raises — it just renders "n/a" for whatever is missing."""
+    summary = result.get("summary") or {}
+    lines = [
+        f"### `{key}`",
+        "",
+        f"- Run id: `{result.get('run_id', 'unknown')}` | Timestamp: {result.get('timestamp', 'unknown')}",
+    ]
+    if result.get("rejudged_at"):
+        lines.append(f"- Rejudged at: {result['rejudged_at']}")
+    judge_version = _first_judge_version(result)
+    if judge_version is not None:
+        lines.append(f"- Judge version: {judge_version}")
+    lines += [
+        f"- Overall J (categories 1-4 / non-abstain): {_fmt_pct(summary.get('overall_j'))} "
+        f"(n={summary.get('n_questions', 'n/a')})",
+        f"- Mean token-F1: {_fmt_num(summary.get('overall_f1'), 3)}",
+        f"- Adversarial accuracy (category 5): {_fmt_pct(summary.get('adversarial_accuracy'))}",
+        f"- Abstain accuracy (`_abs`): {_fmt_pct(summary.get('abstain_accuracy'))}",
+        f"- Mean prompt tokens (est.): {_fmt_num(summary.get('mean_prompt_tokens_est'), 0)}",
+        "",
+    ]
+
+    per_category = summary.get("per_category") or {}
+    if per_category:
+        lines += ["| category | n | J | token-F1 |", "|---|---|---|---|"]
+        for cat in sorted(per_category, key=_cat_sort_key):
+            b = per_category.get(cat) or {}
+            lines.append(
+                f"| {cat} | {b.get('n', 'n/a')} | {_fmt_pct(b.get('j'))} | {_fmt_num(b.get('f1'), 3)} |"
+            )
+        lines.append("")
+    return lines
+
+
+def _render_plus_bench(key: str, result: dict) -> list[str]:
+    """Render one locomo_plus bench:mode table (Cognitive-judge accuracy, no gold answers)."""
+    summary = result.get("summary") or {}
+    lines = [
+        f"### `{key}`",
+        "",
+        f"- Run id: `{result.get('run_id', 'unknown')}` | Timestamp: {result.get('timestamp', 'unknown')}",
+        f"- Cognitive accuracy overall: {_fmt_pct(summary.get('cognitive_accuracy'))} "
+        f"(n={summary.get('n_probes', 'n/a')})",
+        f"- Mean prompt tokens (est.): {_fmt_num(summary.get('mean_prompt_tokens_est'), 0)}",
+        "",
+    ]
+
+    per_relation = summary.get("per_relation_type") or {}
+    if per_relation:
+        lines += ["| relation_type | n | cognitive accuracy |", "|---|---|---|"]
+        for rt in sorted(per_relation):
+            b = per_relation.get(rt) or {}
+            lines.append(
+                f"| {rt} | {b.get('n', 'n/a')} | {_fmt_pct(b.get('cognitive_accuracy'))} |"
+            )
+        lines.append("")
+
+    per_gap = summary.get("per_time_gap") or {}
+    if per_gap:
+        top = sorted(per_gap.items(), key=lambda kv: (kv[1] or {}).get("n", 0) or 0, reverse=True)[
+            :10
+        ]
+        lines += ["| time_gap (top buckets) | n | cognitive accuracy |", "|---|---|---|"]
+        for gap, b in top:
+            b = b or {}
+            lines.append(
+                f"| {gap} | {b.get('n', 'n/a')} | {_fmt_pct(b.get('cognitive_accuracy'))} |"
+            )
+        lines.append("")
+    return lines
+
+
+def render_external(external: dict) -> str:
+    """Render the "## External benchmarks" section from `external_latest.json`'s dict (keyed
+    `"bench:mode"`, see `eval/external/report.py`). Returns "" for an empty/falsy dict.
+
+    Each entry is rendered independently and defensively: a malformed one (e.g. a future bench
+    this function doesn't know the shape of) is reported as an inline note rather than aborting
+    the whole render, so one bad entry never takes down the rest of RESULTS.md.
+    """
+    if not external:
+        return ""
+    lines = [
+        "## External benchmarks (real LLM, local judge)",
+        "",
+        "Measured with the local brain (Qwen3.5-35B-A3B-FP8, thinking off) as both the answering "
+        "model and the judge — not comparable to published GPT-4o-judged numbers. Method, exact "
+        "prompts, and caveats: [BENCHMARKS.md](BENCHMARKS.md).",
+        "",
+    ]
+    for key in sorted(external):
+        try:
+            result = external.get(key) or {}
+            if not isinstance(result, dict):
+                raise TypeError(f"expected a dict, got {type(result).__name__}")
+            bench = result.get("bench") or key.split(":", 1)[0]
+            if bench == "locomo_plus":
+                lines += _render_plus_bench(key, result)
+            else:
+                lines += _render_qa_bench(key, result)
+        except Exception as exc:  # defensive: one malformed entry must not break the render
+            lines += [f"### `{key}`", "", f"_could not render this result: {exc}_", ""]
+    return "\n".join(lines)
+
+
+def render_full(data: dict, external: dict | None) -> str:
+    """Compose the deterministic-suites render with the external-benchmarks section (if any).
+
+    ``external`` is the loaded `external_latest.json` dict, or None/empty when that file doesn't
+    exist — in which case the output is byte-identical to plain `render(data)`.
+    """
+    out = render(data)
+    section = render_external(external) if external else ""
+    if not section:
+        return out
+    return out.rstrip("\n") + "\n\n" + section + "\n"
+
+
 def main() -> None:
     data = json.loads(LATEST.read_text(encoding="utf-8"))
-    OUT.write_text(render(data), encoding="utf-8")
+    external: dict | None = None
+    if EXTERNAL_LATEST.exists():
+        try:
+            external = json.loads(EXTERNAL_LATEST.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            external = None
+    OUT.write_text(render_full(data, external), encoding="utf-8")
     print(f"wrote {OUT}")
 
 

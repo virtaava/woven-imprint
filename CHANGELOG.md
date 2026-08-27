@@ -27,6 +27,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (subject, predicate, object) facts, not just free-text ones. The legacy path is unchanged and
   still used when `unified_assessment` is off.
 
+### Added (Tier 3b — external benchmarks · harness + docs)
+- **`eval/external/` harness** (`python -m eval.external fetch|run|rejudge`): publishes
+  reproducible LoCoMo, LoCoMo-Plus (Cognitive category), and LongMemEval-S numbers measured with
+  the local brain (Qwen3.5-35B-A3B-FP8, thinking off) as both the answering model and the judge,
+  alongside a full-context baseline under the identical judge. Message-by-message ingestion via
+  `Character.ingest()` under clock control, product-path answering (pinned + facts + top-K
+  retrieved memories), the LoCoMo/Mem0-lenient judge and the upstream LoCoMo-Plus Cognitive judge,
+  a fixed abstention rule for category-5/`_abs` questions, per-conversation SQLite checkpointing
+  (atomic writes, resumable, shardable via `--shard i/n`), a `rejudge` subcommand, and a
+  stratified judge-calibration sample (`eval/results/external_judge_sample.json`). See
+  `docs/BENCHMARKS.md`.
+- **`docs/BENCHMARKS.md`** — method, exact prompts (quoted verbatim), protocol, metrics
+  definitions, hardware/runtime, judge-calibration instructions, caveats (local judge ≠ GPT-4o,
+  LoCoMo label noise, category-5 convention, subset sizes, and more), and reproduce commands for
+  the external benchmark harness.
+- **`docs/RESULTS.md`** gains an "External benchmarks (real LLM, local judge)" section, rendered
+  by `eval/render_results.py` from `eval/results/external_latest.json` when that file exists (one
+  table per `bench:mode`: overall/per-category J-score, token-F1, adversarial/abstain accuracy,
+  mean prompt tokens, run id, timestamp). Purely additive — the deterministic headline score line
+  is unaffected, and the section is simply absent until the harness has published a run.
+
 ### Added (Tier 3a — editable memory · interchange)
 - **Memory & fact mutation** — every memory and fact is now viewable and editable, from the
   library, HTTP, and MCP:

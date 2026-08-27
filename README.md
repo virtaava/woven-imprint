@@ -49,6 +49,7 @@ No existing tool does all of this. Woven Imprint does.
 | Personality drift measurement | Planned | roadmap: drift instrumentation (spike: `experiments/parametric_spike/RESULTS.md`) |
 | One bookkeeping LLM call per turn | **Measured** | `bench_longhorizon: bookkeeping_call_count` |
 | Memory is a user-editable artifact — pinned memories are never dropped by the context budget | **Measured** | `bench_longhorizon: pinned_always_present`, server tests (`PATCH`/`DELETE /api/memory/{id}`, `/api/facts/{id}`) |
+| External benchmarks: LoCoMo / LoCoMo-Plus / LongMemEval-S, local judge | **Measured** | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
 
 ## Installation
 
@@ -224,6 +225,7 @@ flips after Darcy rescues the Bennets (affection turns positive), and resolves a
 proposal (trust +0.06, affection +0.22, familiarity 0.99).
 
 Deterministic benchmark suites run in CI; the current numbers are generated into [docs/RESULTS.md](docs/RESULTS.md) by `eval/render_results.py`. Four live persistence tests need a real model.
+LoCoMo, LoCoMo-Plus, and LongMemEval-S numbers, judged by the local brain against a full-context baseline, are documented in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 Covers memory recall, cross-session persistence, consolidation, belief revision,
 relationship bounds, persona consistency, adversarial persona resistance, and contradiction handling.
 

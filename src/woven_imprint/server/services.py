@@ -123,7 +123,12 @@ def patch_memory_service(
     char, memory_id, *, content=None, importance=None, tier=None, pinned=None
 ) -> dict:
     """Edit/pin a memory in place. Raises `ValueError` on bad `tier`/`importance`,
-    `KeyError` if the memory doesn't exist (or belongs to another character)."""
+    `KeyError` if the memory doesn't exist or belongs to another character —
+    checked up front so an empty body (no fields set) still 404s on a foreign
+    or missing memory instead of leaking it back unfiltered."""
+    row = char.storage.get_memory(memory_id)
+    if row is None or row.get("character_id") != char.id:
+        raise KeyError(memory_id)
     if tier is not None and tier not in ("buffer", "core", "bedrock"):
         raise ValueError("invalid tier")
     if importance is not None and not (0.0 <= float(importance) <= 1.0):

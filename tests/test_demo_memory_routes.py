@@ -76,6 +76,16 @@ def test_patch_memory_validation_and_404(app_client):
     )
 
 
+def test_patch_memory_empty_body_enforces_ownership(app_client):
+    client, engine, cid, m = _setup(app_client)
+    other = _create_test_character(client, "Other")["id"]
+    assert client.patch(f"/api/memory/{m['id']}", json={"character_id": other}).status_code == 404
+    r = client.patch(f"/api/memory/{m['id']}", json={"character_id": cid})
+    assert r.status_code == 200
+    mem = r.json()["memory"]
+    assert mem["id"] == m["id"] and mem["content"] == m["content"] and mem["tier"] == m["tier"]
+
+
 def test_delete_memory(app_client):
     client, engine, cid, m = _setup(app_client)
     assert client.delete(f"/api/memory/{m['id']}", params={"character_id": cid}).json() == {

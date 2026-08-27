@@ -82,7 +82,7 @@ jobs:
         run: |
           uv venv .venv --python ${{ matrix.python-version }}
           source .venv/bin/activate
-          uv pip install -e ".[dev,fast]"
+          uv pip install -e ".[dev,fast,demo,mcp]"
 
       - name: Run tests
         timeout-minutes: 3

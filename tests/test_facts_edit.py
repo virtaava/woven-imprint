@@ -22,6 +22,39 @@ def test_edit_fact_updates_record_and_linked_memory():
     assert engine.storage.fts_search(char.id, "Oulu")
 
 
+def test_edit_object_only_derives_statement_by_replacement():
+    engine, char = _char()
+    m = char.memory.add("The visitor lives in Tampere.", tier="core")
+    f = char.facts.add(
+        subject="user",
+        predicate="lives_in",
+        object="Tampere",
+        statement=m["content"],
+        memory_id=m["id"],
+    )
+    out = char.facts.edit(f["id"], object="Oulu")
+    assert out["object"] == "Oulu"
+    assert out["statement"] == "The visitor lives in Oulu."
+    assert engine.storage.get_memory(m["id"])["content"] == "The visitor lives in Oulu."
+    assert engine.storage.fts_search(char.id, "Oulu")
+
+
+def test_edit_object_only_falls_back_when_object_not_in_statement():
+    engine, char = _char()
+    m = char.memory.add("The visitor mentioned their favorite color once.", tier="core")
+    f = char.facts.add(
+        subject="user",
+        predicate="favorite_color",
+        object="blue",
+        statement=m["content"],
+        memory_id=m["id"],
+    )
+    out = char.facts.edit(f["id"], object="green")
+    assert out["object"] == "green"
+    assert out["statement"] == ("The visitor mentioned their favorite color once — now: green.")
+    assert engine.storage.get_memory(m["id"])["content"] == out["statement"]
+
+
 def test_retract_expires_without_successor_and_archives_memory():
     engine, char = _char()
     m = char.memory.add("The visitor plays chess.", tier="core")

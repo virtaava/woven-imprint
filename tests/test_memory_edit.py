@@ -66,3 +66,32 @@ def test_delete_removes_row_fts_and_retracts_linked_fact():
         and fact["metadata"].get("retracted") is True
     )
     assert char.facts.find_active("user", "has_cat_named") is None
+
+
+def test_delete_does_not_retract_superseded_historical_fact():
+    engine, char = _char()
+    m = char.memory.add("The visitor's cat is named Pixel.", tier="core")
+    old = char.facts.add(
+        subject="user",
+        predicate="has_cat_named",
+        object="Pixel",
+        statement=m["content"],
+        memory_id=m["id"],
+    )
+    # Supersede it with a new active fact — `old` becomes historical (valid_to set)
+    # but keeps pointing at `m` until the memory itself goes away.
+    char.facts.add(
+        subject="user",
+        predicate="has_cat_named",
+        object="Nova",
+        statement="The visitor's cat is named Nova.",
+    )
+    char.facts.expire(
+        old["id"], valid_to=engine.storage.get_fact(old["id"])["recorded_at"], superseded_by=None
+    )
+
+    char.memory.delete(m["id"])
+
+    historical = char.facts.get(old["id"])
+    assert historical["memory_id"] is None
+    assert historical["metadata"].get("retracted") is not True

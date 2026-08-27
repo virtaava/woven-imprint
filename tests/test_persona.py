@@ -77,6 +77,35 @@ class TestPersonaModel:
         assert any("Alice" in f for f in facts)
         assert any("London" in f for f in facts)
 
+    def test_prompt_excludes_creator_notes_greetings_tags_but_keeps_scenario(self):
+        p = PersonaModel(
+            {
+                "name": "Alice",
+                "hard": {"name": "Alice", "creator_notes": "SEKRET_CREATOR_NOTE"},
+                "soft": {
+                    "personality": "witty",
+                    "greetings": ["SEKRET_GREETING_TEXT"],
+                    "tags": ["SEKRET_TAG"],
+                    "scenario": "A quiet cafe in autumn",
+                },
+            }
+        )
+
+        prompt = p.build_system_prompt()
+        assert "SEKRET_CREATOR_NOTE" not in prompt
+        assert "SEKRET_GREETING_TEXT" not in prompt
+        assert "SEKRET_TAG" not in prompt
+        assert "A quiet cafe in autumn" in prompt  # scenario still renders
+
+        facts = p.get_hard_facts()
+        assert not any("SEKRET_CREATOR_NOTE" in f for f in facts)
+
+        # Excluded keys are still stored, so export_card can round-trip them.
+        d = p.to_dict()
+        assert d["hard"]["creator_notes"] == "SEKRET_CREATOR_NOTE"
+        assert d["soft"]["greetings"] == ["SEKRET_GREETING_TEXT"]
+        assert d["soft"]["tags"] == ["SEKRET_TAG"]
+
     def test_update_soft(self):
         p = PersonaModel({"name": "Alice", "soft": {"mood": "happy"}})
         p.update_soft("mood", "contemplative")

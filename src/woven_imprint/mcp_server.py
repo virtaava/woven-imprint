@@ -134,6 +134,7 @@ def recall(character_id: str, query: str, limit: int = 5) -> str:
     memories = char.recall(query, limit=limit)
     results = [
         {
+            "id": m["id"],
             "tier": m["tier"],
             "content": m["content"][:300],
             "importance": m.get("importance", 0.5),
@@ -272,8 +273,7 @@ def get_facts(character_id: str, subject: str | None = None, as_of: str | None =
     rows = (
         char.facts.as_of(as_of, subject=subject) if as_of else char.facts.current(subject=subject)
     )
-    keep = ("subject", "predicate", "object", "statement", "valid_from", "valid_to", "certainty")
-    return json.dumps([{k: r.get(k) for k in keep} for r in rows], indent=2)
+    return json.dumps([_public_fact(r) for r in rows], indent=2)
 
 
 @mcp.tool()

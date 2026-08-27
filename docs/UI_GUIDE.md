@@ -117,7 +117,8 @@ again until it re-enters the recent-10 window or you reload.
 A card listing the character's current structured facts about you (statement, and "(since
 YYYY-MM-DD)" when dated). Each fact has:
 - **Edit** (pencil icon) — inline edit of the fact's object/value; saving updates both the fact
-  and, if one is linked, the memory it came from.
+  (the statement is re-derived from the new object) and, if one is linked, the memory it came
+  from — the memory's content is rewritten to match and re-embedded.
 - **Retract** (with a confirmation) — marks the fact no longer current. It stays in the fact's
   history; a new fact can still supersede it later.
 

@@ -34,6 +34,11 @@ of the current API surface (e.g. `/api/memory/pinned`) and fails if they're miss
 frontend change committed without rebuilding is caught by `pytest`, not discovered later at
 runtime.
 
+**Dev note**: `demo/src/lib/api.ts`'s `request()` helper migration is partial — only the
+Tier 3a endpoints (relationships, pinned/edit/delete memory, get/edit/delete facts) go through
+it; the older calls (chat, characters, config, sessions) still use `fetch()` directly. New
+endpoints should use `request()`; converting the rest is unfinished cleanup, not a regression.
+
 ## Code Style
 
 We use [ruff](https://docs.astral.sh/ruff/) for linting and formatting:

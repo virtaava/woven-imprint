@@ -7,6 +7,16 @@ from datetime import date
 from .. import clock
 
 
+PROMPT_EXCLUDED_KEYS = frozenset({"creator_notes", "greetings", "tags"})
+"""Persona keys stored for round-tripping but never surfaced to the model.
+
+These come from imported character cards (e.g. SillyTavern) and are either
+author-facing metadata (`creator_notes`, `tags`) or UI-facing content
+(`greetings`) that should not leak into the model's system prompt or be
+treated as a hard fact for the consistency checker.
+"""
+
+
 def _render_value(val: object) -> str:
     """Render a persona field value for the system prompt.
 
@@ -87,7 +97,7 @@ class PersonaModel:
         if self.backstory:
             parts.append(f"Backstory: {self.backstory}")
         for key, val in self.hard.items():
-            if key not in ("name", "backstory"):
+            if key not in ("name", "backstory") and key not in PROMPT_EXCLUDED_KEYS:
                 parts.append(f"{key.replace('_', ' ').title()}: {_render_value(val)}")
 
         # Temporal facts
@@ -96,7 +106,7 @@ class PersonaModel:
             if self.is_birthday:
                 parts.append("Today is your birthday!")
         for key, val in self.temporal.items():
-            if key != "age":
+            if key != "age" and key not in PROMPT_EXCLUDED_KEYS:
                 parts.append(f"{key.replace('_', ' ').title()}: {_render_value(val)}")
 
         # Soft constraints
@@ -108,7 +118,7 @@ class PersonaModel:
             if speaking_style:
                 parts.append(f"Speaking style: {_render_value(speaking_style)}")
             for key, val in self.soft.items():
-                if key not in ("personality", "speaking_style"):
+                if key not in ("personality", "speaking_style") and key not in PROMPT_EXCLUDED_KEYS:
                     parts.append(f"{key.replace('_', ' ').title()}: {_render_value(val)}")
 
         return "\n".join(parts)
@@ -119,7 +129,7 @@ class PersonaModel:
         if self.backstory:
             facts.append(f"Backstory: {self.backstory}")
         for key, val in self.hard.items():
-            if key not in ("name", "backstory"):
+            if key not in ("name", "backstory") and key not in PROMPT_EXCLUDED_KEYS:
                 facts.append(f"{key}: {val}")
         return facts
 

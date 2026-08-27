@@ -120,6 +120,56 @@ def test_import_seeds_lorebook_and_persona(tmp_path):
     ]
 
 
+MACRO_CARD = {
+    "spec": "chara_card_v2",
+    "spec_version": "2.0",
+    "data": {
+        "name": "Vesper",
+        "description": "{{char}} keeps the lighthouse for {{user}}.",
+        "personality": "{{char}} is gruff but fond of {{user}}.",
+        "scenario": "{{User}} arrives; {{Char}} greets them.",
+        "first_mes": "Hello, {{user}}. I am {{char}}.",
+        "alternate_greetings": ["{{char}} nods at {{user}}."],
+        "mes_example": "<START>\n{{user}}: Hi\n{{char}}: Aye.",
+        "system_prompt": "{{char}} never leaves without {{user}}.",
+        "character_book": {
+            "name": "lore",
+            "entries": [
+                {
+                    "keys": ["oath"],
+                    "content": "{{char}} swore an oath to {{user}}.",
+                    "enabled": True,
+                    "constant": True,
+                    "insertion_order": 0,
+                },
+            ],
+        },
+    },
+}
+
+
+def test_import_substitutes_char_and_user_macros(tmp_path):
+    p = tmp_path / "macro.json"
+    p.write_text(json.dumps(MACRO_CARD))
+    engine = make_test_engine()
+    char = CharacterImporter(engine).from_file(p)
+
+    assert "{{char}}" not in char.persona.backstory.lower()
+    assert "{{user}}" not in char.persona.backstory.lower()
+    assert char.persona.backstory == "Vesper keeps the lighthouse for the visitor."
+    assert char.persona.soft["personality"] == "Vesper is gruff but fond of the visitor."
+    assert char.persona.soft["scenario"] == "the visitor arrives; Vesper greets them."
+    assert char.persona.soft["greetings"] == [
+        "Hello, the visitor. I am Vesper.",
+        "Vesper nods at the visitor.",
+    ]
+    assert char.persona.hard["hard_constraints"] == "Vesper never leaves without the visitor."
+
+    mems = char.memory.get_all(limit=None)
+    lore = next(m for m in mems if m["metadata"].get("source") == "lorebook")
+    assert lore["content"].endswith("Vesper swore an oath to the visitor.")
+
+
 EDGE_CASE_CARD = {
     "spec": "chara_card_v2",
     "spec_version": "2.0",

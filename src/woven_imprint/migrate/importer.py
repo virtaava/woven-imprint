@@ -7,11 +7,30 @@ Woven Imprint character with persona, memories, and backstory.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ..engine import Engine
 from ..character import Character
 from .parsers import auto_detect, parse_custom_gpt, parse_chatgpt_export
+
+_MACRO_CHAR_RE = re.compile(r"\{\{char\}\}", re.IGNORECASE)
+_MACRO_USER_RE = re.compile(r"\{\{user\}\}", re.IGNORECASE)
+
+
+def _substitute_macros(text: str, name: str) -> str:
+    """Replace TavernAI-style ``{{char}}``/``{{user}}`` macros in imported text.
+
+    ``{{char}}`` becomes the card's character name and ``{{user}}`` becomes
+    the generic "the visitor", since Woven Imprint has no concept of a
+    named user persona at import time. Matching is case-insensitive, since
+    SillyTavern/TavernAI macros are conventionally case-insensitive.
+    """
+    if not text:
+        return text
+    text = _MACRO_CHAR_RE.sub(name, text)
+    text = _MACRO_USER_RE.sub("the visitor", text)
+    return text
 
 
 def _norm_keys(v: object) -> list[str]:
@@ -312,10 +331,11 @@ class CharacterImporter:
 
     def _analyze_tavernai(self, card: dict) -> dict:
         """Extract character info from a TavernAI card — often already structured."""
+        name = card.get("name", "Unknown")
         result = {
-            "name": card.get("name", "Unknown"),
-            "personality": card.get("personality", ""),
-            "backstory": card.get("description", ""),
+            "name": name,
+            "personality": _substitute_macros(card.get("personality", ""), name),
+            "backstory": _substitute_macros(card.get("description", ""), name),
             "speaking_style": "",
             "key_memories": [],
         }
@@ -325,20 +345,20 @@ class CharacterImporter:
             result = self._llm_extract(
                 f"Character name: {result['name']}\n"
                 f"Description: {result['backstory']}\n"
-                f"Example dialogue: {card.get('mes_example', '')[:500]}",
+                f"Example dialogue: {_substitute_macros(card.get('mes_example', ''), name)[:500]}",
                 existing=result,
             )
 
         # Extract speaking style from example messages
         if card.get("mes_example"):
-            examples = card["mes_example"][:1000]
+            examples = _substitute_macros(card["mes_example"], name)[:1000]
             result["speaking_style"] = self._extract_speaking_style(examples, result["name"])
 
-        # Scenario, system prompt, tags, creator notes pass through as-is.
+        # Scenario, system prompt, tags, creator notes pass through (macros substituted).
         if card.get("scenario"):
-            result["scenario"] = card["scenario"]
+            result["scenario"] = _substitute_macros(card["scenario"], name)
         if card.get("system_prompt"):
-            result["system_prompt"] = card["system_prompt"]
+            result["system_prompt"] = _substitute_macros(card["system_prompt"], name)
         if card.get("tags"):
             result["tags"] = card["tags"]
         if card.get("creator_notes"):
@@ -346,7 +366,9 @@ class CharacterImporter:
 
         # Greetings: first_mes followed by any alternate_greetings, non-empty only.
         greetings = [
-            g for g in [card.get("first_mes", ""), *card.get("alternate_greetings", [])] if g
+            _substitute_macros(g, name)
+            for g in [card.get("first_mes", ""), *card.get("alternate_greetings", [])]
+            if g
         ]
         if greetings:
             result["greetings"] = greetings
@@ -359,7 +381,7 @@ class CharacterImporter:
             result["lorebook_entries"] = [
                 {
                     "keys": _norm_keys(e.get("keys", [])),
-                    "content": e.get("content", ""),
+                    "content": _substitute_macros(e.get("content", ""), name),
                     "constant": bool(e.get("constant")),
                     "insertion_order": e.get("insertion_order", 0),
                 }

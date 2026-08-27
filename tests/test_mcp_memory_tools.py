@@ -94,6 +94,35 @@ def test_retract_and_edit_fact(test_engine):
     assert out["metadata"]["retracted"] is True
 
 
+def test_recall_exposes_id_usable_by_edit_memory(test_engine):
+    char, m = _setup(test_engine)
+    recalled = json.loads(_tool(mcp_server.recall)(character_id=char.id, query="tea", limit=5))
+    memories = recalled["memories"]
+    assert memories and all("id" in r for r in memories)
+    recalled_id = next(r["id"] for r in memories if r["id"] == m["id"])
+
+    out = json.loads(
+        _tool(mcp_server.edit_memory)(
+            character_id=char.id, memory_id=recalled_id, content="The visitor likes coffee."
+        )
+    )
+    assert out["content"] == "The visitor likes coffee."
+
+
+def test_get_facts_exposes_id_usable_by_retract_fact(test_engine):
+    char, m = _setup(test_engine)
+    char.facts.add(
+        subject="user", predicate="likes", object="tea", statement=m["content"], memory_id=m["id"]
+    )
+
+    facts = json.loads(_tool(mcp_server.get_facts)(character_id=char.id))
+    assert facts and all(k in facts[0] for k in ("id", "superseded_by", "memory_id"))
+    fact_id = facts[0]["id"]
+
+    out = json.loads(_tool(mcp_server.retract_fact)(character_id=char.id, fact_id=fact_id))
+    assert out["metadata"]["retracted"] is True
+
+
 def test_bad_id_error_shape(test_engine):
     char, _m = _setup(test_engine)
     out = json.loads(

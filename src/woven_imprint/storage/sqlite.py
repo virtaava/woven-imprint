@@ -722,12 +722,20 @@ class SQLiteStorage:
             return cur.rowcount > 0
 
     def unlink_fact_memory(self, memory_id: str) -> list[str]:
-        """Set memory_id=NULL on facts referencing it. Returns the affected fact ids."""
+        """Set memory_id=NULL on every fact referencing it (active or historical).
+
+        Returns only the ids of facts that were still *active* (`valid_to IS
+        NULL`) at the time of unlinking — historical/superseded facts are
+        unlinked too but are not returned, since a caller that retracts
+        every returned id (e.g. `MemoryStore.delete`) should not stamp an
+        already-expired fact as retracted.
+        """
         with self._lock:
             ids = [
                 r[0]
                 for r in self._conn.execute(
-                    "SELECT id FROM facts WHERE memory_id = ?", (memory_id,)
+                    "SELECT id FROM facts WHERE memory_id = ? AND valid_to IS NULL",
+                    (memory_id,),
                 ).fetchall()
             ]
             self._conn.execute(

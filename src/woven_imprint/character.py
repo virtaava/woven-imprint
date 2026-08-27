@@ -1187,7 +1187,7 @@ class Character:
             optional_parts.append(("arc", f"\n\n{arc_desc}"))
         if rel_context:
             optional_parts.append(("relationship", f"\n\n{rel_context}"))
-        facts_text = self._format_facts_block(user_id)
+        facts_text = self._format_facts_block(user_id, pinned_ids)
         if facts_text:
             optional_parts.append(("facts", f"\n\n{facts_text}"))
         if memory_text:
@@ -1609,21 +1609,28 @@ class Character:
             lines.append(f"- ({when}) {m['content'][:300]}" if when else f"- {m['content'][:300]}")
         return "\n".join(lines), {m["id"] for m in rows}
 
-    def _format_facts_block(self, user_id: str | None) -> str:
+    def _format_facts_block(self, user_id: str | None, pinned_ids: set[str] | None = None) -> str:
         """Render the 'What I know' block: current structured facts about the
         user (with 'previously: X' when a superseded history exists) plus a
         short block of self-facts. Empty string when there is nothing to show
-        or `context.facts_block` is disabled."""
+        or `context.facts_block` is disabled.
+
+        `pinned_ids` are memory ids already rendered in the pinned-memories
+        block — a fact linked to one of them is skipped here so its text
+        doesn't appear twice in the volatile message.
+        """
         from .config import get_config
 
         ctx = get_config().context
         if not ctx.facts_block:
             return ""
+        pinned_ids = pinned_ids or set()
         limit = ctx.facts_block_limit
         user_facts = [
             f
             for f in self.facts.current(subject="user", limit=None)
-            if not user_id or not f.get("user_id") or f.get("user_id") == user_id
+            if (not user_id or not f.get("user_id") or f.get("user_id") == user_id)
+            and f.get("memory_id") not in pinned_ids
         ]
         # Highest importance first; within a tie, newest recorded_at first —
         # so the 12-slot cap drops the oldest facts, not the newest.
@@ -1645,7 +1652,11 @@ class Character:
                 if older:
                     prev = f", previously: {older[-1]['object']}"
                 lines.append(f"- (since {since}{prev}) {f['statement']}")
-        self_facts = self.facts.current(subject="self", limit=5)
+        self_facts = [
+            f
+            for f in self.facts.current(subject="self", limit=None)
+            if f.get("memory_id") not in pinned_ids
+        ][:5]
         if self_facts:
             lines.append("Things you have said about yourself:")
             for f in self_facts:

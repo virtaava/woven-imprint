@@ -79,7 +79,7 @@ makes memory a user-facing artifact rather than an opaque store:
 
 ```
 MemoryStore.edit(memory_id, *, content=None, importance=None, tier=None) -> dict
-MemoryStore.delete(memory_id) -> None     # unlinks + retracts any fact pointing here
+MemoryStore.delete(memory_id) -> None     # unlinks all + retracts only the still-active fact
 MemoryStore.pin(memory_id, pinned=True) -> dict
 MemoryStore.pinned() -> list[dict]
 
@@ -89,10 +89,23 @@ FactStore.delete(fact_id) -> None         # hard delete of the fact row only
 ```
 
 `edit()` on a memory re-embeds when `content` changes (through the same
-`guard_embedding_dimension` check every write goes through). Deleting a memory means "forget
-this": it also calls `unlink_fact_memory` and retracts any fact that was extracted from it.
-Retracting a fact is softer — it archives the linked memory but the fact stays in
-`FactStore.history()`. `Character.memory.edit/delete/pin/pinned` and
+`guard_embedding_dimension` check every write goes through). Editing a memory's `content` is
+one-directional, though: it does **not** rewrite a linked fact's `statement` — the fact keeps
+its original text until someone edits the fact itself. Deleting a memory means "forget this":
+it calls `unlink_fact_memory` (which clears `memory_id` on every fact pointing there, active or
+historical) but only retracts the ones still active (`valid_to IS NULL`) — a superseded
+historical fact keeps its own expiry/successor and isn't stamped `retracted` just because the
+memory it once pointed at is gone. Retracting a fact is softer — it archives the linked memory
+but the fact stays in `FactStore.history()`.
+
+`FactStore.edit()` can be given `object` without `statement`: the new statement is then derived
+from the old one — a case-insensitive replace of the old object text within the old statement
+if it's found there, else the old statement gets an appended `" — now: <new_object>."` clause.
+Either way the derived (or explicit) statement is what gets written back to the linked memory's
+`content`, so the UI's object-only fact edit still keeps memory text in sync — see
+`memory/facts.py::_derive_statement`.
+
+`Character.memory.edit/delete/pin/pinned` and
 `Character.facts.edit/retract/delete` are the public surface; no new `Character` methods were
 needed. Every mutation is additionally exposed over HTTP
 (`PATCH`/`DELETE /api/memory/{id}`, `GET /api/memory/pinned`, `PATCH`/`DELETE /api/facts/{id}`)

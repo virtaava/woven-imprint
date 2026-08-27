@@ -135,7 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **`GET /api/memory` response shape**: memory rows no longer include `embedding` (it was
   leaking the full vector to the client for no reason the UI used); still include `id, tier,
-  content, importance, certainty, status, created_at, metadata`.
+  content, importance, certainty, status, created_at, accessed_at, metadata, session_id, role`.
 - `Engine.create_character` now moves flat `scenario`, `greetings`, and `tags` persona fields
   into `soft` (previously only `personality`/`speaking_style`/`occupation`/`appearance`/`role`
   made that trip) — needed so SillyTavern-imported scenario/greetings/tags round-trip through

@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from .fetch import DATASETS, fetch
-from .runner import RunConfig, run
+from .runner import RunConfig, run, run_plus
 
 
 def _parse_shard(value: str | None) -> tuple[int, int] | None:
@@ -27,7 +27,9 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     run_parser = sub.add_parser("run", help="Run a benchmark (ingest, answer, judge)")
-    run_parser.add_argument("--bench", required=True, choices=["locomo", "longmemeval_s"])
+    run_parser.add_argument(
+        "--bench", required=True, choices=["locomo", "longmemeval_s", "locomo_plus"]
+    )
     run_parser.add_argument("--mode", required=True, choices=["memory", "fullcontext"])
     run_parser.add_argument("--run-id", required=True)
     run_parser.add_argument("--limit", type=int, default=None, help="Max conversations")
@@ -46,7 +48,10 @@ def main(argv: list[str] | None = None) -> int:
         "--max-questions", type=int, default=None, help="Cap questions answered per conversation"
     )
     run_parser.add_argument(
-        "--reuse-run", default=None, help="Reuse another run's ingested DBs (Task 4; not yet wired)"
+        "--reuse-run",
+        default=None,
+        help="locomo_plus memory mode (required): run-id of a prior "
+        "'--bench locomo --mode memory' run to copy ingested DBs from",
     )
     run_parser.add_argument(
         "--shard",
@@ -83,14 +88,23 @@ def main(argv: list[str] | None = None) -> int:
             max_questions=args.max_questions,
             reuse_run=args.reuse_run,
         )
-        results = run(cfg)
-        summary = results["summary"]
-        print(
-            f"\n{cfg.bench}:{cfg.mode} run {cfg.run_id} done — "
-            f"overall_j={summary['overall_j']:.3f} overall_f1={summary['overall_f1']:.3f} "
-            f"n={summary['n_questions']} adversarial_acc={summary['adversarial_accuracy']} "
-            f"abstain_acc={summary['abstain_accuracy']}"
-        )
+        if cfg.bench == "locomo_plus":
+            results = run_plus(cfg)
+            summary = results["summary"]
+            print(
+                f"\n{cfg.bench}:{cfg.mode} run {cfg.run_id} done — "
+                f"cognitive_accuracy={summary['cognitive_accuracy']:.3f} "
+                f"n={summary['n_probes']} mean_tokens={summary['mean_prompt_tokens_est']:.0f}"
+            )
+        else:
+            results = run(cfg)
+            summary = results["summary"]
+            print(
+                f"\n{cfg.bench}:{cfg.mode} run {cfg.run_id} done — "
+                f"overall_j={summary['overall_j']:.3f} overall_f1={summary['overall_f1']:.3f} "
+                f"n={summary['n_questions']} adversarial_acc={summary['adversarial_accuracy']} "
+                f"abstain_acc={summary['abstain_accuracy']}"
+            )
         return 0
 
     return 1

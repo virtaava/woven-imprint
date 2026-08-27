@@ -96,3 +96,41 @@ def summarize(items: list[dict]) -> dict:
         "abstain_accuracy": abstain_accuracy,
         "mean_prompt_tokens_est": mean_prompt_tokens,
     }
+
+
+def _bucket_accuracy(items: list[dict], key: str) -> dict[str, dict]:
+    """Group ``items`` by ``str(item[key])`` and compute n/cognitive_accuracy per bucket."""
+    buckets: dict[str, dict] = {}
+    for it in items:
+        bucket = buckets.setdefault(str(it.get(key)), {"n": 0, "correct": 0})
+        bucket["n"] += 1
+        bucket["correct"] += 1 if it.get("correct") else 0
+    return {
+        k: {"n": b["n"], "cognitive_accuracy": b["correct"] / b["n"] if b["n"] else 0.0}
+        for k, b in buckets.items()
+    }
+
+
+def summarize_plus(items: list[dict]) -> dict:
+    """Aggregate LoCoMo-Plus Cognitive judged probe records.
+
+    Each item is expected to carry ``relation_type``, ``time_gap``, ``correct`` (bool),
+    ``prompt_tokens_est`` (int), ``llm_calls`` (int), and ``seconds`` (float). Reports overall
+    ``cognitive_accuracy`` (mean ``correct``) plus per-``relation_type`` and per-``time_gap``
+    breakdowns, and mean tokens/LLM-calls/seconds per probe.
+    """
+    n = len(items)
+    overall = sum(1 for it in items if it.get("correct")) / n if n else 0.0
+    tokens = [float(it.get("prompt_tokens_est", 0)) for it in items]
+    seconds = [float(it.get("seconds", 0.0)) for it in items]
+    calls = [float(it.get("llm_calls", 0)) for it in items]
+
+    return {
+        "n_probes": n,
+        "cognitive_accuracy": overall,
+        "per_relation_type": _bucket_accuracy(items, "relation_type"),
+        "per_time_gap": _bucket_accuracy(items, "time_gap"),
+        "mean_prompt_tokens_est": sum(tokens) / n if n else 0.0,
+        "mean_seconds": sum(seconds) / n if n else 0.0,
+        "mean_llm_calls": sum(calls) / n if n else 0.0,
+    }

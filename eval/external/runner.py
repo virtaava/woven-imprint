@@ -23,6 +23,7 @@ re-running ``run()`` skips whatever is already on disk.
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -36,12 +37,12 @@ from woven_imprint.engine import Engine
 from woven_imprint.llm.base import LLMProvider
 
 from . import metrics, report
-from .common import DATA_DIR, RESULTS_DIR, RUNS_DIR, Conversation, Question
+from .common import DATA_DIR, RESULTS_DIR, RUNS_DIR, Conversation, Probe, Question
 from .common import brain_llm as _brain_llm
 from .common import embedder as _make_embedder
-from .locomo import load_locomo
+from .locomo import load_locomo, load_locomo_plus
 from .longmemeval import load_longmemeval_s
-from .prompts import judge_messages, qa_messages
+from .prompts import judge_messages, plus_judge_messages, qa_messages
 
 # Full-context transcripts are truncated to this many characters (from the END — the most
 # recent, most-likely-relevant material) before being sent as the answering prompt.
@@ -51,6 +52,10 @@ QA_MAX_TOKENS = 60
 QA_TEMPERATURE = 0.0
 JUDGE_TEMPERATURE = 0.0
 _LOG_EVERY = 20
+
+# LoCoMo-Plus full-context response generation (per the spec's "LoCoMo-Plus answering" protocol).
+PLUS_FULLCONTEXT_TEMPERATURE = 0.3
+PLUS_FULLCONTEXT_MAX_TOKENS = 200
 
 
 def _load_locomo(path: Path, cfg: "RunConfig") -> list[Conversation]:
@@ -79,8 +84,12 @@ class RunConfig:
     fact_extraction_interval: int = 1
     max_sessions: int | None = None
     max_questions: int | None = None
-    reuse_run: str | None = None  # Task 4 stub — not implemented here
+    reuse_run: str | None = None  # bench "locomo_plus": required — base LoCoMo memory-mode run id
     dataset_path: str | Path | None = None
+    # bench "locomo_plus" only: the base LoCoMo conversations file probes are stitched onto
+    # (probe i -> base[i % len(base)]); defaults to DATA_DIR/"locomo.json". `dataset_path` above
+    # is the probes file itself (default DATA_DIR/"locomo_plus.json") for that bench.
+    base_dataset_path: str | Path | None = None
     shard: tuple[int, int] | None = (
         None  # (index, count): process conversations where i % count == index
     )
@@ -132,6 +141,18 @@ def _load_json(path: Path, default: Any) -> Any:
 def _save_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, default=str))
+
+
+def _save_json_atomic(path: Path, data: Any) -> None:
+    """Write ``data`` to ``path`` via a same-directory tmp file + rename.
+
+    Used for LoCoMo-Plus per-probe checkpoints: a killed run must never leave a
+    partially-written ``<probe_id>.json`` that a resumed run would mistake for "done".
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, default=str))
+    tmp.replace(path)
 
 
 def _conv_paths(run_root: Path, conv_id: str) -> dict[str, Path]:
@@ -380,6 +401,254 @@ def _process_conversation_fullcontext(
     print(f"[{conv.conv_id}] fullcontext: {len(records)} questions answered", flush=True)
     ingest_stats = {"turns": 0, "sessions": 0, "llm_calls": 0, "seconds": 0.0}
     return ingest_stats, records
+
+
+def judge_plus(evidence: str, response: str, llm) -> dict:
+    """Judge ``response`` against ``evidence`` with the LoCoMo-Plus Cognitive judge.
+
+    Unlike :func:`judge`, there is no gold answer — the probe's cue is the only evidence, and
+    the label is lowercase (``"correct"``/``"wrong"``) per the upstream JSON schema.
+    """
+    started = time.perf_counter()
+    result = llm.generate_json_robust(
+        plus_judge_messages(evidence, response), temperature=JUDGE_TEMPERATURE
+    )
+    label = ""
+    reason = ""
+    if isinstance(result, dict):
+        label = str(result.get("label", ""))
+        reason = str(result.get("reason", ""))
+    correct = "correct" in label.lower()
+    return {
+        "label": "correct" if correct else "wrong",
+        "reason": reason,
+        "correct": correct,
+        "seconds": time.perf_counter() - started,
+    }
+
+
+def _probe_checkpoint_path(run_root: Path, probe_id: str) -> Path:
+    return run_root / f"{probe_id}.json"
+
+
+def _process_probe_memory(
+    probe: Probe,
+    conv: Conversation,
+    cfg: "RunConfig",
+    base_llm: LLMProvider,
+    base_embedder: EmbeddingProvider,
+    reuse_root: Path,
+    run_root: Path,
+) -> dict:
+    """LoCoMo-Plus memory mode for one probe: copy the base conversation's ingested DB, ingest
+    the cue as its own session, then answer the trigger via ``Character.chat()`` — the real
+    product path, per the spec's "LoCoMo-Plus answering" protocol.
+
+    The DB copy is deleted after judging (each is small, but 401 of them add up on disk, and
+    nothing after this function needs it — only the checkpoint JSON is kept).
+    """
+    started = time.perf_counter()
+    source_db = reuse_root / f"{probe.base_conv_id}.db"
+    source_ingest = reuse_root / f"{probe.base_conv_id}.ingest.json"
+    if not source_db.exists() or not source_ingest.exists():
+        raise ValueError(
+            f"--reuse-run {cfg.reuse_run!r} is missing {probe.base_conv_id}.db/.ingest.json "
+            f"under {reuse_root} — run the LoCoMo memory-mode bench with --run-id {cfg.reuse_run!r} "
+            "first (locomo_plus memory mode reuses its ingested DBs)."
+        )
+
+    db_path = run_root / f"{probe.probe_id}.db"
+    shutil.copy2(source_db, db_path)
+
+    counting_llm = _CountingLLM(base_llm)
+    engine = Engine(db_path=db_path, llm=counting_llm, embedding=base_embedder)
+    try:
+        char = engine.get_character(probe.base_conv_id)
+        char.background = False
+        char.parallel = False
+        char.enforce_consistency = False
+        char.unified_assessment = True
+
+        clock.override(probe.cue.at)
+        char.start_session()
+        for turn in probe.cue.turns:
+            clock.advance(timedelta(seconds=30))
+            char.ingest(turn.role, turn.text, user_id=conv.user_name)
+        char.end_session()
+
+        clock.override(probe.trigger_at)
+        char.start_session()
+        response = (char.chat(probe.trigger_text, user_id=conv.user_name) or "").strip()
+        prompt_chars = sum(len(m.get("content", "")) for m in char.last_chat_messages)
+    finally:
+        engine.close()
+
+    jr = judge_plus(probe.evidence_text, response, counting_llm)
+    record = {
+        "probe_id": probe.probe_id,
+        "relation_type": probe.relation_type,
+        "time_gap": probe.time_gap,
+        "base_conv_id": probe.base_conv_id,
+        "response": response,
+        "label": jr["label"],
+        "reason": jr["reason"],
+        "correct": jr["correct"],
+        "prompt_tokens_est": prompt_chars // 4,
+        "llm_calls": counting_llm.calls,
+        "seconds": time.perf_counter() - started,
+    }
+    db_path.unlink(missing_ok=True)
+    return record
+
+
+def _process_probe_fullcontext(
+    probe: Probe, conv: Conversation, cfg: "RunConfig", base_llm: LLMProvider
+) -> dict:
+    """LoCoMo-Plus full-context mode for one probe: stitched transcript + trigger -> reply, no
+    Engine/DB at all, same judge as memory mode."""
+    started = time.perf_counter()
+    counting_llm = _CountingLLM(base_llm)
+
+    system = (
+        f"You are {conv.character_name}, continuing a long-running conversation with "
+        f"{conv.user_name}. Reply to the last message in at most 3 sentences."
+    )
+    response = (
+        counting_llm.generate(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": probe.stitched_text},
+            ],
+            temperature=PLUS_FULLCONTEXT_TEMPERATURE,
+            max_tokens=PLUS_FULLCONTEXT_MAX_TOKENS,
+        )
+        or ""
+    ).strip()
+
+    jr = judge_plus(probe.evidence_text, response, counting_llm)
+    return {
+        "probe_id": probe.probe_id,
+        "relation_type": probe.relation_type,
+        "time_gap": probe.time_gap,
+        "base_conv_id": probe.base_conv_id,
+        "response": response,
+        "label": jr["label"],
+        "reason": jr["reason"],
+        "correct": jr["correct"],
+        "prompt_tokens_est": len(probe.stitched_text) // 4,
+        "llm_calls": counting_llm.calls,
+        "seconds": time.perf_counter() - started,
+    }
+
+
+def run_plus(
+    cfg: "RunConfig",
+    llm: LLMProvider | None = None,
+    embedder: EmbeddingProvider | None = None,
+    out_dir: str | Path | None = None,
+) -> dict:
+    """Orchestrate a LoCoMo-Plus Cognitive-subset run (bench ``"locomo_plus"``).
+
+    Memory mode requires ``cfg.reuse_run`` — a prior ``bench="locomo"``/``mode="memory"`` run
+    whose per-conversation ``<conv_id>.db``/``.ingest.json`` this run copies from (one fresh copy
+    per probe, deleted after judging). Full-context mode needs no reuse run.
+
+    Checkpointing is per probe (``<probe_id>.json``, written atomically), unlike
+    :func:`run`'s per-conversation answer list — probes are independent single-shot units, so
+    there is nothing to accumulate within one probe's file.
+    """
+    started_at = datetime.now(timezone.utc)
+
+    base = Path(out_dir) if out_dir else None
+    run_root = (base / cfg.run_id) if base else (RUNS_DIR / cfg.run_id)
+    run_root.mkdir(parents=True, exist_ok=True)
+    results_dir = base if base else RESULTS_DIR
+
+    if cfg.mode == "memory":
+        if not cfg.reuse_run:
+            raise ValueError(
+                "locomo_plus memory mode requires --reuse-run <id> (a prior "
+                "bench=locomo mode=memory run to copy ingested DBs from)"
+            )
+        reuse_root = (base / cfg.reuse_run) if base else (RUNS_DIR / cfg.reuse_run)
+    elif cfg.mode != "fullcontext":
+        raise ValueError(f"Unknown mode {cfg.mode!r}; expected 'memory' or 'fullcontext'")
+    else:
+        reuse_root = None
+
+    base_dataset_path = (
+        Path(cfg.base_dataset_path) if cfg.base_dataset_path else DATA_DIR / "locomo.json"
+    )
+    probes_dataset_path = (
+        Path(cfg.dataset_path) if cfg.dataset_path else DATA_DIR / "locomo_plus.json"
+    )
+    base_convs = load_locomo(base_dataset_path)
+    probes = load_locomo_plus(probes_dataset_path, base_convs)
+    conv_by_id = {c.conv_id: c for c in base_convs}
+
+    if cfg.limit_conversations:
+        probes = probes[: cfg.limit_conversations]
+    if cfg.shard is not None:
+        index, count = cfg.shard
+        if not (0 <= index < count):
+            raise ValueError(f"bad shard {cfg.shard!r}")
+        probes = [p for i, p in enumerate(probes) if i % count == index]
+
+    base_llm = llm if llm is not None else _brain_llm()
+    base_embedder = embedder if embedder is not None else _make_embedder()
+
+    records: list[dict] = []
+    for i, probe in enumerate(probes):
+        checkpoint_path = _probe_checkpoint_path(run_root, probe.probe_id)
+        if checkpoint_path.exists():
+            records.append(_load_json(checkpoint_path, {}))
+            continue
+
+        conv = conv_by_id[probe.base_conv_id]
+        if cfg.mode == "memory":
+            assert reuse_root is not None
+            record = _process_probe_memory(
+                probe, conv, cfg, base_llm, base_embedder, reuse_root, run_root
+            )
+        else:
+            record = _process_probe_fullcontext(probe, conv, cfg, base_llm)
+
+        _save_json_atomic(checkpoint_path, record)
+        records.append(record)
+        if (i + 1) % _LOG_EVERY == 0:
+            print(f"  {i + 1}/{len(probes)} probes judged", flush=True)
+
+    summary = metrics.summarize_plus(records)
+    results = {
+        "run_id": cfg.run_id,
+        "bench": cfg.bench,
+        "mode": cfg.mode,
+        "model": getattr(base_llm, "model", None),
+        "judge": getattr(base_llm, "model", None),
+        "embedding": getattr(base_embedder, "model", None) if cfg.mode == "memory" else None,
+        "timestamp": started_at.isoformat(),
+        "config": {
+            "limit_conversations": cfg.limit_conversations,
+            "shard": list(cfg.shard) if cfg.shard else None,
+            "reuse_run": cfg.reuse_run,
+            "temperature": {
+                "judge": JUDGE_TEMPERATURE,
+                "fullcontext_response": PLUS_FULLCONTEXT_TEMPERATURE,
+            },
+        },
+        "summary": summary,
+        "probes": records,
+    }
+
+    # Judge-sample calibration (report.write_judge_sample) assumes LoCoMo/LongMemEval's
+    # category/kind/gold schema, which Plus records don't carry (relation_type/time_gap, no
+    # gold answer) — rather than force-fit them into that stratification, Plus judge decisions
+    # are simply not sampled for human review here (documented choice; the full judged
+    # `probes` list is already in the results file for spot-checking).
+    if cfg.write_results and not cfg.run_id.startswith("smoke"):
+        report.write_results(results, results_dir=results_dir)
+
+    return results
 
 
 def run(

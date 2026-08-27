@@ -210,12 +210,41 @@ class CharacterImporter:
             if analysis.get(key):
                 persona[key] = analysis[key]
 
+        # SillyTavern card fields: scenario/tags/greetings (soft), system_prompt
+        # (hard_constraints), creator_notes (hard, so export can read it back).
+        if analysis.get("scenario"):
+            persona["scenario"] = analysis["scenario"]
+        if analysis.get("tags"):
+            persona["tags"] = analysis["tags"]
+        if analysis.get("greetings"):
+            persona["greetings"] = analysis["greetings"]
+        if analysis.get("system_prompt"):
+            persona["hard_constraints"] = analysis["system_prompt"]
+        if analysis.get("creator_notes"):
+            persona["creator_notes"] = analysis["creator_notes"]
+
         # Create character
         char = self.engine.create_character(
             name=name,
             birthdate=analysis.get("birthdate"),
             persona=persona,
         )
+
+        # Seed lorebook entries as memories (enabled only; constants pinned to bedrock)
+        for entry in analysis.get("lorebook_entries", []):
+            keys = entry.get("keys", [])
+            content = entry.get("content", "")
+            constant = bool(entry.get("constant"))
+            char.memory.add(
+                content=f"[Lore: {', '.join(keys)}] {content}",
+                tier="bedrock" if constant else "core",
+                importance=0.8,
+                metadata={
+                    "source": "lorebook",
+                    "lorebook_keys": keys,
+                    "pinned": constant,
+                },
+            )
 
         # Seed additional memories from conversations
         memories = analysis.get("key_memories", [])
@@ -288,6 +317,38 @@ class CharacterImporter:
         if card.get("mes_example"):
             examples = card["mes_example"][:1000]
             result["speaking_style"] = self._extract_speaking_style(examples, result["name"])
+
+        # Scenario, system prompt, tags, creator notes pass through as-is.
+        if card.get("scenario"):
+            result["scenario"] = card["scenario"]
+        if card.get("system_prompt"):
+            result["system_prompt"] = card["system_prompt"]
+        if card.get("tags"):
+            result["tags"] = card["tags"]
+        if card.get("creator_notes"):
+            result["creator_notes"] = card["creator_notes"]
+
+        # Greetings: first_mes followed by any alternate_greetings, non-empty only.
+        greetings = [
+            g for g in [card.get("first_mes", ""), *card.get("alternate_greetings", [])] if g
+        ]
+        if greetings:
+            result["greetings"] = greetings
+
+        # Lorebook entries: enabled only, sorted by insertion order.
+        book = card.get("character_book")
+        if book and book.get("entries"):
+            enabled = [e for e in book["entries"] if e.get("enabled")]
+            enabled.sort(key=lambda e: e.get("insertion_order", 0))
+            result["lorebook_entries"] = [
+                {
+                    "keys": e.get("keys", []),
+                    "content": e.get("content", ""),
+                    "constant": bool(e.get("constant")),
+                    "insertion_order": e.get("insertion_order", 0),
+                }
+                for e in enabled
+            ]
 
         return result
 

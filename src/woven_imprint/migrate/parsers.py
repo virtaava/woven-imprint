@@ -88,7 +88,7 @@ def parse_tavernai_card(path: str | Path) -> dict:
 
         # Skip 8-byte PNG signature
         pos = 8
-        card_b64 = None
+        card_b64_by_keyword: dict[bytes, bytes] = {}
         while pos < len(raw) - 8:
             chunk_len = struct.unpack(">I", raw[pos : pos + 4])[0]
             chunk_type = raw[pos + 4 : pos + 8]
@@ -99,12 +99,13 @@ def parse_tavernai_card(path: str | Path) -> dict:
                 null_idx = chunk_data.find(b"\x00")
                 if null_idx != -1:
                     keyword = chunk_data[:null_idx]
-                    if keyword == b"chara":
-                        card_b64 = chunk_data[null_idx + 1 :]
-                        break
+                    if keyword in (b"chara", b"ccv3"):
+                        card_b64_by_keyword[keyword] = chunk_data[null_idx + 1 :]
 
             pos += 12 + chunk_len  # 4 len + 4 type + data + 4 CRC
 
+        # Prefer the V3 chunk when both are present.
+        card_b64 = card_b64_by_keyword.get(b"ccv3") or card_b64_by_keyword.get(b"chara")
         if card_b64 is None:
             raise ValueError("No 'chara' tEXt chunk found in PNG")
 
@@ -114,7 +115,9 @@ def parse_tavernai_card(path: str | Path) -> dict:
         with open(path) as f:
             card = json.load(f)
 
-    # Handle v2 spec wrapper
+    spec = card.get("spec")
+
+    # Handle v2/v3 spec wrapper
     if "data" in card:
         card = card["data"]
 
@@ -123,6 +126,7 @@ def parse_tavernai_card(path: str | Path) -> dict:
         "title": card.get("name", ""),
         "messages": [],
         "instructions": "",
+        "spec": spec,
         "card": {
             "name": card.get("name", ""),
             "description": card.get("description", ""),
@@ -132,6 +136,12 @@ def parse_tavernai_card(path: str | Path) -> dict:
             "scenario": card.get("scenario", ""),
             "creator_notes": card.get("creator_notes", ""),
             "tags": card.get("tags", []),
+            "system_prompt": card.get("system_prompt", ""),
+            "post_history_instructions": card.get("post_history_instructions", ""),
+            "alternate_greetings": card.get("alternate_greetings", []),
+            "creator": card.get("creator", ""),
+            "character_version": card.get("character_version", ""),
+            "character_book": card.get("character_book"),
         },
     }
 

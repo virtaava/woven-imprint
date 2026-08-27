@@ -7,6 +7,17 @@ from datetime import date
 from .. import clock
 
 
+def _render_value(val: object) -> str:
+    """Render a persona field value for the system prompt.
+
+    List values (e.g. tags, greetings) are comma-joined rather than
+    printed as a Python list repr.
+    """
+    if isinstance(val, (list, tuple)):
+        return ", ".join(str(v) for v in val)
+    return str(val)
+
+
 class PersonaModel:
     """Manages a character's persona with four constraint levels.
 
@@ -77,7 +88,7 @@ class PersonaModel:
             parts.append(f"Backstory: {self.backstory}")
         for key, val in self.hard.items():
             if key not in ("name", "backstory"):
-                parts.append(f"{key.replace('_', ' ').title()}: {val}")
+                parts.append(f"{key.replace('_', ' ').title()}: {_render_value(val)}")
 
         # Temporal facts
         if self.age is not None:
@@ -86,19 +97,19 @@ class PersonaModel:
                 parts.append("Today is your birthday!")
         for key, val in self.temporal.items():
             if key != "age":
-                parts.append(f"{key.replace('_', ' ').title()}: {val}")
+                parts.append(f"{key.replace('_', ' ').title()}: {_render_value(val)}")
 
         # Soft constraints
         if self.soft:
             personality = self.soft.get("personality", "")
             if personality:
-                parts.append(f"Personality: {personality}")
+                parts.append(f"Personality: {_render_value(personality)}")
             speaking_style = self.soft.get("speaking_style", "")
             if speaking_style:
-                parts.append(f"Speaking style: {speaking_style}")
+                parts.append(f"Speaking style: {_render_value(speaking_style)}")
             for key, val in self.soft.items():
                 if key not in ("personality", "speaking_style"):
-                    parts.append(f"{key.replace('_', ' ').title()}: {val}")
+                    parts.append(f"{key.replace('_', ' ').title()}: {_render_value(val)}")
 
         return "\n".join(parts)
 

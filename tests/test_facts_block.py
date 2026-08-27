@@ -69,6 +69,24 @@ def test_facts_block_in_volatile_context_and_gated():
         get_config().context.facts_block = True
 
 
+def test_pinned_fact_linked_memory_not_duplicated_in_volatile():
+    engine, char = _char()
+    m = char.memory.add("The visitor lives in Oulu.", tier="core")
+    char.facts.add(
+        subject="user",
+        predicate="lives_in",
+        object="Oulu",
+        statement=m["content"],
+        memory_id=m["id"],
+        user_id="toni",
+    )
+    char.memory.pin(m["id"])
+    char.chat("hi", user_id="toni")
+    volatile = char.last_chat_messages[1]["content"]
+    assert "Things you always remember" in volatile
+    assert volatile.count("The visitor lives in Oulu.") == 1
+
+
 def test_facts_block_keeps_newest_when_over_the_cap():
     # 14 same-importance facts recorded on 14 successive days: the block (cap
     # 12) must keep the 12 newest and drop the 2 oldest, not the reverse.

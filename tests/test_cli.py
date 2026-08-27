@@ -1,7 +1,9 @@
 """Tests for the CLI's argument handling."""
 
 import argparse
+import json
 
+from tests.helpers import make_test_engine
 from woven_imprint import cli
 
 
@@ -52,3 +54,15 @@ def test_maintain_jobs_drops_empty_tokens(monkeypatch):
 def test_maintain_jobs_none_when_omitted(monkeypatch):
     jobs = _run_cmd_maintain(monkeypatch, "")
     assert jobs is None
+
+
+def test_cmd_export_card_writes_v2_card(monkeypatch, tmp_path):
+    """cmd_export_card mirrors cmd_export: match by name prefix, write JSON to -o."""
+    engine = make_test_engine()
+    engine.create_character("Ada", persona={"backstory": "A detective."})
+    monkeypatch.setattr(cli, "_get_engine", lambda db: engine)
+    out = tmp_path / "ada_card.json"
+    args = argparse.Namespace(character="ada", db=None, output=str(out))
+    cli.cmd_export_card(args)
+    card = json.loads(out.read_text())
+    assert card["spec"] == "chara_card_v2" and card["data"]["name"] == "Ada"

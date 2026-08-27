@@ -19,6 +19,26 @@ pytest tests/ -v
 python eval/run_eval.py
 ```
 
+## Frontend (Demo UI)
+
+The demo UI (`demo/`, React + Vite) builds into `src/woven_imprint/demo_static/`, which is
+**committed** so `pip install woven-imprint[demo]` works without a Node toolchain. If you change
+anything under `demo/src/`, rebuild and commit the result:
+
+```bash
+cd demo && npm install && npm run build
+```
+
+`tests/test_demo_bundle.py` guards against a stale bundle — it greps the built JS for markers
+of the current API surface (e.g. `/api/memory/pinned`) and fails if they're missing, so a
+frontend change committed without rebuilding is caught by `pytest`, not discovered later at
+runtime.
+
+**Dev note**: `demo/src/lib/api.ts`'s `request()` helper migration is partial — only the
+Tier 3a endpoints (relationships, pinned/edit/delete memory, get/edit/delete facts) go through
+it; the older calls (chat, characters, config, sessions) still use `fetch()` directly. New
+endpoints should use `request()`; converting the rest is unfinished cleanup, not a regression.
+
 ## Code Style
 
 We use [ruff](https://docs.astral.sh/ruff/) for linting and formatting:

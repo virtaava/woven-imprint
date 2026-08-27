@@ -402,6 +402,64 @@ class SQLiteStorage:
             self._commit()
             return new_val
 
+    _MEMORY_TIERS = ("buffer", "core", "bedrock")
+
+    def update_memory_fields(
+        self,
+        memory_id: str,
+        *,
+        content: str | None = None,
+        embedding: list[float] | None = None,
+        importance: float | None = None,
+        tier: str | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        """Single UPDATE building only the provided SET clauses.
+
+        `content` changes must come with a new `embedding` (re-embed on the
+        caller side) — the two travel together or not at all.
+        """
+        sets: list[str] = []
+        params: list[Any] = []
+        if content is not None:
+            if embedding is None:
+                raise ValueError("content changes require a new embedding")
+            sets += ["content = ?", "embedding = ?"]
+            params += [content, _serialize_embedding(embedding)]
+        if importance is not None:
+            sets.append("importance = ?")
+            params.append(max(0.0, min(1.0, float(importance))))
+        if tier is not None:
+            if tier not in self._MEMORY_TIERS:
+                raise ValueError(f"invalid tier {tier!r}")
+            sets.append("tier = ?")
+            params.append(tier)
+        if metadata is not None:
+            sets.append("metadata = ?")
+            params.append(json.dumps(metadata))
+        if not sets:
+            return
+        params.append(memory_id)
+        with self._lock:
+            self._conn.execute(f"UPDATE memories SET {', '.join(sets)} WHERE id = ?", params)
+            self._commit()
+
+    def delete_memory(self, memory_id: str) -> bool:
+        """Hard delete (the FTS trigger keeps the index in sync). Returns whether a row was removed."""
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+            self._commit()
+            return cur.rowcount > 0
+
+    def list_pinned_memories(self, character_id: str) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT *, rowid FROM memories WHERE character_id = ? AND status = 'active' "
+                "AND json_extract(metadata, '$.pinned') = 1 ORDER BY created_at ASC, rowid ASC",
+                (character_id,),
+            ).fetchall()
+            return [self._row_to_memory(r) for r in rows]
+
     def touch_memory(self, memory_id: str) -> None:
         """Update accessed_at timestamp."""
         with self._lock:
@@ -622,6 +680,69 @@ class SQLiteStorage:
             q += " AND valid_to IS NULL AND expired_at IS NULL"
         with self._lock:
             return self._conn.execute(q, (character_id,)).fetchone()[0]
+
+    def update_fact_fields(
+        self,
+        fact_id: str,
+        *,
+        object: str | None = None,
+        statement: str | None = None,
+        certainty: float | None = None,
+        importance: float | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        sets: list[str] = []
+        params: list[Any] = []
+        if object is not None:
+            sets.append("object = ?")
+            params.append(object)
+        if statement is not None:
+            sets.append("statement = ?")
+            params.append(statement)
+        if certainty is not None:
+            sets.append("certainty = ?")
+            params.append(max(0.0, min(1.0, float(certainty))))
+        if importance is not None:
+            sets.append("importance = ?")
+            params.append(max(0.0, min(1.0, float(importance))))
+        if metadata is not None:
+            sets.append("metadata = ?")
+            params.append(json.dumps(metadata))
+        if not sets:
+            return
+        params.append(fact_id)
+        with self._lock:
+            self._conn.execute(f"UPDATE facts SET {', '.join(sets)} WHERE id = ?", params)
+            self._commit()
+
+    def delete_fact(self, fact_id: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
+            self._commit()
+            return cur.rowcount > 0
+
+    def unlink_fact_memory(self, memory_id: str) -> list[str]:
+        """Set memory_id=NULL on every fact referencing it (active or historical).
+
+        Returns only the ids of facts that were still *active* (`valid_to IS
+        NULL`) at the time of unlinking — historical/superseded facts are
+        unlinked too but are not returned, since a caller that retracts
+        every returned id (e.g. `MemoryStore.delete`) should not stamp an
+        already-expired fact as retracted.
+        """
+        with self._lock:
+            ids = [
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT id FROM facts WHERE memory_id = ? AND valid_to IS NULL",
+                    (memory_id,),
+                ).fetchall()
+            ]
+            self._conn.execute(
+                "UPDATE facts SET memory_id = NULL WHERE memory_id = ?", (memory_id,)
+            )
+            self._commit()
+        return ids
 
     # ── Sessions ────────────────────────────────────────────────
 

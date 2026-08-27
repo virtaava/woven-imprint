@@ -84,6 +84,8 @@ class ContextConfig:
     include_date: bool = True
     facts_block: bool = True
     facts_block_limit: int = 12
+    pinned_block: bool = True  # always include pinned memories in the prompt (see MemoryStore.pin)
+    pinned_limit: int = 10  # max pinned memories rendered in the "Things you always remember" block
 
 
 @dataclass

@@ -73,6 +73,27 @@ def record_message_service(engine, character_id, role, content, user_id, *, stri
     char.ingest(role=role, content=content, user_id=user_id)
 
 
+_MEMORY_KEEP = (
+    "id",
+    "tier",
+    "content",
+    "importance",
+    "certainty",
+    "status",
+    "created_at",
+    "accessed_at",
+    "metadata",
+    "session_id",
+    "role",
+)
+
+
+def _public_memory(m: dict) -> dict:
+    """Strip internal fields (notably `embedding`) from a memory row before it
+    leaves the process."""
+    return {k: m.get(k) for k in _MEMORY_KEEP}
+
+
 def recall_memories_service(engine, character_id, query, limit=10, user_id=None):
     char = engine.get_character(character_id)
     memories = char.recall(query, limit=limit)
@@ -88,7 +109,58 @@ def recall_memories_service(engine, character_id, query, limit=10, user_id=None)
             content = m.get("content", "")[:200]
             context_parts.append(f"- {content}")
     context = "\n".join(context_parts)
+    memories = [_public_memory(m) for m in memories]
     return {"memories": memories, "context": context}
+
+
+def list_pinned_service(engine, character_id):
+    """Raises KeyError if the character is not found."""
+    char = engine.get_character(character_id)
+    return [_public_memory(m) for m in char.memory.pinned()]
+
+
+def patch_memory_service(
+    char, memory_id, *, content=None, importance=None, tier=None, pinned=None
+) -> dict:
+    """Edit/pin a memory in place. Raises `ValueError` on bad `tier`/`importance`,
+    `KeyError` if the memory doesn't exist or belongs to another character —
+    checked up front so an empty body (no fields set) still 404s on a foreign
+    or missing memory instead of leaking it back unfiltered."""
+    row = char.storage.get_memory(memory_id)
+    if row is None or row.get("character_id") != char.id:
+        raise KeyError(memory_id)
+    if tier is not None and tier not in ("buffer", "core", "bedrock"):
+        raise ValueError("invalid tier")
+    if importance is not None and not (0.0 <= float(importance) <= 1.0):
+        raise ValueError("importance must be within [0, 1]")
+    if content is not None or importance is not None or tier is not None:
+        char.memory.edit(memory_id, content=content, importance=importance, tier=tier)
+    if pinned is not None:
+        char.memory.pin(memory_id, pinned)
+    row = char.storage.get_memory(memory_id)
+    if row is None:
+        raise KeyError(memory_id)
+    return _public_memory(row)
+
+
+def delete_memory_service(char, memory_id) -> None:
+    """Raises KeyError if the memory doesn't exist (or belongs to another character)."""
+    char.memory.delete(memory_id)
+
+
+def patch_fact_service(char, fact_id, *, object=None, statement=None) -> dict:
+    """Raises KeyError if the fact doesn't exist (or belongs to another character)."""
+    return _public_fact(char.facts.edit(fact_id, object=object, statement=statement))
+
+
+def retract_fact_service(char, fact_id) -> dict:
+    """Raises KeyError if the fact doesn't exist (or belongs to another character)."""
+    return _public_fact(char.facts.retract(fact_id))
+
+
+def delete_fact_service(char, fact_id) -> None:
+    """Raises KeyError if the fact doesn't exist (or belongs to another character)."""
+    char.facts.delete(fact_id)
 
 
 def get_relationship_service(engine, character_id, target_id):
@@ -97,6 +169,7 @@ def get_relationship_service(engine, character_id, target_id):
 
 
 _FACT_KEEP = (
+    "id",
     "subject",
     "predicate",
     "object",
@@ -104,7 +177,14 @@ _FACT_KEEP = (
     "valid_from",
     "valid_to",
     "certainty",
+    "superseded_by",
+    "memory_id",
+    "metadata",
 )
+
+
+def _public_fact(r: dict) -> dict:
+    return {k: r.get(k) for k in _FACT_KEEP}
 
 
 def get_facts_service(engine, character_id, subject=None, as_of=None):
@@ -114,7 +194,7 @@ def get_facts_service(engine, character_id, subject=None, as_of=None):
     rows = (
         char.facts.as_of(as_of, subject=subject) if as_of else char.facts.current(subject=subject)
     )
-    return [{k: r.get(k) for k in _FACT_KEEP} for r in rows]
+    return [_public_fact(r) for r in rows]
 
 
 def find_character_by_name_or_id(engine, name_or_id):
@@ -159,6 +239,12 @@ def export_character_service(engine, character_id):
     """Export character as JSON dict. Raises KeyError if not found."""
     char = engine.get_character(character_id)
     return char.export()
+
+
+def export_character_card_service(engine, character_id):
+    """Export character as a SillyTavern V2 character card dict. Raises KeyError if not found."""
+    char = engine.get_character(character_id)
+    return char.export_card()
 
 
 def import_character_service(engine, data: dict):

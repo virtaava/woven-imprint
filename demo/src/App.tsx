@@ -18,8 +18,14 @@ import {
   fetchSessions,
   renameSession as renameSessionApi,
   resumeSession as resumeSessionApi,
+  fetchPinned,
+  fetchFacts,
+  patchMemory,
+  deleteMemory,
+  patchFact,
+  retractFact,
 } from '@/lib/api'
-import type { ChatMessage, CharacterState, CharacterSummary, Memory, Relationship, ProviderConfig, Session } from '@/lib/types'
+import type { ChatMessage, CharacterState, CharacterSummary, Memory, Relationship, ProviderConfig, Session, Fact } from '@/lib/types'
 
 const MERIDIAN_GREETING: ChatMessage = {
   role: 'assistant',
@@ -40,6 +46,9 @@ export default function App() {
   const [characterState, setCharacterState] = useState<CharacterState | null>(null)
   const [memories, setMemories] = useState<Memory[]>([])
   const [relationship, setRelationship] = useState<Relationship | null>(null)
+  const [pinned, setPinned] = useState<Memory[]>([])
+  const [facts, setFacts] = useState<Fact[]>([])
+  const [xrayError, setXrayError] = useState<string | null>(null)
   const [providerConfig, setProviderConfig] = useState<ProviderConfig | null>(null)
   const [showProviderModal, setShowProviderModal] = useState(false)
   const [showCharacterDrawer, setShowCharacterDrawer] = useState(false)
@@ -153,6 +162,18 @@ export default function App() {
       } catch {
         // No relationship yet
       }
+      try {
+        const res = await fetchPinned(id)
+        setPinned(res.memories || [])
+      } catch {
+        // No pinned memories yet
+      }
+      try {
+        const res = await fetchFacts(id)
+        setFacts(res.facts || [])
+      } catch {
+        // No facts yet
+      }
     } catch {
       // Characters not available yet
     }
@@ -185,6 +206,18 @@ export default function App() {
     try {
       const rel = await fetchRelationship(characterId, 'user')
       setRelationship(rel)
+    } catch {
+      // ignore
+    }
+    try {
+      const res = await fetchPinned(characterId)
+      setPinned(res.memories || [])
+    } catch {
+      // ignore
+    }
+    try {
+      const res = await fetchFacts(characterId)
+      setFacts(res.facts || [])
     } catch {
       // ignore
     }
@@ -325,6 +358,66 @@ export default function App() {
     }
   }, [characterId, refreshSessions])
 
+  const handlePinMemory = useCallback(async (memoryId: string, pin: boolean) => {
+    if (!characterId) return
+    setXrayError(null)
+    try {
+      await patchMemory(characterId, memoryId, { pinned: pin })
+      await refreshXRay()
+    } catch (err) {
+      console.error('Failed to pin/unpin memory', err)
+      setXrayError('Could not update that memory. Please try again.')
+    }
+  }, [characterId, refreshXRay])
+
+  const handleEditMemory = useCallback(async (memoryId: string, content: string) => {
+    if (!characterId) return
+    setXrayError(null)
+    try {
+      await patchMemory(characterId, memoryId, { content })
+      await refreshXRay()
+    } catch (err) {
+      console.error('Failed to edit memory', err)
+      setXrayError('Could not save that memory. Please try again.')
+    }
+  }, [characterId, refreshXRay])
+
+  const handleDeleteMemory = useCallback(async (memoryId: string) => {
+    if (!characterId) return
+    setXrayError(null)
+    try {
+      await deleteMemory(characterId, memoryId)
+      await refreshXRay()
+    } catch (err) {
+      console.error('Failed to delete memory', err)
+      setXrayError('Could not delete that memory. Please try again.')
+    }
+  }, [characterId, refreshXRay])
+
+  const handleEditFact = useCallback(async (factId: string, object: string) => {
+    if (!characterId) return
+    setXrayError(null)
+    try {
+      await patchFact(characterId, factId, { object })
+      await refreshXRay()
+    } catch (err) {
+      console.error('Failed to edit fact', err)
+      setXrayError('Could not save that fact. Please try again.')
+    }
+  }, [characterId, refreshXRay])
+
+  const handleRetractFact = useCallback(async (factId: string) => {
+    if (!characterId) return
+    setXrayError(null)
+    try {
+      await retractFact(characterId, factId)
+      await refreshXRay()
+    } catch (err) {
+      console.error('Failed to retract fact', err)
+      setXrayError('Could not retract that fact. Please try again.')
+    }
+  }, [characterId, refreshXRay])
+
   const handleProviderSaved = useCallback(
     async (config: ProviderConfig) => {
       setProviderConfig(config)
@@ -376,6 +469,8 @@ export default function App() {
       setMemories([])
       setRelationship(null)
       setSearchResults([])
+      setPinned([])
+      setFacts([])
       try {
         const mems = await recallMemories(newId, 'recent', 10)
         setMemories(Array.isArray(mems) ? mems : mems.memories || [])
@@ -387,6 +482,18 @@ export default function App() {
         setRelationship(rel)
       } catch {
         // No relationship yet
+      }
+      try {
+        const res = await fetchPinned(newId)
+        setPinned(res.memories || [])
+      } catch {
+        // No pinned memories yet
+      }
+      try {
+        const res = await fetchFacts(newId)
+        setFacts(res.facts || [])
+      } catch {
+        // No facts yet
       }
     },
     [characterId, sessionId]
@@ -437,6 +544,14 @@ export default function App() {
               activeSessionId={sessionId}
               onResumeSession={handleResumeSession}
               onRenameSession={handleRenameSession}
+              pinned={pinned}
+              facts={facts}
+              onPin={handlePinMemory}
+              onEditMemory={handleEditMemory}
+              onDeleteMemory={handleDeleteMemory}
+              onEditFact={handleEditFact}
+              onRetractFact={handleRetractFact}
+              error={xrayError}
             />
           </div>
         )}

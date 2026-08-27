@@ -1,8 +1,20 @@
+import type { Memory, Fact, Relationship } from './types'
+
 const headers = () => ({
   'Content-Type': 'application/json',
 })
 
 const API_BASE = ''  // Same origin
+
+async function request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { headers: headers(), ...init })
+  if (!res.ok) {
+    let detail = res.statusText
+    try { detail = (await res.json()).detail ?? detail } catch { /* keep statusText */ }
+    throw new Error(`${res.status} ${detail}`)
+  }
+  return res.json() as Promise<T>
+}
 
 export async function fetchHealth() {
   const res = await fetch(`${API_BASE}/api/health`)
@@ -39,10 +51,26 @@ export async function recallMemories(characterId: string, query: string, limit =
   return res.json()
 }
 
-export async function fetchRelationship(charId: string, targetId: string) {
-  const res = await fetch(`${API_BASE}/api/relationships/${charId}/${targetId}`, { headers: headers() })
-  return res.json()
-}
+export const fetchRelationship = (charId: string, targetId: string) =>
+  request<{ relationship: Relationship }>(`/api/relationships/${charId}/${targetId}`).then((res) => res.relationship)
+
+export const fetchPinned = (characterId: string) =>
+  request<{ memories: Memory[] }>(`/api/memory/pinned?${new URLSearchParams({ character_id: characterId })}`)
+
+export const patchMemory = (characterId: string, memoryId: string, patch: { content?: string; importance?: number; tier?: string; pinned?: boolean }) =>
+  request<{ memory: Memory }>(`/api/memory/${memoryId}`, { method: 'PATCH', body: JSON.stringify({ character_id: characterId, ...patch }) })
+
+export const deleteMemory = (characterId: string, memoryId: string) =>
+  request<{ deleted: boolean }>(`/api/memory/${memoryId}?${new URLSearchParams({ character_id: characterId })}`, { method: 'DELETE' })
+
+export const fetchFacts = (characterId: string, subject = 'user') =>
+  request<{ facts: Fact[] }>(`/api/facts/${characterId}?${new URLSearchParams({ subject })}`)
+
+export const patchFact = (characterId: string, factId: string, patch: { object?: string; statement?: string }) =>
+  request<{ fact: Fact }>(`/api/facts/${factId}`, { method: 'PATCH', body: JSON.stringify({ character_id: characterId, ...patch }) })
+
+export const retractFact = (characterId: string, factId: string) =>
+  request<{ fact: Fact }>(`/api/facts/${factId}?${new URLSearchParams({ character_id: characterId })}`, { method: 'DELETE' })
 
 export async function getProviderConfig() {
   const res = await fetch(`${API_BASE}/api/config/provider`, { headers: headers() })

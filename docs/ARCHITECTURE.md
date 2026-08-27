@@ -57,6 +57,63 @@ needed.
 - Rarely changes, highest retrieval weight
 - Seeded from persona definition, enriched by significant interactions
 
+### Pinned Memories
+
+`MemoryStore.pin(memory_id, pinned=True)` sets `metadata.pinned` (no schema migration — pin
+state lives inside the existing `metadata` JSON column, queried via `json_extract`). Pinned
+memories get a placement no other memory has: `Character._build_context` renders them into a
+"Things you always remember:" block in the **volatile-but-non-sheddable** part of the system
+prompt (right after the "Today is …" line), via `context.pinned_block` (default `true`) /
+`context.pinned_limit` (default `10`, oldest pinned memory first). That block counts toward
+`base_size` — the one part of the context budget that is never trimmed when the total exceeds
+`context.total_tokens` — so a pinned memory survives budget pressure that would otherwise drop
+it. Pinned memories are excluded from the separately-retrieved memories list so nothing appears
+twice. The `pinned_always_present` long-horizon benchmark checks exactly this: pin a day-3
+memory, run to day 60, and confirm the pinned text is still in the volatile block and not
+duplicated below it (see [docs/RESULTS.md](RESULTS.md)).
+
+### Editable Memory & Facts
+
+Every memory and fact is viewable and editable from the library, HTTP, and MCP — this is what
+makes memory a user-facing artifact rather than an opaque store:
+
+```
+MemoryStore.edit(memory_id, *, content=None, importance=None, tier=None) -> dict
+MemoryStore.delete(memory_id) -> None     # unlinks all + retracts only the still-active fact
+MemoryStore.pin(memory_id, pinned=True) -> dict
+MemoryStore.pinned() -> list[dict]
+
+FactStore.edit(fact_id, *, object=None, statement=None) -> dict   # re-embeds the linked memory
+FactStore.retract(fact_id) -> dict        # expires now; linked memory -> status="archived"
+FactStore.delete(fact_id) -> None         # hard delete of the fact row only
+```
+
+`edit()` on a memory re-embeds when `content` changes (through the same
+`guard_embedding_dimension` check every write goes through). Editing a memory's `content` is
+one-directional, though: it does **not** rewrite a linked fact's `statement` — the fact keeps
+its original text until someone edits the fact itself. Deleting a memory means "forget this":
+it calls `unlink_fact_memory` (which clears `memory_id` on every fact pointing there, active or
+historical) but only retracts the ones still active (`valid_to IS NULL`) — a superseded
+historical fact keeps its own expiry/successor and isn't stamped `retracted` just because the
+memory it once pointed at is gone. Retracting a fact is softer — it archives the linked memory
+but the fact stays in `FactStore.history()`.
+
+`FactStore.edit()` can be given `object` without `statement`: the new statement is then derived
+from the old one — a case-insensitive replace of the old object text within the old statement
+if it's found there, else the old statement gets an appended `" — now: <new_object>."` clause.
+Either way the derived (or explicit) statement is what gets written back to the linked memory's
+`content`, so the UI's object-only fact edit still keeps memory text in sync — see
+`memory/facts.py::_derive_statement`.
+
+`Character.memory.edit/delete/pin/pinned` and
+`Character.facts.edit/retract/delete` are the public surface; no new `Character` methods were
+needed. Every mutation is additionally exposed over HTTP
+(`PATCH`/`DELETE /api/memory/{id}`, `GET /api/memory/pinned`, `PATCH`/`DELETE /api/facts/{id}`)
+and MCP (`edit_memory`, `delete_memory`, `pin_memory`, `list_pinned`, `edit_fact`,
+`retract_fact`) — both under the same character-ownership check other mutation routes use, so a
+memory or fact that doesn't belong to the given `character_id` 404s rather than leaking across
+characters.
+
 ### Retrieval Function
 
 Multi-strategy retrieval via Reciprocal Rank Fusion (RRF):
@@ -414,6 +471,35 @@ prompts against a smaller model. `character.py::_build_context`'s "Today
 is …" header and memories preamble are intentionally NOT in the registry —
 they stay literal strings at the call site.
 
+### SillyTavern Interchange
+
+**Import** (`migrate/parsers.py::parse_tavernai_card`, `migrate/importer.py`): a TavernAI/
+SillyTavern V2 card (`chara_card_v2`), JSON or PNG (`tEXt` chunk — V3 `ccv3` preferred over V2
+`chara` when both are present), maps `scenario`/`tags`/`alternate_greetings` (+ `first_mes`)
+into soft persona traits, `system_prompt` into `hard.hard_constraints`, and `creator_notes` into
+`hard.creator_notes`. Each **enabled** `character_book` (lorebook) entry becomes a memory:
+`constant` entries import as pinned `bedrock` memories (`metadata.pinned=True`) — the closest
+equivalent to SillyTavern's always-on lore — and keyed entries import as ordinary `core`
+memories, both with content prefixed `[Lore: key1, key2, ...] `. `keys` is coerced from
+string/comma-string/list-with-stray-entries into a clean `list[str]`; missing `enabled`
+defaults to `True` (hand-edited cards sometimes omit it).
+
+**Export** (`Character.export_card(core_limit=20) -> dict`): builds a `chara_card_v2` card —
+`name`, `description` (backstory), `personality`, `scenario`, `first_mes`/`alternate_greetings`
+(from persona greetings), `system_prompt` (`hard.hard_constraints`), `creator_notes`, `tags` —
+with a generated `character_book` whose entries are, in order: every pinned memory
+(`constant: true`), every current `subject="user"` fact (`statement` as content, `keys` built
+from the fact's object + predicate words), then the top `core_limit` core memories by
+importance (`constant: false`, excluding anything already pinned or fact-linked). CLI
+`woven-imprint export-card <name-or-id> [-o card.json]`; HTTP `GET /api/characters/{id}/card`.
+
+**Round trip is lossy, by design of the card format**: re-importing an exported card wraps
+every lorebook entry's content as `[Lore: keys] content`, so exported memory text comes back
+prefixed rather than verbatim; facts export as plain-text lorebook entries and come back as
+memories (pinned bedrock if they were exported `constant`), not as `FactStore` rows — the card
+format has no subject/predicate/object shape, so structured fact history and the fact ↔ memory
+link do not survive an export → import cycle.
+
 ## Storage
 
 ### SQLite Schema (local-first default)
@@ -569,9 +655,17 @@ character.facts.current("user", "lives_in")       # current belief
 character.facts.as_of("2026-05-20", "user", ...)   # what was true then
 character.facts.history("user", "lives_in")        # every version
 
+character.memory.pin(memory_id)                    # always in the prompt, never dropped
+character.memory.edit(memory_id, content="...")    # re-embeds on content change
+character.memory.delete(memory_id)                 # also retracts any linked fact
+character.facts.edit(fact_id, object="...")
+character.facts.retract(fact_id)                    # no longer current; kept in history
+
 character.export(path)  # full character state as JSON, including facts
 character = engine.import_character(path)
+card = character.export_card()  # SillyTavern V2 card + lorebook (pinned/facts/core)
 
 # MCP Server
-# Exposes: chat, recall, reflect, list_characters, get_relationship, get_facts, get_stats
+# Exposes: chat, recall, reflect, list_characters, get_relationship, get_facts, get_stats,
+# edit_memory, delete_memory, pin_memory, list_pinned, edit_fact, retract_fact
 ```

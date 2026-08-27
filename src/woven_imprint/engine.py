@@ -86,13 +86,26 @@ class Engine:
         normalized["hard"]["name"] = name
 
         # Move shorthand persona fields to soft constraints
-        for key in ("personality", "speaking_style", "occupation", "appearance", "role"):
+        for key in (
+            "personality",
+            "speaking_style",
+            "occupation",
+            "appearance",
+            "role",
+            "scenario",
+            "tags",
+            "greetings",
+        ):
             if key in persona and key not in normalized["soft"]:
                 normalized["soft"][key] = persona[key]
 
         # Flat hard_constraints is a hard constraint (was silently dropped before 0.6)
         if "hard_constraints" in persona and "hard_constraints" not in normalized["hard"]:
             normalized["hard"]["hard_constraints"] = persona["hard_constraints"]
+
+        # Flat creator_notes is a hard constraint (so export can read it back)
+        if "creator_notes" in persona and "creator_notes" not in normalized["hard"]:
+            normalized["hard"]["creator_notes"] = persona["creator_notes"]
 
         # Move backstory to hard
         if "backstory" in persona:

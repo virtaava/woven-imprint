@@ -7,11 +7,45 @@ Woven Imprint character with persona, memories, and backstory.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ..engine import Engine
 from ..character import Character
 from .parsers import auto_detect, parse_custom_gpt, parse_chatgpt_export
+
+_MACRO_CHAR_RE = re.compile(r"\{\{char\}\}", re.IGNORECASE)
+_MACRO_USER_RE = re.compile(r"\{\{user\}\}", re.IGNORECASE)
+
+
+def _substitute_macros(text: str, name: str) -> str:
+    """Replace TavernAI-style ``{{char}}``/``{{user}}`` macros in imported text.
+
+    ``{{char}}`` becomes the card's character name and ``{{user}}`` becomes
+    the generic "the visitor", since Woven Imprint has no concept of a
+    named user persona at import time. Matching is case-insensitive, since
+    SillyTavern/TavernAI macros are conventionally case-insensitive.
+    """
+    if not text:
+        return text
+    text = _MACRO_CHAR_RE.sub(name, text)
+    text = _MACRO_USER_RE.sub("the visitor", text)
+    return text
+
+
+def _norm_keys(v: object) -> list[str]:
+    """Coerce a lorebook entry's ``keys`` field to a clean list[str].
+
+    Hand-edited cards sometimes store ``keys`` as a comma-separated string,
+    a single bare string, or a list with stray non-string/blank entries.
+    """
+    if isinstance(v, str):
+        if "," in v:
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return [v.strip()] if v.strip() else []
+    if isinstance(v, list):
+        return [str(k).strip() for k in v if str(k).strip()]
+    return []
 
 
 class CharacterImporter:
@@ -210,12 +244,42 @@ class CharacterImporter:
             if analysis.get(key):
                 persona[key] = analysis[key]
 
+        # SillyTavern card fields: scenario/tags/greetings (soft), system_prompt
+        # (hard_constraints), creator_notes (hard, so export can read it back).
+        if analysis.get("scenario"):
+            persona["scenario"] = analysis["scenario"]
+        if analysis.get("tags"):
+            persona["tags"] = analysis["tags"]
+        if analysis.get("greetings"):
+            persona["greetings"] = analysis["greetings"]
+        if analysis.get("system_prompt"):
+            persona["hard_constraints"] = analysis["system_prompt"]
+        if analysis.get("creator_notes"):
+            persona["creator_notes"] = analysis["creator_notes"]
+
         # Create character
         char = self.engine.create_character(
             name=name,
             birthdate=analysis.get("birthdate"),
             persona=persona,
         )
+
+        # Seed lorebook entries as memories (enabled only; constants pinned to bedrock)
+        for entry in analysis.get("lorebook_entries", []):
+            keys = entry.get("keys", [])
+            content = entry.get("content", "")
+            constant = bool(entry.get("constant"))
+            lore_label = f"[Lore: {', '.join(keys)}]" if keys else "[Lore]"
+            char.memory.add(
+                content=f"{lore_label} {content}",
+                tier="bedrock" if constant else "core",
+                importance=0.8,
+                metadata={
+                    "source": "lorebook",
+                    "lorebook_keys": keys,
+                    "pinned": constant,
+                },
+            )
 
         # Seed additional memories from conversations
         memories = analysis.get("key_memories", [])
@@ -267,10 +331,11 @@ class CharacterImporter:
 
     def _analyze_tavernai(self, card: dict) -> dict:
         """Extract character info from a TavernAI card — often already structured."""
+        name = card.get("name", "Unknown")
         result = {
-            "name": card.get("name", "Unknown"),
-            "personality": card.get("personality", ""),
-            "backstory": card.get("description", ""),
+            "name": name,
+            "personality": _substitute_macros(card.get("personality", ""), name),
+            "backstory": _substitute_macros(card.get("description", ""), name),
             "speaking_style": "",
             "key_memories": [],
         }
@@ -280,14 +345,49 @@ class CharacterImporter:
             result = self._llm_extract(
                 f"Character name: {result['name']}\n"
                 f"Description: {result['backstory']}\n"
-                f"Example dialogue: {card.get('mes_example', '')[:500]}",
+                f"Example dialogue: {_substitute_macros(card.get('mes_example', ''), name)[:500]}",
                 existing=result,
             )
 
         # Extract speaking style from example messages
         if card.get("mes_example"):
-            examples = card["mes_example"][:1000]
+            examples = _substitute_macros(card["mes_example"], name)[:1000]
             result["speaking_style"] = self._extract_speaking_style(examples, result["name"])
+
+        # Scenario and system prompt pass through with macros substituted; tags and
+        # creator notes pass through as-is (author-facing metadata, not model-facing text).
+        if card.get("scenario"):
+            result["scenario"] = _substitute_macros(card["scenario"], name)
+        if card.get("system_prompt"):
+            result["system_prompt"] = _substitute_macros(card["system_prompt"], name)
+        if card.get("tags"):
+            result["tags"] = card["tags"]
+        if card.get("creator_notes"):
+            result["creator_notes"] = card["creator_notes"]
+
+        # Greetings: first_mes followed by any alternate_greetings, non-empty only.
+        greetings = [
+            _substitute_macros(g, name)
+            for g in [card.get("first_mes", ""), *card.get("alternate_greetings", [])]
+            if g
+        ]
+        if greetings:
+            result["greetings"] = greetings
+
+        # Lorebook entries: enabled only, sorted by insertion order.
+        book = card.get("character_book")
+        if book and book.get("entries"):
+            enabled = [e for e in book["entries"] if e.get("enabled", True)]
+            enabled.sort(key=lambda e: e.get("insertion_order", 0))
+            result["lorebook_entries"] = [
+                {
+                    "keys": _norm_keys(e.get("keys", [])),
+                    "content": _substitute_macros(e.get("content", ""), name),
+                    "constant": bool(e.get("constant")),
+                    "insertion_order": e.get("insertion_order", 0),
+                }
+                for e in enabled
+            ]
 
         return result
 

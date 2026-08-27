@@ -7,6 +7,7 @@ import re
 from .. import clock
 from ..storage.sqlite import SQLiteStorage
 from ..utils.text import generate_id
+from .store import guard_embedding_dimension
 
 _WS = re.compile(r"[\s_]+")
 
@@ -36,10 +37,28 @@ def _norm_time(value: str | None) -> str | None:
         return None
 
 
+def _derive_statement(old_statement: str, old_object: str, new_object: str) -> str:
+    """Derive a new statement for an object-only fact edit.
+
+    Word-boundary, case-insensitive replace of the old object text in the old
+    statement if it appears there as a whole word/phrase (not as a substring
+    of a larger word — e.g. object "tea" must not match inside "steam");
+    otherwise append a "— now: <new_object>." clause so the statement still
+    reflects the update.
+    """
+    if old_object:
+        pattern = re.compile(r"(?<!\w)" + re.escape(old_object) + r"(?!\w)", re.IGNORECASE)
+        if pattern.search(old_statement):
+            return pattern.sub(new_object, old_statement, count=1)
+    return f"{old_statement.rstrip('.')} — now: {new_object}."
+
+
 class FactStore:
-    def __init__(self, storage: SQLiteStorage, character_id: str):
+    def __init__(self, storage: SQLiteStorage, character_id: str, embedder=None):
         self.storage = storage
         self.character_id = character_id
+        # Used by `edit()` to re-embed a linked memory when its content changes.
+        self.embedder = embedder
 
     def add(
         self,
@@ -123,6 +142,59 @@ class FactStore:
             expired_at=clock.sqlite_ts(),
             superseded_by=superseded_by,
         )
+
+    def edit(
+        self, fact_id: str, *, object: str | None = None, statement: str | None = None
+    ) -> dict:
+        """Edit a fact in place; if linked to a memory and `statement` changes (or is
+        derived from an `object`-only edit), updates the memory's content too
+        (re-embedding through `self.embedder` when present) so text and record stay
+        consistent.
+
+        When `object` is given without `statement`, the new statement is derived from
+        the old one: a case-insensitive replace of the old object text if it appears
+        in the old statement, else an appended "— now: <object>." clause.
+        """
+        f = self.get(fact_id)
+        if f is None or f.get("character_id") != self.character_id:
+            raise KeyError(fact_id)
+        if object is not None and statement is None:
+            statement = _derive_statement(f.get("statement") or "", f.get("object") or "", object)
+        self.storage.update_fact_fields(fact_id, object=object, statement=statement)
+        if statement is not None and f.get("memory_id") and self.embedder is not None:
+            embedding = self.embedder.embed(statement)
+            guard_embedding_dimension(self.storage, embedding)
+            self.storage.update_memory_fields(
+                f["memory_id"], content=statement, embedding=embedding
+            )
+        updated = self.get(fact_id)
+        assert updated is not None
+        return updated
+
+    def retract(self, fact_id: str) -> dict:
+        """Expire a fact now with no successor and mark it retracted; archives the
+        linked memory (if it still exists)."""
+        f = self.get(fact_id)
+        if f is None or f.get("character_id") != self.character_id:
+            raise KeyError(fact_id)
+        now = clock.sqlite_ts()
+        if f.get("valid_to") is None:
+            self.storage.expire_fact(fact_id, valid_to=now, expired_at=now, superseded_by=None)
+        meta = dict(f.get("metadata") or {})
+        meta["retracted"] = True
+        self.storage.update_fact_fields(fact_id, metadata=meta)
+        if f.get("memory_id") and self.storage.get_memory(f["memory_id"]) is not None:
+            self.storage.update_memory_status(f["memory_id"], "archived")
+        updated = self.get(fact_id)
+        assert updated is not None
+        return updated
+
+    def delete(self, fact_id: str) -> None:
+        """Hard delete of the fact row only (memory untouched)."""
+        f = self.get(fact_id)
+        if f is None or f.get("character_id") != self.character_id:
+            raise KeyError(fact_id)
+        self.storage.delete_fact(fact_id)
 
     def bump_certainty(self, fact_id: str, delta: float = 0.15) -> None:
         f = self.get(fact_id)

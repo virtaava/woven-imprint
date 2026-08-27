@@ -62,7 +62,8 @@ class Character:
 
         # Sub-systems
         self.memory = MemoryStore(storage, embedder, char_id)
-        self.facts = FactStore(storage, char_id)
+        self.facts = FactStore(storage, char_id, embedder=embedder)
+        self.memory.facts = self.facts
         self.retriever = MemoryRetriever(storage, embedder, char_id)
         self.belief = BeliefReviser(storage, char_id, embedder=embedder)
         self.relationships = RelationshipModel(storage, char_id)
@@ -1034,6 +1035,95 @@ class Character:
 
         return data
 
+    def export_card(self, *, core_limit: int = 20) -> dict:
+        """Export as a SillyTavern/TavernAI V2 character card with a lorebook built from
+        pinned memories, current user facts and the most important core memories.
+
+        Round-trip note: re-importing the resulting card (`CharacterImporter.from_file`)
+        wraps every lorebook entry's content as ``[Lore: keys] content``, so exported
+        memory text comes back prefixed rather than verbatim. Facts are exported as
+        lorebook entries (plain text, no structured subject/predicate/object) and come
+        back on import as plain core (or pinned bedrock, if constant) memories, not as
+        `FactStore` facts — structured fact history does not round-trip through the
+        card format.
+        """
+        soft, hard = self.persona.soft, self.persona.hard
+        greetings = soft.get("greetings") or []
+        if isinstance(greetings, str):
+            greetings = [greetings]
+        entries: list[dict] = []
+        order = 0
+        for m in self.memory.pinned():
+            entries.append(
+                {
+                    "keys": _lore_keys(m["content"]),
+                    "content": m["content"],
+                    "enabled": True,
+                    "constant": True,
+                    "insertion_order": order,
+                    "comment": "pinned memory",
+                }
+            )
+            order += 1
+        for f in self.facts.current(subject="user", limit=None):
+            keys = [f["object"]] + [w for w in f["predicate"].split("_") if len(w) > 3]
+            entries.append(
+                {
+                    "keys": keys,
+                    "content": f["statement"],
+                    "enabled": True,
+                    "constant": False,
+                    "insertion_order": order,
+                    "comment": f"fact {f['subject']}.{f['predicate']}",
+                }
+            )
+            order += 1
+        pinned_ids = {m["id"] for m in self.memory.pinned()}
+        core = [
+            m
+            for m in self.memory.get_all(tier="core", limit=None)
+            if m["id"] not in pinned_ids and not m.get("metadata", {}).get("fact_id")
+        ]
+        core.sort(key=lambda m: -float(m.get("importance", 0.5)))
+        for m in core[:core_limit]:
+            entries.append(
+                {
+                    "keys": _lore_keys(m["content"]),
+                    "content": m["content"],
+                    "enabled": True,
+                    "constant": False,
+                    "insertion_order": order,
+                    "comment": "core memory",
+                }
+            )
+            order += 1
+        tags = soft.get("tags") or []
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(",") if t.strip()]
+        return {
+            "spec": "chara_card_v2",
+            "spec_version": "2.0",
+            "data": {
+                "name": self.name,
+                "description": self.persona.backstory or "",
+                "personality": soft.get("personality", ""),
+                "scenario": soft.get("scenario", ""),
+                "first_mes": greetings[0] if greetings else "",
+                "alternate_greetings": list(greetings[1:]),
+                "mes_example": "",
+                "creator_notes": (
+                    self.persona.hard.get("creator_notes") or "exported by woven-imprint"
+                ),
+                "system_prompt": hard.get("hard_constraints", ""),
+                "post_history_instructions": "",
+                "tags": tags,
+                "creator": "woven-imprint",
+                "character_version": "1",
+                "extensions": {"woven_imprint": {"character_id": self.id}},
+                "character_book": {"name": f"{self.name} memories", "entries": entries},
+            },
+        }
+
     def _build_context(
         self,
         user_message: str,
@@ -1051,25 +1141,43 @@ class Character:
         5. Keep if room: emotional state, arc, relationship description
         6. Compress conversation if still over budget
         """
+        from .config import get_config
+
+        # Budget is frozen per Character at construction time (see `__init__`'s
+        # `context_budget` default) by design — every other budget field
+        # (system_prompt/memories/conversation/reserve/max_turns) is likewise
+        # frozen, so `total` alone reading live config would be a partial,
+        # unintended hot-reload. Tests that need a tiny budget mutate the
+        # Character's own `_context.budget.total` instead of global config.
         budget_chars = self._context.budget.total * 4  # tokens → chars
 
         # Components with their priority (lower = keep longer)
         system_prompt = self.persona.build_system_prompt()
         emotion_desc = self.emotion.describe()
         arc_desc = self.arc.describe()
-        memory_text = self._format_memories(memories)
 
-        # Volatile block (today's date/emotion/arc/relationship/memories) —
-        # kept separate from system_prompt so message 0 stays byte-identical
-        # across turns (provider prefix-caching friendly). The date line
-        # lives here, never in the stable persona prompt, precisely because
-        # it changes daily and would otherwise bust the prefix cache.
+        # Volatile block (today's date/pinned memories/emotion/arc/relationship/
+        # retrieved memories) — kept separate from system_prompt so message 0
+        # stays byte-identical across turns (provider prefix-caching friendly).
+        # The date line lives here, never in the stable persona prompt, precisely
+        # because it changes daily and would otherwise bust the prefix cache.
         volatile = ""
-        from .config import get_config
 
         if get_config().context.include_date:
             today = clock.now()
             volatile = f"Today is {today.strftime('%A')}, {today.date().isoformat()}."
+
+        # Pinned memories are always in the prompt — never sheddable, so they're
+        # folded into `volatile` (and thus `base_size`) before any shedding logic
+        # runs. Excluded from the sheddable `memories` list below so they never
+        # appear twice.
+        pinned_text, pinned_ids = self._format_pinned_block()
+        if pinned_text:
+            volatile += ("\n\n" if volatile else "") + pinned_text
+        if pinned_ids:
+            memories = [m for m in memories if m["id"] not in pinned_ids]
+
+        memory_text = self._format_memories(memories)
 
         # Add optional components, tracking size
         optional_parts = []
@@ -1079,15 +1187,15 @@ class Character:
             optional_parts.append(("arc", f"\n\n{arc_desc}"))
         if rel_context:
             optional_parts.append(("relationship", f"\n\n{rel_context}"))
-        facts_text = self._format_facts_block(user_id)
+        facts_text = self._format_facts_block(user_id, pinned_ids)
         if facts_text:
             optional_parts.append(("facts", f"\n\n{facts_text}"))
         if memory_text:
             optional_parts.append(("memories", f"\n\nYour relevant memories:\n{memory_text}"))
 
-        # Calculate base size (system prompt + user message + date line —
-        # the date line is always kept, so it counts toward the base budget
-        # rather than the sheddable optional parts).
+        # Calculate base size (system prompt + user message + date line +
+        # pinned-memory block — these are always kept, so they count toward
+        # the base budget rather than the sheddable optional parts).
         base_size = len(system_prompt) + len(user_message) + len(volatile)
 
         # Add conversation history size
@@ -1114,8 +1222,11 @@ class Character:
                 for _, part in optional_parts:
                     volatile += part
             else:
-                # Still too large — add optional parts by priority until budget
-                remaining = budget_chars - base_size - history_size
+                # Still too large — add optional parts by priority until budget.
+                # `base_size` alone (persona + pinned block + user message) can
+                # already exceed a very small budget; clamp so `remaining` never
+                # goes negative and silently permits a "fits" part.
+                remaining = max(0, budget_chars - base_size - history_size)
                 for name, part in optional_parts:
                     if len(part) <= remaining:
                         volatile += part
@@ -1475,21 +1586,51 @@ class Character:
             logger.debug("Relationship update failed: %s", e)
             self._note_failure("relationship", e)
 
-    def _format_facts_block(self, user_id: str | None) -> str:
+    def _format_pinned_block(self) -> tuple[str, set[str]]:
+        """Render the "Things you always remember" block: pinned memories,
+        which are never sheddable under context pressure (see `MemoryStore.pin`).
+
+        Returns the rendered text (empty string when there's nothing to show or
+        `context.pinned_block` is disabled) and the set of pinned memory ids, so
+        the caller can exclude them from the ordinary sheddable memories list —
+        a pinned memory must never appear twice in the prompt.
+        """
+        from .config import get_config
+
+        ctx = get_config().context
+        if not ctx.pinned_block:
+            return "", set()
+        rows = self.memory.pinned()[: ctx.pinned_limit]
+        if not rows:
+            return "", set()
+        lines = ["Things you always remember:"]
+        for m in rows:
+            when = (m.get("created_at") or "")[:10]
+            lines.append(f"- ({when}) {m['content'][:300]}" if when else f"- {m['content'][:300]}")
+        return "\n".join(lines), {m["id"] for m in rows}
+
+    def _format_facts_block(self, user_id: str | None, pinned_ids: set[str] | None = None) -> str:
         """Render the 'What I know' block: current structured facts about the
         user (with 'previously: X' when a superseded history exists) plus a
         short block of self-facts. Empty string when there is nothing to show
-        or `context.facts_block` is disabled."""
+        or `context.facts_block` is disabled.
+
+        `pinned_ids` are memory ids already rendered in the pinned-memories
+        block — a fact linked to one of them is skipped here so its text
+        doesn't appear twice in the volatile message.
+        """
         from .config import get_config
 
         ctx = get_config().context
         if not ctx.facts_block:
             return ""
+        pinned_ids = pinned_ids or set()
         limit = ctx.facts_block_limit
         user_facts = [
             f
             for f in self.facts.current(subject="user", limit=None)
-            if not user_id or not f.get("user_id") or f.get("user_id") == user_id
+            if (not user_id or not f.get("user_id") or f.get("user_id") == user_id)
+            and f.get("memory_id") not in pinned_ids
         ]
         # Highest importance first; within a tie, newest recorded_at first —
         # so the 12-slot cap drops the oldest facts, not the newest.
@@ -1511,7 +1652,11 @@ class Character:
                 if older:
                     prev = f", previously: {older[-1]['object']}"
                 lines.append(f"- (since {since}{prev}) {f['statement']}")
-        self_facts = self.facts.current(subject="self", limit=5)
+        self_facts = [
+            f
+            for f in self.facts.current(subject="self", limit=None)
+            if f.get("memory_id") not in pinned_ids
+        ][:5]
         if self_facts:
             lines.append("Things you have said about yourself:")
             for f in self_facts:
@@ -1548,3 +1693,17 @@ class Character:
                     when = ""
             lines.append(f"- {tier_tag}{when}{cert_tag} {m['content'][:200]}")
         return "\n".join(lines)
+
+
+def _lore_keys(text: str, n: int = 3) -> list[str]:
+    """Pick up to `n` distinctive lowercase words from `text` to use as lorebook
+    trigger keys, skipping short/common filler words. Falls back to a text snippet
+    if nothing distinctive is found."""
+    words = [w.strip(".,;:!?\"'()[]").lower() for w in text.split()]
+    words = [
+        w
+        for w in words
+        if len(w) > 3
+        and w not in ("visitor", "always", "never", "about", "their", "there", "would", "could")
+    ]
+    return words[:n] or [text[:20]]

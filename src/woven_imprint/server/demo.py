@@ -23,7 +23,9 @@ from woven_imprint.engine import Engine
 from woven_imprint.server.models import (
     ChatCompletionRequest,
     CreateCharacterRequest,
+    FactPatchRequest,
     MaintainRequest,
+    MemoryPatchRequest,
     ObserveRequest,
     ProviderConfigRequest,
     RecordMessageRequest,
@@ -31,6 +33,9 @@ from woven_imprint.server.models import (
 from woven_imprint.server.services import (
     create_character_service,
     delete_character_service,
+    delete_fact_service,
+    delete_memory_service,
+    export_character_card_service,
     export_character_service,
     extract_last_user_message,
     extract_user_id_from_messages,
@@ -41,12 +46,16 @@ from woven_imprint.server.services import (
     get_relationship_service,
     import_character_service,
     list_characters_service,
+    list_pinned_service,
     list_sessions_service,
     maintain_service,
     migrate_character_service,
+    patch_fact_service,
+    patch_memory_service,
     recall_memories_service,
     record_message_service,
     rename_session_service,
+    retract_fact_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -410,6 +419,13 @@ def create_app(
         except KeyError:
             raise HTTPException(404, f"Character '{character_id}' not found")
 
+    @app.get("/api/characters/{character_id}/card", dependencies=[Depends(_check_auth)])
+    async def export_character_card(character_id: str):
+        try:
+            return export_character_card_service(_engine, character_id)
+        except KeyError:
+            raise HTTPException(404, f"Character '{character_id}' not found")
+
     @app.post("/api/characters/{character_id}/reflect", dependencies=[Depends(_check_auth)])
     async def reflect_character(character_id: str):
         async with _character_mutation(character_id):
@@ -554,6 +570,50 @@ def create_app(
         except KeyError:
             raise HTTPException(404, f"Character '{character_id}' not found")
 
+    # NOTE: declared before the /api/memory/{memory_id} routes below so the
+    # literal "pinned" path segment is never captured as a memory_id.
+    @app.get("/api/memory/pinned", dependencies=[Depends(_check_auth)])
+    async def pinned_memories(character_id: str):
+        try:
+            return {"memories": list_pinned_service(_engine, character_id)}
+        except KeyError:
+            raise HTTPException(404, f"Character '{character_id}' not found")
+
+    @app.patch("/api/memory/{memory_id}", dependencies=[Depends(_check_auth)])
+    async def patch_memory(memory_id: str, body: MemoryPatchRequest):
+        async with _character_mutation(body.character_id):
+            try:
+                char = _get_character(body.character_id)
+            except KeyError:
+                raise HTTPException(404, f"Character '{body.character_id}' not found")
+            try:
+                mem = patch_memory_service(
+                    char,
+                    memory_id,
+                    content=body.content,
+                    importance=body.importance,
+                    tier=body.tier,
+                    pinned=body.pinned,
+                )
+            except KeyError:
+                raise HTTPException(404, f"Memory '{memory_id}' not found")
+            except ValueError as exc:
+                raise HTTPException(400, str(exc))
+        return {"memory": mem}
+
+    @app.delete("/api/memory/{memory_id}", dependencies=[Depends(_check_auth)])
+    async def delete_memory(memory_id: str, character_id: str):
+        async with _character_mutation(character_id):
+            try:
+                char = _get_character(character_id)
+            except KeyError:
+                raise HTTPException(404, f"Character '{character_id}' not found")
+            try:
+                delete_memory_service(char, memory_id)
+            except KeyError:
+                raise HTTPException(404, f"Memory '{memory_id}' not found")
+        return {"deleted": True}
+
     # --- Relationships ---
     @app.get("/api/relationships/{character_id}/{target_id}", dependencies=[Depends(_check_auth)])
     async def get_relationship(character_id: str, target_id: str):
@@ -571,6 +631,39 @@ def create_app(
             return {"facts": facts}
         except KeyError:
             raise HTTPException(404, f"Character '{character_id}' not found")
+
+    @app.patch("/api/facts/{fact_id}", dependencies=[Depends(_check_auth)])
+    async def patch_fact(fact_id: str, body: FactPatchRequest):
+        async with _character_mutation(body.character_id):
+            try:
+                char = _get_character(body.character_id)
+            except KeyError:
+                raise HTTPException(404, f"Character '{body.character_id}' not found")
+            try:
+                fact = patch_fact_service(
+                    char, fact_id, object=body.object, statement=body.statement
+                )
+            except KeyError:
+                raise HTTPException(404, f"Fact '{fact_id}' not found")
+        return {"fact": fact}
+
+    @app.delete("/api/facts/{fact_id}", dependencies=[Depends(_check_auth)])
+    async def delete_fact(fact_id: str, character_id: str, mode: str = "retract"):
+        if mode not in ("retract", "delete"):
+            raise HTTPException(400, f"Invalid mode '{mode}'. Must be 'retract' or 'delete'.")
+        async with _character_mutation(character_id):
+            try:
+                char = _get_character(character_id)
+            except KeyError:
+                raise HTTPException(404, f"Character '{character_id}' not found")
+            try:
+                if mode == "delete":
+                    delete_fact_service(char, fact_id)
+                    return {"deleted": True}
+                fact = retract_fact_service(char, fact_id)
+                return {"fact": fact}
+            except KeyError:
+                raise HTTPException(404, f"Fact '{fact_id}' not found")
 
     # --- OpenAI-compatible chat completions ---
     @app.post("/v1/chat/completions", dependencies=[Depends(_check_auth)])

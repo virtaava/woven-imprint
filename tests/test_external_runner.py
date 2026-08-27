@@ -128,3 +128,17 @@ def test_run_id_starting_with_smoke_skips_results_writing(tmp_path):
 
     assert not (tmp_path / "external_smoke-test.json").exists()
     assert not (tmp_path / "external_latest.json").exists()
+
+
+def test_shard_selects_subset_and_skips_results(tmp_path):
+    from eval.external.__main__ import _parse_shard
+
+    assert _parse_shard("1/3") == (1, 3) and _parse_shard(None) is None
+    cfg = _cfg("shardtest", mode="fullcontext")
+    cfg.shard = (1, 2)  # fixture has 1 conversation at index 0 → shard 1 gets nothing
+    cfg.write_results = False
+    res = run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+    assert res["conversations"] == [] and not list(tmp_path.glob("external_*.json"))
+    cfg.shard = (0, 2)
+    res = run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+    assert len(res["conversations"]) > 0 and not list(tmp_path.glob("external_*.json"))

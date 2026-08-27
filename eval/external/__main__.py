@@ -9,6 +9,13 @@ from .fetch import DATASETS, fetch
 from .runner import RunConfig, run
 
 
+def _parse_shard(value: str | None) -> tuple[int, int] | None:
+    if value is None:
+        return None
+    index, count = value.split("/")
+    return int(index), int(count)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m eval.external")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -41,6 +48,16 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument(
         "--reuse-run", default=None, help="Reuse another run's ingested DBs (Task 4; not yet wired)"
     )
+    run_parser.add_argument(
+        "--shard",
+        default=None,
+        help="i/n: process only conversations with index %% n == i (parallel workers)",
+    )
+    run_parser.add_argument(
+        "--no-results",
+        action="store_true",
+        help="Skip writing eval/results files (use for shard workers; aggregate with a final run)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -57,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
             run_id=args.run_id,
             k=args.k,
             limit_conversations=args.limit,
+            shard=_parse_shard(args.shard),
+            write_results=not args.no_results,
             sample=args.sample,
             seed=args.seed,
             fact_extraction_interval=args.interval,

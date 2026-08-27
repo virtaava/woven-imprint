@@ -81,6 +81,10 @@ class RunConfig:
     max_questions: int | None = None
     reuse_run: str | None = None  # Task 4 stub — not implemented here
     dataset_path: str | Path | None = None
+    shard: tuple[int, int] | None = (
+        None  # (index, count): process conversations where i % count == index
+    )
+    write_results: bool = True  # shard workers pass False; the final unsharded call aggregates
 
 
 class _CountingLLM(LLMProvider):
@@ -406,6 +410,11 @@ def run(
     conversations = loader(dataset_path, cfg)
     if cfg.limit_conversations:
         conversations = conversations[: cfg.limit_conversations]
+    if cfg.shard is not None:
+        index, count = cfg.shard
+        if not (0 <= index < count):
+            raise ValueError(f"bad shard {cfg.shard!r}")
+        conversations = [c for i, c in enumerate(conversations) if i % count == index]
 
     base_llm = llm if llm is not None else _brain_llm()
     base_embedder = embedder if embedder is not None else _make_embedder()
@@ -452,13 +461,14 @@ def run(
             "seed": cfg.seed,
             "max_sessions": cfg.max_sessions,
             "max_questions": cfg.max_questions,
+            "shard": list(cfg.shard) if cfg.shard else None,
         },
         "summary": summary,
         "ingest_totals": ingest_totals,
         "conversations": all_records,
     }
 
-    if not cfg.run_id.startswith("smoke"):
+    if cfg.write_results and not cfg.run_id.startswith("smoke"):
         report.write_results(results, results_dir=results_dir)
         report.write_judge_sample(all_records, n=60, seed=7, results_dir=results_dir)
 

@@ -36,6 +36,20 @@ class ObserveRequest(BaseModel):
     user_id: str | None = None
 
 
+class MemoryPatchRequest(BaseModel):
+    character_id: str
+    content: str | None = Field(None, max_length=50_000)
+    importance: float | None = None
+    tier: str | None = None
+    pinned: bool | None = None
+
+
+class FactPatchRequest(BaseModel):
+    character_id: str
+    object: str | None = Field(None, max_length=2_000)
+    statement: str | None = Field(None, max_length=10_000)
+
+
 class MaintainRequest(BaseModel):
     jobs: list[str] | None = None
     budget: int | None = None

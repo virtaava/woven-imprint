@@ -6,13 +6,14 @@ import json
 from pathlib import Path
 
 from .engine import Engine
+from .server.services import _public_fact, _public_memory
 
 try:
     from mcp.server.fastmcp import FastMCP
 except ImportError:
     raise ImportError("mcp package required. Install with: pip install mcp")
 
-mcp = FastMCP("WovenImprint", version="0.1.0")
+mcp = FastMCP("WovenImprint")
 
 # Global engine + character cache — state persists between tool calls (C2 fix)
 _engine: Engine | None = None
@@ -273,6 +274,130 @@ def get_facts(character_id: str, subject: str | None = None, as_of: str | None =
     )
     keep = ("subject", "predicate", "object", "statement", "valid_from", "valid_to", "certainty")
     return json.dumps([{k: r.get(k) for k in keep} for r in rows], indent=2)
+
+
+@mcp.tool()
+def edit_memory(
+    character_id: str,
+    memory_id: str,
+    content: str | None = None,
+    importance: float | None = None,
+    tier: str | None = None,
+) -> str:
+    """Edit a memory's content, importance, and/or tier in place.
+
+    Args:
+        character_id: The character's ID.
+        memory_id: The memory's ID.
+        content: New content (re-embeds when it actually changes). Leave unset to keep.
+        importance: New importance in [0, 1]. Leave unset to keep.
+        tier: New tier — one of "buffer", "core", "bedrock". Leave unset to keep.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+    try:
+        if tier is not None and tier not in ("buffer", "core", "bedrock"):
+            raise ValueError("invalid tier")
+        if importance is not None and not (0.0 <= float(importance) <= 1.0):
+            raise ValueError("importance must be within [0, 1]")
+        row = char.memory.edit(memory_id, content=content, importance=importance, tier=tier)
+    except (KeyError, ValueError) as exc:
+        return json.dumps({"error": str(exc) or f"Memory {memory_id} not found"})
+    return json.dumps(_public_memory(row), default=str)
+
+
+@mcp.tool()
+def delete_memory(character_id: str, memory_id: str) -> str:
+    """Permanently delete a memory. Retracts any fact still pointing at it.
+
+    Args:
+        character_id: The character's ID.
+        memory_id: The memory's ID.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+    try:
+        char.memory.delete(memory_id)
+    except KeyError:
+        return json.dumps({"error": f"Memory {memory_id} not found"})
+    return json.dumps({"deleted": True})
+
+
+@mcp.tool()
+def pin_memory(character_id: str, memory_id: str, pinned: bool = True) -> str:
+    """Pin (or unpin) a memory so it's always included in the character's prompt.
+
+    Args:
+        character_id: The character's ID.
+        memory_id: The memory's ID.
+        pinned: True to pin, False to unpin.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+    try:
+        row = char.memory.pin(memory_id, pinned)
+    except KeyError:
+        return json.dumps({"error": f"Memory {memory_id} not found"})
+    return json.dumps(_public_memory(row), default=str)
+
+
+@mcp.tool()
+def list_pinned(character_id: str) -> str:
+    """List a character's pinned memories.
+
+    Args:
+        character_id: The character's ID.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+    return json.dumps([_public_memory(m) for m in char.memory.pinned()], default=str)
+
+
+@mcp.tool()
+def edit_fact(
+    character_id: str, fact_id: str, object: str | None = None, statement: str | None = None
+) -> str:
+    """Edit a fact's object and/or statement in place. Updates the linked
+    memory's content too, if any.
+
+    Args:
+        character_id: The character's ID.
+        fact_id: The fact's ID.
+        object: New object value. Leave unset to keep.
+        statement: New natural-language statement. Leave unset to keep.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+    try:
+        fact = char.facts.edit(fact_id, object=object, statement=statement)
+    except KeyError:
+        return json.dumps({"error": f"Fact {fact_id} not found"})
+    return json.dumps(_public_fact(fact), default=str)
+
+
+@mcp.tool()
+def retract_fact(character_id: str, fact_id: str) -> str:
+    """Retract a fact: expires it now with no successor, marks it retracted,
+    and archives the linked memory (if any). Preserves history (unlike a
+    hard delete).
+
+    Args:
+        character_id: The character's ID.
+        fact_id: The fact's ID.
+    """
+    char = _get_character(character_id)
+    if not char:
+        return json.dumps({"error": f"Character {character_id} not found"})
+    try:
+        fact = char.facts.retract(fact_id)
+    except KeyError:
+        return json.dumps({"error": f"Fact {fact_id} not found"})
+    return json.dumps(_public_fact(fact), default=str)
 
 
 @mcp.tool()

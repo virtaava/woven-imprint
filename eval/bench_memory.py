@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, "src")
 
-from woven_imprint import Engine
+from woven_imprint import Engine, clock
 from woven_imprint.llm.base import LLMProvider
 from woven_imprint.embedding.base import EmbeddingProvider
 from eval.framework import BenchmarkResult, SuiteResult, timed
@@ -390,20 +390,27 @@ def bench_familiarity_monotonic(engine: Engine) -> BenchmarkResult:
 
 @timed
 def bench_birthday_age(engine: Engine) -> BenchmarkResult:
-    """Age should derive from birthdate correctly."""
-    char = engine.create_character(
-        "AgeTest",
-        birthdate="2000-06-15",
-        persona={"personality": "test"},
-    )
+    """Age should derive from birthdate correctly.
 
-    age = char.persona.age
-    from datetime import date
+    Pinned to a fixed clock override rather than date.today(): PersonaModel
+    derives age from woven_imprint.clock (UTC), so comparing against the
+    local wall-clock date is flaky near midnight / across timezones.
+    """
+    from datetime import datetime, timezone
 
-    today = date.today()
-    expected = today.year - 2000
-    if (today.month, today.day) < (6, 15):
-        expected -= 1
+    fixed_now = datetime(2026, 6, 21, 12, 0, tzinfo=timezone.utc)
+    with clock.override(fixed_now):
+        char = engine.create_character(
+            "AgeTest",
+            birthdate="2000-06-15",
+            persona={"personality": "test"},
+        )
+
+        age = char.persona.age
+        today = clock.today()
+        expected = today.year - 2000
+        if (today.month, today.day) < (6, 15):
+            expected -= 1
 
     correct = age == expected
     return BenchmarkResult(

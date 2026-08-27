@@ -68,6 +68,9 @@ class MemoryConfig:
     weight_relationship: float = 1.0
     recency_anchor: str = "created"  # "created" | "accessed"
     max_candidates: int = 5000  # cap on active memories scored per retrieve() call
+    relevance_gate: bool = True  # gate recency/importance/relationship ranking to relevant memories
+    relevance_semantic_topk: int = 100  # semantic cutoff feeding the relevance gate
+    relevance_min_similarity: float = 1e-6  # semantic eligibility floor; above float32 matmul noise
 
 
 @dataclass
@@ -79,12 +82,22 @@ class ContextConfig:
     reserve_tokens: int = 500
     max_turns: int = 20
     include_date: bool = True
+    facts_block: bool = True
+    facts_block_limit: int = 12
 
 
 @dataclass
 class RelationshipConfig:
     max_delta: float = 0.15
     key_moments_limit: int = 20
+    dynamics: bool = True
+    trust_gain_factor: float = 0.5
+    betrayal_threshold: float = -0.10
+    betrayal_damping_turns: int = 10
+    betrayal_gain_damping: float = 0.25
+    key_moment_threshold: float = 0.08
+    trajectory_window: int = 5
+    tension_decay_per_day: float = 0.05
 
 
 @dataclass
@@ -266,6 +279,7 @@ def _apply_env(cfg: WovenConfig) -> None:
         "WOVEN_IMPRINT_BACKGROUND": ("character", "background"),
         "WOVEN_IMPRINT_UNIFIED_ASSESSMENT": ("character", "unified_assessment"),
         "WOVEN_IMPRINT_MAINTENANCE_BUDGET": ("maintenance", "max_llm_calls_per_run"),
+        "WOVEN_IMPRINT_RELATIONSHIP_DYNAMICS": ("relationship", "dynamics"),
     }
 
     for env_var, (section, key) in env_map.items():
@@ -379,6 +393,9 @@ memory:
   weight_importance: 1.0
   weight_relationship: 1.0
   # recency_anchor: created        # "created" | "accessed"
+  # relevance_gate: true           # false = legacy fusion (recency/importance rank ALL candidates)
+  # relevance_semantic_topk: 100   # semantic cutoff feeding the relevance gate
+  # relevance_min_similarity: 0.000001  # semantic eligibility floor; above float32 matmul noise
 
 context:
   total_tokens: 6000
@@ -388,10 +405,20 @@ context:
   reserve_tokens: 500
   max_turns: 20
   include_date: true
+  facts_block: true              # inject a "What you currently know about {user}" block
+  facts_block_limit: 12          # max current user-facts in the block (importance desc, then newest first)
 
 relationship:
   max_delta: 0.15
   key_moments_limit: 20
+  dynamics: true                 # false = legacy byte-identical arithmetic (WOVEN_IMPRINT_RELATIONSHIP_DYNAMICS)
+  trust_gain_factor: 0.5         # positive trust deltas are scaled by this; negative deltas are not
+  betrayal_threshold: -0.10      # a single clamped trust delta <= this counts as a betrayal
+  betrayal_damping_turns: 10     # trust gains damped for this many updates after a betrayal
+  betrayal_gain_damping: 0.25    # multiplier applied to trust gains while damping is active
+  key_moment_threshold: 0.08     # |clamped delta| >= this on any dimension records a key moment
+  trajectory_window: 5           # trajectory derived from the sum of the last N net deltas
+  tension_decay_per_day: 0.05    # tension decays toward 0 by this much per elapsed day
 
 persona:
   growth_threshold: 0.6

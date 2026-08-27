@@ -14,6 +14,7 @@ from .llm.base import LLMProvider
 from .log import logger
 from .embedding.base import EmbeddingProvider
 from .memory.store import MemoryStore
+from .memory.facts import FactStore
 from .memory.retrieval import MemoryRetriever
 from .memory.belief import BeliefReviser
 from .memory.consolidation import ConsolidationEngine
@@ -61,6 +62,7 @@ class Character:
 
         # Sub-systems
         self.memory = MemoryStore(storage, embedder, char_id)
+        self.facts = FactStore(storage, char_id)
         self.retriever = MemoryRetriever(storage, embedder, char_id)
         self.belief = BeliefReviser(storage, char_id, embedder=embedder)
         self.relationships = RelationshipModel(storage, char_id)
@@ -291,7 +293,7 @@ class Character:
 
         # 4. Build the full prompt within context budget
         build_context_started = time.perf_counter()
-        messages = self._build_context(message, memories, rel_context)
+        messages = self._build_context(message, memories, rel_context, user_id=user_id)
         self.last_chat_messages = [dict(item) for item in messages]
         metrics["build_context_ms"] = round(
             (time.perf_counter() - build_context_started) * 1000.0, 2
@@ -457,7 +459,7 @@ class Character:
             rel_context = self.relationships.describe(user_id)
 
         # 4. Build the full prompt within context budget
-        messages = self._build_context(message, memories, rel_context)
+        messages = self._build_context(message, memories, rel_context, user_id=user_id)
         self.last_chat_messages = [dict(item) for item in messages]
 
         # 5. Stream the response
@@ -700,7 +702,7 @@ class Character:
             if isinstance(val, (int, float)):
                 deltas[key] = float(val)
         if deltas:
-            self.relationships.update(user_id, deltas)
+            self.relationships.update(user_id, deltas, note=event[:80])
 
     def _run_subsystems_parallel(
         self,
@@ -1014,6 +1016,7 @@ class Character:
                 "bedrock": self.memory.get_all(tier="bedrock"),
             },
             "relationships": self.relationships.get_all(),
+            "facts": self.storage.query_facts(self.id, active_only=False, limit=None),
             "emotion": self.emotion.to_dict(),
             "narrative_arc": self.arc.to_dict(),
             "sessions": self.storage.get_sessions(self.id),
@@ -1036,6 +1039,7 @@ class Character:
         user_message: str,
         memories: list[dict],
         rel_context: str,
+        user_id: str | None = None,
     ) -> list[dict[str, str]]:
         """Build the full message list within the context budget.
 
@@ -1075,6 +1079,9 @@ class Character:
             optional_parts.append(("arc", f"\n\n{arc_desc}"))
         if rel_context:
             optional_parts.append(("relationship", f"\n\n{rel_context}"))
+        facts_text = self._format_facts_block(user_id)
+        if facts_text:
+            optional_parts.append(("facts", f"\n\n{facts_text}"))
         if memory_text:
             optional_parts.append(("memories", f"\n\nYour relevant memories:\n{memory_text}"))
 
@@ -1148,30 +1155,74 @@ class Character:
         return deltas
 
     @staticmethod
-    def _parse_facts(result, max_facts: int) -> list[str]:
-        facts = (
+    def _parse_facts(result, max_facts: int) -> list[dict]:
+        raw = (
             result
             if isinstance(result, list)
             else (result.get("facts", []) if isinstance(result, dict) else [])
         )
-        return [f for f in facts[:max_facts] if isinstance(f, str) and len(f) > 10]
+        out: list[dict] = []
+        for item in raw:
+            if isinstance(item, str):
+                stmt, rec = item, {}
+            elif isinstance(item, dict):
+                stmt, rec = str(item.get("statement") or ""), item
+            else:
+                continue
+            stmt = stmt.strip()
+            if len(stmt) <= 10:
+                continue
+
+            def _s(key):
+                v = rec.get(key)
+                return (
+                    str(v).strip() if isinstance(v, (str, int, float)) and str(v).strip() else None
+                )
+
+            out.append(
+                {
+                    "statement": stmt,
+                    "subject": _s("subject"),
+                    "predicate": _s("predicate"),
+                    "object": _s("object"),
+                    "event_time": _s("event_time"),
+                }
+            )
+            if len(out) >= max_facts:
+                break
+        return out
 
     def _store_facts(
         self,
-        facts: list[str],
+        facts: list[dict],
         user_id: str | None,
         session_id: str | None,
         importance: float,
     ) -> None:
-        """Store extracted facts, resolving contradictions with existing memories first."""
+        """Store extracted facts. Structured facts (subject+predicate+object all present)
+        supersede by (subject, predicate) over the whole store; unstructured facts keep the
+        legacy antonym-heuristic contradiction check against the last 50 core memories."""
         for fact in facts:
+            if isinstance(fact, str):  # tolerate legacy callers
+                fact = {
+                    "statement": fact,
+                    "subject": None,
+                    "predicate": None,
+                    "object": None,
+                    "event_time": None,
+                }
+            stmt = fact["statement"]
+            if fact.get("subject") and fact.get("predicate") and fact.get("object"):
+                self._store_structured_fact(fact, user_id, session_id, importance)
+                continue
+
             # Check for contradictions with existing memories
             existing = self.memory.get_all(tier="core", limit=50)
-            contradictions = self.belief.detect_contradictions(fact, existing)
+            contradictions = self.belief.detect_contradictions(stmt, existing)
             for old_mem in contradictions:
                 self.belief.contradict(
                     old_mem["id"],
-                    fact,
+                    stmt,
                     source="extraction",
                     session_id=session_id,
                 )
@@ -1180,13 +1231,82 @@ class Character:
             # (contradict() already creates the replacement)
             if not contradictions:
                 self.memory.add(
-                    content=fact,
+                    content=stmt,
                     tier="core",
                     role="observation",
                     session_id=session_id,
                     importance=importance,
                     metadata={"source": "extraction", "user_id": user_id},
                 )
+
+    def _store_structured_fact(
+        self,
+        fact: dict,
+        user_id: str | None,
+        session_id: str | None,
+        importance: float,
+    ) -> None:
+        """Structured (subject, predicate, object) fact: supersede whatever this character
+        currently believes about (subject, predicate) across the whole facts store, not just
+        the last 50 core memories.
+
+        A backdated correction — a new fact whose valid_from lands BEFORE the
+        active old fact's valid_from — is not a supersession: the old fact
+        stays current and the new fact is filed straight into history,
+        superseded by the old one as of the old fact's valid_from.
+        """
+        from .memory.facts import _norm_time, normalize_object
+
+        old = self.facts.find_active(fact["subject"], fact["predicate"])
+        if old and normalize_object(old["object"]) == normalize_object(fact["object"]):
+            # Same belief restated — reinforce rather than duplicate.
+            if old.get("memory_id"):
+                self.belief.reinforce(old["memory_id"])
+            self.facts.bump_certainty(old["id"])
+            return
+
+        new_valid_from = _norm_time(fact.get("event_time")) or clock.sqlite_ts()
+        backdated = bool(old) and new_valid_from < old["valid_from"]
+
+        meta = {"source": "extraction", "user_id": user_id}
+        if old and old.get("memory_id") and not backdated:
+            meta["contradicts"] = old["memory_id"]
+        mem = self.memory.add(
+            content=fact["statement"],
+            tier="core",
+            role="observation",
+            session_id=session_id,
+            importance=importance,
+            metadata=meta,
+        )
+        new = self.facts.add(
+            subject=fact["subject"],
+            predicate=fact["predicate"],
+            object=fact["object"],
+            statement=fact["statement"],
+            event_time=fact.get("event_time"),
+            importance=importance,
+            memory_id=mem["id"],
+            session_id=session_id,
+            user_id=user_id,
+        )
+        mem["metadata"]["fact_id"] = new["id"]
+        if backdated:
+            # Filed straight into history behind the still-current fact: mark
+            # the memory row as historical and lower its certainty rather than
+            # letting it read as a fresh, fully-certain observation.
+            mem["metadata"]["historical"] = True
+            mem["certainty"] = 0.5
+        self.storage.save_memory(mem)
+        if old:
+            if backdated:
+                self.facts.expire(new["id"], valid_to=old["valid_from"], superseded_by=old["id"])
+            else:
+                self.facts.expire(old["id"], valid_to=new["valid_from"], superseded_by=new["id"])
+                if old.get("memory_id"):
+                    self.storage.update_memory_status(
+                        old["memory_id"], "contradicted", certainty=0.0
+                    )
 
     def _recent_context_hint(self) -> str:
         """Build a hint of recent conversation turns, so extraction doesn't re-surface them."""
@@ -1256,7 +1376,7 @@ class Character:
             self._note_success("arc")
         if want_relationship and out.relationship:
             try:
-                self.relationships.update(user_id, out.relationship)
+                self.relationships.update(user_id, out.relationship, note=message[:80])
                 self._note_success("relationship")
             except Exception as e:
                 logger.debug("Relationship update failed: %s", e)
@@ -1346,7 +1466,7 @@ class Character:
             result = self.llm.generate_json_robust(messages)
             deltas = self._parse_relationship_deltas(result)
             if deltas:
-                self.relationships.update(user_id, deltas)
+                self.relationships.update(user_id, deltas, note=user_msg[:80])
             self._note_success("relationship")
         except Exception as e:
             # Broadened from (ValueError, KeyError, TypeError): generate_json_robust
@@ -1354,6 +1474,49 @@ class Character:
             # swallow site here must never crash bookkeeping.
             logger.debug("Relationship update failed: %s", e)
             self._note_failure("relationship", e)
+
+    def _format_facts_block(self, user_id: str | None) -> str:
+        """Render the 'What I know' block: current structured facts about the
+        user (with 'previously: X' when a superseded history exists) plus a
+        short block of self-facts. Empty string when there is nothing to show
+        or `context.facts_block` is disabled."""
+        from .config import get_config
+
+        ctx = get_config().context
+        if not ctx.facts_block:
+            return ""
+        limit = ctx.facts_block_limit
+        user_facts = [
+            f
+            for f in self.facts.current(subject="user", limit=None)
+            if not user_id or not f.get("user_id") or f.get("user_id") == user_id
+        ]
+        # Highest importance first; within a tie, newest recorded_at first —
+        # so the 12-slot cap drops the oldest facts, not the newest.
+        user_facts.sort(key=lambda f: f.get("recorded_at", ""), reverse=True)
+        user_facts.sort(key=lambda f: -float(f.get("importance", 0.75)))
+        user_facts = user_facts[:limit]
+        lines: list[str] = []
+        if user_facts:
+            who = user_id or "the user"
+            lines.append(
+                f"What you currently know about {who} "
+                "(facts you learned; dates are when they became true):"
+            )
+            for f in user_facts:
+                since = (f.get("valid_from") or "")[:10]
+                prev = ""
+                hist = self.facts.history(f["subject"], f["predicate"])
+                older = [h for h in hist if h.get("superseded_by") == f["id"]]
+                if older:
+                    prev = f", previously: {older[-1]['object']}"
+                lines.append(f"- (since {since}{prev}) {f['statement']}")
+        self_facts = self.facts.current(subject="self", limit=5)
+        if self_facts:
+            lines.append("Things you have said about yourself:")
+            for f in self_facts:
+                lines.append(f"- {f['statement']}")
+        return "\n".join(lines)
 
     def _format_memories(self, memories: list[dict], now: datetime | None = None) -> str:
         """Format retrieved memories for inclusion in prompt.

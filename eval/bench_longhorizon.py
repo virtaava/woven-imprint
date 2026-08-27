@@ -1,19 +1,40 @@
 """Long-horizon benchmark: 60 simulated days through chat() with a fake clock and scripted LLM.
 
-Known ranking limitation: retrieval fuses signals with equal-weight RRF, and
+Formerly known ranking limitation, since fixed: retrieval fuses signals with equal-weight RRF, and
 bedrock memories (e.g. the `[Self]` persona line) carry a permanent
-importance/recency floor. That combination can rank an off-topic bedrock line
-above a fresh, directly-relevant fact. `contradiction_supersession` below
-deliberately does not assert where the day-40 "dislikes tea" memory lands in
-the *global* fused ranking — only that it is first among memories that
-actually mention "tea". Fixing the global case is tracked as a Tier 2
-retrieval-weighting item.
+importance/recency floor. The relevance gate's semantic eligibility used to
+admit a memory into `top relevance_semantic_topk` purely `BY RANK`, which let
+a zero-similarity memory ride a rank slot into eligibility whenever fewer
+than topk memories had any real similarity to the query — exactly how the
+off-topic `[Self]` bedrock line stayed eligible and rode its recency/
+importance floor above a fresh on-topic fact. Eligibility now requires
+cosine similarity > 0 (see
+`MemoryRetriever.retrieve` and ARCHITECTURE.md#retrieval-relevance-gate).
+`relevance_gate_global_rank` and `contradiction_supersession` below both now
+assert the *global* fused rank (`ranked[0]`), not just the rank among
+on-topic candidates — see `KNOWN_OPEN` if either regresses again.
+
+Embedder: this benchmark uses a benchmark-local `HashEmbedder`, not
+`tests.helpers.FakeEmbedder`. FakeEmbedder hashes words into only 50 buckets
+via a per-instance incrementally-assigned vocab table; over 60 simulated days
+this benchmark mints hundreds of distinct nouns/fillers, so buckets collide
+constantly and two semantically unrelated days can end up with near-identical
+embeddings purely from hash collisions — that makes semantic ranks noisy and
+benchmark behavior sensitive to incidental word order. HashEmbedder keeps the
+same bag-of-words idea but hashes into 512 buckets with `zlib.crc32` (stable
+across runs and processes, unlike Python's salted `hash()`) and L2-normalizes
+the result, which cuts collisions enough for semantic ranking to reflect
+actual topic overlap rather than hash noise, while staying fully
+deterministic. The swap from FakeEmbedder to HashEmbedder caused small,
+reported behavior differences in the original 7 benchmarks (tighter,
+non-hash-collision-driven semantic ranks).
 """
 
 from __future__ import annotations
 
 import sys
 import time
+import zlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -21,10 +42,52 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from eval.framework import BenchmarkResult, SuiteResult
-from tests.helpers import FakeEmbedder
 from woven_imprint import Engine, clock
 from woven_imprint.llm.base import LLMProvider
 from woven_imprint.maintenance import MaintenanceRunner
+
+# Benchmarks known to fail for reasons that are understood, deterministic, and
+# not fixable by tuning the script alone — excluded from the CI all-pass gate
+# in tests/test_longhorizon.py but still run, scored, and rendered into
+# docs/RESULTS.md so any future finding stays visible instead of silently
+# disappearing. Both prior entries (relevance_gate_global_rank,
+# betrayal_has_consequences) were root-caused and fixed (a real
+# gate-eligibility bug in retrieval.py, and a scripted betrayal that was
+# missing an affection/respect cost) and removed from this set. The
+# mechanism is kept empty rather than deleted so a future genuinely-open
+# finding has somewhere to go without re-deriving the pattern.
+KNOWN_OPEN: set[str] = set()
+
+
+class HashEmbedder:
+    """Deterministic hashed bag-of-words embedder (512 dims by default).
+
+    Same idea as `tests.helpers.FakeEmbedder` (accumulate word counts into a
+    fixed-size vector, then L2-normalize) but bucketed by a stable hash
+    (`zlib.crc32`) instead of a small per-instance vocab table, so unrelated
+    words collide far less often. See the module docstring for why this
+    benchmark needs it instead of FakeEmbedder.
+    """
+
+    def __init__(self, dims: int = 512):
+        self.dims = dims
+
+    def embed(self, text: str) -> list[float]:
+        vec = [0.0] * self.dims
+        for word in text.lower().split():
+            idx = zlib.crc32(word.encode("utf-8")) % self.dims
+            vec[idx] += 1.0
+        mag = sum(x * x for x in vec) ** 0.5
+        if mag > 0:
+            vec = [x / mag for x in vec]
+        return vec
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed(t) for t in texts]
+
+    def dimensions(self) -> int:
+        return self.dims
+
 
 NOUNS = [
     "lighthouse",
@@ -84,7 +147,7 @@ FORCE_MENTIONED_DAYS = {2, 5, 60}
 # threshold so max_facts doubles to 10 (see character.py _run_bookkeeping) —
 # this is what lets the tail days generate enough distinct facts to cross the
 # 200-active-core-row window. The padding phrase itself repeats verbatim so it
-# adds no new vocabulary to the bag-of-words FakeEmbedder.
+# adds no new vocabulary to the bag-of-words HashEmbedder.
 LONG_TAIL = (
     " There is a lot to say about it, more than usual, and I want to walk "
     "through the details slowly so nothing gets missed this time, since "
@@ -104,7 +167,8 @@ def filler_words(day: int, n: int, salt: int = 0) -> list[str]:
 # Six rotating sentence templates per day's fact/summary — this is the fix for
 # the dedup false-positive bug: the old single template ("On day N the visitor
 # mentioned the X.") shared almost every word across days, so dedup_similarity
-# (0.92, scored by the bag-of-words FakeEmbedder) treated nearly all of them as
+# (0.92, scored by the original 50-bucket bag-of-words FakeEmbedder, since
+# replaced by HashEmbedder — see module docstring) treated nearly all of them as
 # near-duplicates and archived them, capping the store at ~53 active core rows
 # forever (never crossing the 200-row window the benchmark exists to probe).
 # Rotating phrasing + 2-3 day-derived filler words per entry keeps genuinely
@@ -144,6 +208,22 @@ def _fact_template(day: int, salt: int):
 
 TEA_LIKE = "The visitor likes tea."
 TEA_DISLIKE = "The visitor dislikes tea."
+
+# Structured (subject/predicate/object) facts for the bi-temporal supersession
+# benchmark — unlike the tea facts (kept as plain strings so they still
+# exercise the legacy antonym-heuristic contradiction path), these are
+# scripted as dicts so they flow through Character._store_structured_fact's
+# whole-store (subject, predicate) lookup instead. Day 45's event_time is
+# filled in per-day in generate_json (it needs that day's simulated date).
+STRUCT_CAT_DAY = 12
+STRUCT_CAT_PIXEL = {
+    "statement": "The visitor's cat is named Pixel.",
+    "subject": "user",
+    "predicate": "has_cat_named",
+    "object": "Pixel",
+}
+STRUCT_CAT_MOSS_DAY = 45
+STRUCT_CAT_MOSS_STATEMENT = "The visitor's new cat is named Moss."
 
 # Days 41-60 request this many distinct facts/day (via the padded exchange
 # below, which raises fact_density_scaling's per-turn cap so they actually
@@ -203,12 +283,37 @@ class LongHorizonLLM(LLMProvider):
         self.json_calls.append(head[:40])
         if "bookkeeping assistant" in head:
             day = self.day
-            trust = 0.05 if day <= 40 or day > 50 else -0.10
-            tension = 0.0 if day <= 40 or day > 50 else 0.08
+            betrayal_window = 40 < day <= 50
+            trust = -0.10 if betrayal_window else 0.05
+            tension = 0.08 if betrayal_window else 0.0
+            # A betrayal costs more than trust — affection and respect drop
+            # too during the betrayal window (days 41-50), unchanged outside
+            # it. Controller ruling (fix round 1): tier_for's affinity
+            # formula and thresholds are untouched; only the scripted
+            # relationship deltas change.
+            affection = -0.05 if betrayal_window else 0.02
+            respect = -0.05 if betrayal_window else 0.0
             if day == 10:
                 facts = [self._regular_fact(day), TEA_LIKE]
             elif day == 40:
                 facts = [self._regular_fact(day), TEA_DISLIKE]
+            elif day == STRUCT_CAT_DAY:
+                # Emitted on every bookkeeping call this day (not just the one
+                # that actually stores, at turn_count % 3 == 0) — harmless
+                # either way since _store_structured_fact's same-object path
+                # reinforces an unchanged belief instead of duplicating it.
+                facts = [self._regular_fact(day), STRUCT_CAT_PIXEL]
+            elif day == STRUCT_CAT_MOSS_DAY:
+                moss = {
+                    "statement": STRUCT_CAT_MOSS_STATEMENT,
+                    "subject": "user",
+                    "predicate": "has_cat_named",
+                    "object": "Moss",
+                    "event_time": clock.now().date().isoformat(),
+                }
+                facts = [self._regular_fact(day, salt=i) for i in range(TAIL_FACTS_PER_DAY)] + [
+                    moss
+                ]
             elif day <= 40:
                 # Sparse middle window: keep the 30-day span between the tea
                 # facts under the inline contradiction heuristic's ~50-row
@@ -227,8 +332,8 @@ class LongHorizonLLM(LLMProvider):
                 "emotion": {"mood": "content", "intensity": 0.4, "cause": "a pleasant visit"},
                 "relationship": {
                     "trust": trust,
-                    "affection": 0.02,
-                    "respect": 0.0,
+                    "affection": affection,
+                    "respect": respect,
                     "familiarity": 0.02,
                     "tension": tension,
                 },
@@ -252,8 +357,10 @@ class LongHorizonLLM(LLMProvider):
 
 def _simulate(days: int):
     llm = LongHorizonLLM()
-    engine = Engine(db_path=":memory:", llm=llm, embedding=FakeEmbedder())
+    engine = Engine(db_path=":memory:", llm=llm, embedding=HashEmbedder())
     trust_at: dict[int, float] = {}
+    type_at: dict[int, str] = {}
+    trajectory_at: dict[int, str] = {}
     calls_per_turn: list[int] = []
     with clock.override(T0):
         # Character creation (and its bedrock-memory seeding) must happen
@@ -277,20 +384,25 @@ def _simulate(days: int):
                     # Push exchange_len past fact_density_scaling's 2000-char
                     # threshold (doubling max_facts to 10) with a verbatim
                     # repeated phrase, so the padding itself adds no new
-                    # vocabulary to the bag-of-words FakeEmbedder.
+                    # vocabulary to the bag-of-words HashEmbedder.
                     msg += LONG_TAIL * 12
                 char.chat(msg, user_id="toni")
                 calls_per_turn.append(len(llm.json_calls) - before)
             char.end_session()
-            trust_at[day] = char.relationships.get("toni")["dimensions"]["trust"]
+            rel = char.relationships.get("toni")
+            trust_at[day] = rel["dimensions"]["trust"]
+            type_at[day] = rel["type"]
+            trajectory_at[day] = rel["trajectory"]
             runner.run()
             clock.advance(timedelta(days=1))
-        results = _score(engine, char, llm, trust_at, calls_per_turn, days)
+        results = _score(engine, char, llm, trust_at, type_at, trajectory_at, calls_per_turn, days)
     engine.close()
     return results
 
 
-def _score(engine, char, llm, trust_at, calls_per_turn, days) -> list[BenchmarkResult]:
+def _score(
+    engine, char, llm, trust_at, type_at, trajectory_at, calls_per_turn, days
+) -> list[BenchmarkResult]:
     out: list[BenchmarkResult] = []
     # 1 paraphrase recall of day 5, plus proof the store actually crossed the
     # 200-active-core-row window (the old fixed 200-row cap this benchmark
@@ -322,19 +434,33 @@ def _score(engine, char, llm, trust_at, calls_per_turn, days) -> list[BenchmarkR
     out.append(
         BenchmarkResult("dates_rendered", dated, 1.0 if dated else 0.0, {"sample": text[:200]})
     )
-    # 3 recency ordering: newest day's fact ranks above day 2's for the same noun family
+    # 3 recency ordering: newest day's fact ranks above day 5's for the same noun family.
+    # Anchored on day 5, not day 2: under HashEmbedder, the single-token numeral
+    # "2" happens to crc32-hash into the same one of 512 buckets as "mentioned"
+    # (verified: crc32(b"2") % 512 == crc32(b"mentioned") % 512 == 13), which
+    # gives the day-2 fact's semantic score an accidental boost against the
+    # query "the visitor mentioned" — day 2 then wins the RRF fusion by exactly
+    # one rank over every day-60 candidate despite day 60 dominating the
+    # keyword/recency/importance lists. Day 5 (also a FORCE_MENTIONED_DAYS anchor, already
+    # load-bearing for paraphrase_recall_day5) does not collide with any of
+    # the three query tokens and is 55 days older than day 60, so it still
+    # tests the same thing: an old fact must not outrank a fresh one on a
+    # shared generic query.
     ranked = char.retriever.retrieve("the visitor mentioned", limit=50)
     pos = {m["content"]: i for i, m in enumerate(ranked)}
     new = next((k for k in pos if f"day {days} " in k.lower()), None)
-    old = next((k for k in pos if "day 2 " in k.lower()), None)
+    old = next((k for k in pos if "day 5 " in k.lower()), None)
     ok3 = new is not None and old is not None and pos[new] < pos[old]
     out.append(
         BenchmarkResult("recency_ordering", ok3, 1.0 if ok3 else 0.0, {"new": new, "old": old})
     )
-    # 4 contradiction supersession: among retrieved memories that actually
-    # mention "tea", the first must be the day-40 fact — not the top of the
-    # whole fused ranking, which a bedrock/importance-boosted but off-topic
-    # memory can occupy (see module docstring's "Known ranking limitation").
+    # 4 contradiction supersession: the day-40 "dislikes tea" fact must be
+    # first in the *global* fused ranking, not merely first among memories
+    # that mention "tea" — the relevance gate's eligibility fix closed the
+    # gap that let an off-topic bedrock/core memory ride a rank slot to the
+    # top despite zero query similarity (see relevance_gate_global_rank and
+    # `MemoryRetriever.retrieve`). The on-topic filtered check is kept as
+    # informational detail alongside the global one.
     ranked = char.retriever.retrieve("tea", limit=20)
     tea = [m for m in ranked if "tea" in m["content"].lower()]
     rows = {
@@ -342,13 +468,8 @@ def _score(engine, char, llm, trust_at, calls_per_turn, days) -> list[BenchmarkR
         for m in engine.storage.get_memories(char.id, status="contradicted", limit=None)
     }
     superseded = any(c.startswith("The visitor likes tea") for c in rows)
-    first_is_new = bool(tea) and "dislikes tea" in tea[0]["content"].lower()
+    first_is_new = bool(ranked) and "dislikes tea" in ranked[0]["content"].lower()
     ok4 = superseded and first_is_new
-    # Informational only, not asserted: where the day-40 memory lands in the
-    # full (unfiltered) ranking.
-    day40_rank = next(
-        (i for i, m in enumerate(ranked) if "dislikes tea" in m["content"].lower()), None
-    )
     out.append(
         BenchmarkResult(
             "contradiction_supersession",
@@ -356,8 +477,8 @@ def _score(engine, char, llm, trust_at, calls_per_turn, days) -> list[BenchmarkR
             1.0 if ok4 else 0.0,
             {
                 "superseded": superseded,
-                "top": tea[0]["content"] if tea else None,
-                "day40_rank_in_full_ranking": day40_rank,
+                "top_global": ranked[0]["content"] if ranked else None,
+                "top_on_topic": tea[0]["content"] if tea else None,
             },
         )
     )
@@ -398,6 +519,87 @@ def _score(engine, char, llm, trust_at, calls_per_turn, days) -> list[BenchmarkR
             ok7,
             1.0 if ok7 else 0.0,
             {"max": max(calls_per_turn), "min": min(calls_per_turn)},
+        )
+    )
+    # 8 structured supersession (bi-temporal): day-12 Pixel superseded by
+    # day-45 Moss, both visible in history, as-of day 30 still sees Pixel,
+    # and the superseded Pixel memory row is marked contradicted.
+    cur = char.facts.current("user", "has_cat_named")
+    hist = char.facts.history("user", "has_cat_named")
+    day45 = (T0 + timedelta(days=STRUCT_CAT_MOSS_DAY - 1)).date().isoformat()
+    as_of_day30 = char.facts.as_of(
+        (T0 + timedelta(days=29)).strftime("%Y-%m-%d %H:%M:%S"),
+        subject="user",
+        predicate="has_cat_named",
+    )
+    ok8 = (
+        [f["object"] for f in cur] == ["Moss"]
+        and [f["object"] for f in hist] == ["Pixel", "Moss"]
+        and (hist[0]["valid_to"] or "").startswith(day45)
+        and [f["object"] for f in as_of_day30] == ["Pixel"]
+        and engine.storage.get_memory(hist[0]["memory_id"])["status"] == "contradicted"
+    )
+    out.append(
+        BenchmarkResult(
+            "structured_supersession",
+            ok8,
+            1.0 if ok8 else 0.0,
+            {
+                "current": [f["object"] for f in cur],
+                "history": [(f["object"], f["valid_to"]) for f in hist],
+            },
+        )
+    )
+    # 9 facts block rendered: the volatile "What you currently know" prompt
+    # block shows the current belief and flags the superseded one.
+    text = char._format_facts_block("toni")
+    ok9 = (
+        "What you currently know about toni" in text
+        and "Moss" in text
+        and "previously: Pixel" in text
+    )
+    out.append(
+        BenchmarkResult("facts_block_rendered", ok9, 1.0 if ok9 else 0.0, {"block": text[:300]})
+    )
+    # 10 betrayal has consequences: the days-41-50 betrayal window drops
+    # trust, tips the relationship into "adversary", is recorded as a key
+    # moment, and marks the trajectory "cooling" mid-window — then days
+    # 51-60 recover trust but (damped) not back to its pre-betrayal peak.
+    rel = char.relationships.get("toni")
+    ok10 = (
+        trust_at[50] < trust_at[40]
+        and trust_at[60] < trust_at[40]
+        and trust_at[60] > trust_at[50]
+        and any("betrayal" in m for m in rel["key_moments"])
+        and type_at[50] == "adversary"
+        and trajectory_at[45] == "cooling"
+    )
+    out.append(
+        BenchmarkResult(
+            "betrayal_has_consequences",
+            ok10,
+            1.0 if ok10 else 0.0,
+            {
+                "t40": trust_at[40],
+                "t50": trust_at[50],
+                "t60": trust_at[60],
+                "type50": type_at[50],
+                "traj45": trajectory_at[45],
+                "moments": rel["key_moments"][-3:],
+            },
+        )
+    )
+    # 11 relevance gate: global rank — the day-40 "dislikes tea" fact should
+    # be the single top hit for "tea" in the *whole* fused ranking, not just
+    # among on-topic candidates (contrast with benchmark 4's filtered check).
+    ranked = char.retriever.retrieve("tea", limit=20)
+    ok11 = bool(ranked) and "dislikes tea" in ranked[0]["content"].lower()
+    out.append(
+        BenchmarkResult(
+            "relevance_gate_global_rank",
+            ok11,
+            1.0 if ok11 else 0.0,
+            {"top": ranked[0]["content"][:80] if ranked else None},
         )
     )
     return out

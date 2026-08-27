@@ -6,6 +6,7 @@ import sys
 
 sys.path.insert(0, "src")
 
+from woven_imprint import clock
 from woven_imprint.persona.model import PersonaModel
 from woven_imprint.persona.consistency import ConsistencyChecker
 from woven_imprint.persona.growth import GrowthEngine, GrowthEvent
@@ -138,31 +139,38 @@ def bench_soft_flag_not_blocking() -> BenchmarkResult:
 
 @timed
 def bench_temporal_age_derivation() -> BenchmarkResult:
-    """Temporal facts: age derived from birthdate, birthday detection."""
-    from datetime import date
+    """Temporal facts: age derived from birthdate, birthday detection.
 
-    today = date.today()
+    Pinned to a fixed clock override rather than date.today(): PersonaModel
+    derives age/birthday from woven_imprint.clock (UTC), so comparing against
+    the local wall-clock date is flaky near midnight / across timezones.
+    """
+    from datetime import datetime, timezone
 
-    # Character whose birthday is today
-    bday_today = f"2000-{today.month:02d}-{today.day:02d}"
-    p1 = PersonaModel({"name": "A"}, birthdate=bday_today)
+    fixed_now = datetime(2026, 6, 21, 12, 0, tzinfo=timezone.utc)
+    with clock.override(fixed_now):
+        today = clock.today()
 
-    # Character whose birthday is not today
-    other_month = (today.month % 12) + 1
-    bday_other = f"2000-{other_month:02d}-15"
-    p2 = PersonaModel({"name": "B"}, birthdate=bday_other)
+        # Character whose birthday is today
+        bday_today = f"2000-{today.month:02d}-{today.day:02d}"
+        p1 = PersonaModel({"name": "A"}, birthdate=bday_today)
 
-    # Character with no birthdate but static age
-    p3 = PersonaModel({"name": "C", "hard": {"age": 30}})
+        # Character whose birthday is not today
+        other_month = (today.month % 12) + 1
+        bday_other = f"2000-{other_month:02d}-15"
+        p2 = PersonaModel({"name": "B"}, birthdate=bday_other)
 
-    checks = {
-        "birthday_today_detected": p1.is_birthday,
-        "birthday_today_age_correct": p1.age == today.year - 2000,
-        "other_not_birthday": not p2.is_birthday,
-        "other_age_not_none": p2.age is not None,
-        "static_age_works": p3.age == 30,
-        "days_until_birthday_zero": p1.days_until_birthday == 0,
-    }
+        # Character with no birthdate but static age
+        p3 = PersonaModel({"name": "C", "hard": {"age": 30}})
+
+        checks = {
+            "birthday_today_detected": p1.is_birthday,
+            "birthday_today_age_correct": p1.age == today.year - 2000,
+            "other_not_birthday": not p2.is_birthday,
+            "other_age_not_none": p2.age is not None,
+            "static_age_works": p3.age == 30,
+            "days_until_birthday_zero": p1.days_until_birthday == 0,
+        }
     score = sum(checks.values()) / len(checks)
 
     return BenchmarkResult(

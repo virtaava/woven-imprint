@@ -2,8 +2,22 @@
 
 import pytest
 
+from woven_imprint.config import get_config
 from woven_imprint.storage.sqlite import SQLiteStorage
 from woven_imprint.relationship.model import RelationshipModel
+
+
+@pytest.fixture(autouse=True)
+def _legacy_dynamics():
+    # This module pins legacy arithmetic; dynamics-gated behavior is covered
+    # separately in tests/test_relationship_dynamics.py.
+    cfg = get_config().relationship
+    previous = cfg.dynamics
+    cfg.dynamics = False
+    try:
+        yield
+    finally:
+        cfg.dynamics = previous
 
 
 @pytest.fixture

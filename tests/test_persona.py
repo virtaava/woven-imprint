@@ -1,8 +1,14 @@
 """Tests for persona model."""
 
-from datetime import date
+from datetime import datetime, timezone
 
+from woven_imprint import clock
 from woven_imprint.persona.model import PersonaModel
+
+# Fixed reference date for all birthday/age assertions below, so these tests
+# are deterministic regardless of wall-clock time or timezone (PersonaModel
+# derives age/birthday from woven_imprint.clock, which is UTC).
+FIXED_NOW = datetime(2026, 6, 21, 12, 0, tzinfo=timezone.utc)
 
 
 class TestPersonaModel:
@@ -20,27 +26,26 @@ class TestPersonaModel:
         assert p.soft["personality"] == "witty and sharp"
 
     def test_age_from_birthdate(self):
-        # Use a fixed date to avoid test flakiness
-        p = PersonaModel({"name": "Alice"}, birthdate="2000-06-15")
-        age = p.age
-        assert age is not None
-        assert age >= 25  # Will be true from 2025 onwards
+        with clock.override(FIXED_NOW):
+            p = PersonaModel({"name": "Alice"}, birthdate="2000-06-15")
+            assert p.age == 26  # FIXED_NOW is 2026-06-21, birthday already passed this year
 
     def test_age_without_birthdate(self):
         p = PersonaModel({"name": "Alice", "hard": {"age": 30}})
         assert p.age == 30
 
     def test_birthday_detection(self):
-        today = date.today()
-        bday = f"2000-{today.month:02d}-{today.day:02d}"
-        p = PersonaModel({"name": "Alice"}, birthdate=bday)
-        assert p.is_birthday is True
-        assert p.days_until_birthday == 0
+        with clock.override(FIXED_NOW):
+            today = clock.today()
+            bday = f"2000-{today.month:02d}-{today.day:02d}"
+            p = PersonaModel({"name": "Alice"}, birthdate=bday)
+            assert p.is_birthday is True
+            assert p.days_until_birthday == 0
 
     def test_not_birthday(self):
-        # Use a date that's definitely not today
-        p = PersonaModel({"name": "Alice"}, birthdate="2000-01-01")
-        if date.today().month != 1 or date.today().day != 1:
+        # FIXED_NOW is 2026-06-21, so 2000-01-01 is unconditionally not today.
+        with clock.override(FIXED_NOW):
+            p = PersonaModel({"name": "Alice"}, birthdate="2000-01-01")
             assert p.is_birthday is False
 
     def test_system_prompt_contains_persona(self):

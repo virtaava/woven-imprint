@@ -67,7 +67,15 @@ def test_single_call_parses_all_sections():
     assert out.emotion.mood == "amused" and abs(out.emotion.intensity - 0.4) < 1e-9
     assert out.relationship == FULL["relationship"]
     assert out.beat is not None and out.beat.phase == ArcPhase.RISING and arc.tension == 0.6
-    assert out.facts == ["The visitor's sister is called Aino."]  # len > 10 filter
+    assert out.facts == [
+        {
+            "statement": "The visitor's sister is called Aino.",
+            "subject": None,
+            "predicate": None,
+            "object": None,
+            "event_time": None,
+        }
+    ]  # len > 10 filter
 
 
 def test_missing_sections_are_none_or_empty():
@@ -95,7 +103,15 @@ def test_malformed_emotion_does_not_drop_other_sections():
     kw.update(want_beat=False)
     out = TurnAssessor(llm).assess(**kw)
     assert out.emotion is None
-    assert out.facts == ["a long enough fact here"]
+    assert out.facts == [
+        {
+            "statement": "a long enough fact here",
+            "subject": None,
+            "predicate": None,
+            "object": None,
+            "event_time": None,
+        }
+    ]
 
 
 def test_engine_parsers_match_legacy_behavior():
@@ -117,5 +133,11 @@ def test_engine_parsers_match_legacy_behavior():
     assert Character._parse_relationship_deltas("not a dict") == {}
 
     assert Character._parse_facts(["ok fact that is long enough", 5, "tiny"], 5) == [
-        "ok fact that is long enough"
+        {
+            "statement": "ok fact that is long enough",
+            "subject": None,
+            "predicate": None,
+            "object": None,
+            "event_time": None,
+        }
     ]

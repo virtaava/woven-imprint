@@ -101,6 +101,9 @@ memory:
   weight_relationship: 1.0
   # recency_anchor: created        # "created" | "accessed"
   max_candidates: 5000
+  relevance_gate: true
+  relevance_semantic_topk: 100
+  relevance_min_similarity: 0.000001
 ```
 
 | Setting | Default | Env Var | Description |
@@ -129,6 +132,9 @@ memory:
 | `weight_relationship` | `1.0` | — | Weight applied to the relationship-target-match signal in weighted RRF (only relevant when a `relationship_target`/`user_id` is passed to retrieval). |
 | `recency_anchor` | `created` | — | Which timestamp recency decay is anchored on: `created` (memory's creation time — decay is a fixed clock, independent of retrieval activity) or `accessed` (last-access time — frequently-recalled memories stay "fresh"). |
 | `max_candidates` | `5000` | — | Hard cap on active memories scored per `retrieve()` call. Every active memory for the character is a retrieval candidate (no more 200-newest-core-rows window); if the character has more than this many active memories, the newest `max_candidates` are scored and older ones are reachable only via FTS keyword match. Raise it for characters with very long histories on capable hardware; lower it to bound retrieval latency. |
+| `relevance_gate` | `true` | — | When true and the query is non-empty, recency/importance/relationship ranking is confined to memories that are semantically similar (similarity > `relevance_min_similarity`, top `relevance_semantic_topk` of those) or keyword-matching (FTS) — see [ARCHITECTURE.md](ARCHITECTURE.md#retrieval-relevance-gate). Narrows (does not eliminate) an off-topic bedrock/core flood outranking a fresh relevant fact via recency/importance floors alone — an off-topic memory with genuine positive similarity landing in the semantic top-K can still outrank on those signals. Falls back to scoring every active memory if nothing is relevant at all. Set `false` to restore the pre-gate fusion (those signals rank every active memory unconditionally). An empty query always bypasses the gate. |
+| `relevance_semantic_topk` | `100` | — | Size of the semantic slice feeding the relevance gate's eligible set (unioned with all FTS keyword hits). Only used when `relevance_gate` is true. Raise it to let more semantically-adjacent memories compete on recency/importance; lower it to tighten the gate further. |
+| `relevance_min_similarity` | `0.000001` | — | Semantic eligibility floor for the relevance gate: a memory must score strictly above this cosine similarity to count as "semantically relevant." Guards against float32 matmul noise on real dense embeddings (typically ~1e-8) being mistaken for a genuine positive match against a `sim > 0.0` floor. Only used when `relevance_gate` is true. |
 
 Semantic scoring (cosine similarity across all candidates) uses `numpy` when it's
 installed (`pip install woven-imprint[fast]`) — one matrix build + matmul per
@@ -151,6 +157,8 @@ context:
   reserve_tokens: 500
   max_turns: 20
   include_date: true
+  facts_block: true
+  facts_block_limit: 12
 ```
 
 | Setting | Default | Description |
@@ -162,6 +170,8 @@ context:
 | `reserve_tokens` | `500` | Reserved for safety margin. |
 | `max_turns` | `20` | Maximum conversation turns kept in the sliding window. Older turns are compressed into a summary. |
 | `include_date` | `true` | Prefix the volatile context block with `Today is {weekday}, {YYYY-MM-DD}.` (from `woven_imprint.clock`). Retrieved memory lines are always rendered with their date and a relative phrase (`2026-05-03, 3 weeks ago`) regardless of this setting — disabling it only removes the "Today is ..." line. |
+| `facts_block` | `true` | Inject a "What you currently know about {user}" block into the volatile context, built from the character's structured facts (`Character.facts`). Superseded facts show as `(since YYYY-MM-DD, previously: X)`. A short "Things you have said about yourself" block follows when self-facts exist. Set to `false` to disable the block entirely (e.g. to save tokens or when structured facts aren't in use). |
+| `facts_block_limit` | `12` | Maximum number of current user-facts included in the block, ordered by highest importance first, then by `recorded_at` **descending** (newest-recorded first) on ties, so the cap drops the oldest facts rather than the newest. Self-facts are capped separately at 5 and are not affected by this setting. |
 
 When the total exceeds the budget, the system degrades gracefully:
 1. Compresses conversation history
@@ -179,12 +189,28 @@ Controls how character relationships evolve.
 relationship:
   max_delta: 0.15
   key_moments_limit: 20
+  dynamics: true
+  trust_gain_factor: 0.5
+  betrayal_threshold: -0.10
+  betrayal_damping_turns: 10
+  betrayal_gain_damping: 0.25
+  key_moment_threshold: 0.08
+  trajectory_window: 5
+  tension_decay_per_day: 0.05
 ```
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `max_delta` | `0.15` | Maximum change per dimension per interaction. Prevents a single conversation from dramatically shifting a relationship. A value of 0.15 means it takes ~7 consistently positive interactions to move trust from 0.0 to 1.0. |
-| `key_moments_limit` | `20` | Maximum number of pivotal moments stored per relationship. Oldest moments are dropped when the limit is exceeded. |
+| Setting | Default | Env Var | Description |
+|---------|---------|---------|-------------|
+| `max_delta` | `0.15` | — | Maximum change per dimension per interaction. Prevents a single conversation from dramatically shifting a relationship. A value of 0.15 means it takes ~7 consistently positive interactions to move trust from 0.0 to 1.0. |
+| `key_moments_limit` | `20` | — | Maximum number of pivotal moments stored per relationship. Oldest moments are dropped when the limit is exceeded. |
+| `dynamics` | `true` | `WOVEN_IMPRINT_RELATIONSHIP_DYNAMICS` | Route relationship updates through the code-driven dynamics formula (trust asymmetry, betrayal damping, tension decay, windowed trajectory, derived tier — see [ARCHITECTURE.md](ARCHITECTURE.md#relationship-model)) instead of the original clamp-only arithmetic. Set `false` for byte-identical pre-Tier-2 behavior; existing tests that pin that arithmetic set it explicitly. |
+| `trust_gain_factor` | `0.5` | — | Multiplier applied to a *positive* clamped trust delta before it is added — trust rises slower than it falls. Only affects trust; other dimensions are unscaled. Only used when `dynamics` is true. |
+| `betrayal_threshold` | `-0.10` | — | A single clamped trust delta at or below this value counts as a betrayal: it is applied at full magnitude (not scaled by `trust_gain_factor`), starts the damping window, and records a key moment. Only used when `dynamics` is true. |
+| `betrayal_damping_turns` | `10` | — | Number of subsequent relationship updates for which positive trust gains are further scaled by `betrayal_gain_damping` after a betrayal. Decrements by one only on updates that *began* with the damping window already active; the update that starts the window (the betrayal itself, or one that occurs while already damped and resets the window) does not decrement. Only used when `dynamics` is true. |
+| `betrayal_gain_damping` | `0.25` | — | Extra multiplier applied to positive trust deltas (on top of `trust_gain_factor`) while a betrayal's damping window (`betrayal_damping_turns`) is active. Only used when `dynamics` is true. |
+| `key_moment_threshold` | `0.08` | — | Minimum `\|clamped delta\|` on any single dimension to record a dated key moment for that update (betrayals are recorded separately regardless of this threshold). Only used when `dynamics` is true. |
+| `trajectory_window` | `5` | — | Number of most recent updates' net deltas (`trust+affection+respect`, post-scaling) and tension deltas kept in `state.recent` to derive `warming`/`cooling`/`volatile`/`stable`. Only used when `dynamics` is true; with `dynamics: false`, trajectory is derived from the current update's deltas alone. |
+| `tension_decay_per_day` | `0.05` | — | Amount `tension` decays toward 0 per elapsed day (via the injectable clock) since the relationship's last update, applied before the current update's deltas. Only used when `dynamics` is true. |
 
 ---
 
@@ -232,7 +258,7 @@ character:
 | Setting | Default | Env Var | Description |
 |---------|---------|---------|-------------|
 | `parallel` | `false` | `WOVEN_IMPRINT_PARALLEL` | Run subsystem updates (emotion, arc, fact extraction) in parallel threads. Set `true` for 3-4x faster turns with real LLMs. Keep `false` for testing or if you experience threading issues. Only takes effect when `background: false` — with `background: true` (the default), subsystem updates always run on the background worker thread instead. |
-| `lightweight` | `false` | `WOVEN_IMPRINT_LIGHTWEIGHT` | Skip emotion tracking and narrative arc analysis. Reduces LLM calls from 5-7 to 2-3 per turn. Useful for slower models or batch operations. |
+| `lightweight` | `false` | `WOVEN_IMPRINT_LIGHTWEIGHT` | Skip emotion tracking and narrative arc analysis. With the legacy per-engine path (`unified_assessment: false`), this drops separate emotion/arc calls, reducing LLM calls from 5-7 to 2-3 per turn. With `unified_assessment: true` (the default, carried from Tier 1), there is already only one bookkeeping call per turn (`_run_bookkeeping`) regardless of `lightweight` — setting `lightweight: true` there just tells that single call to skip the emotion/beat sections, it does not remove the call itself. Useful for slower models or batch operations either way. |
 | `enforce_consistency` | `true` | `WOVEN_IMPRINT_ENFORCE_CONSISTENCY` | Run NLI-style consistency check on every response. Catches hard constraint violations (wrong name, contradicted backstory). Adds 1 LLM call per turn. |
 | `consistency_max_retries` | `2` | — | Maximum regeneration attempts when a hard violation is detected. Higher = more likely to produce a consistent response, but slower. |
 | `consistency_temperature` | `0.5` | — | Temperature for regeneration attempts after a consistency violation. Lower = more deterministic retry. |
@@ -383,6 +409,7 @@ All environment variables that Woven Imprint reads:
 | `WOVEN_IMPRINT_BACKGROUND` | `character.background` | `export WOVEN_IMPRINT_BACKGROUND=false` |
 | `WOVEN_IMPRINT_UNIFIED_ASSESSMENT` | `character.unified_assessment` | `export WOVEN_IMPRINT_UNIFIED_ASSESSMENT=false` |
 | `WOVEN_IMPRINT_MAINTENANCE_BUDGET` | `maintenance.max_llm_calls_per_run` | `export WOVEN_IMPRINT_MAINTENANCE_BUDGET=100` |
+| `WOVEN_IMPRINT_RELATIONSHIP_DYNAMICS` | `relationship.dynamics` | `export WOVEN_IMPRINT_RELATIONSHIP_DYNAMICS=false` |
 
 ---
 

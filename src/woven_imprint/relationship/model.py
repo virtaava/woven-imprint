@@ -37,6 +37,8 @@ class RelationshipModel:
         self.storage = storage
         self.character_id = character_id
 
+    TIERS = ("stranger", "acquaintance", "friend", "close_friend", "adversary")
+
     def get_or_create(self, target_id: str) -> dict:
         """Get existing relationship or create a new stranger relationship."""
         rel = self.storage.get_relationship(self.character_id, target_id)
@@ -51,23 +53,148 @@ class RelationshipModel:
             "type": "stranger",
             "trajectory": "stable",
             "key_moments": [],
+            "state": {},
         }
         self.storage.save_relationship(rel)
         return rel
 
-    def update(self, target_id: str, deltas: dict[str, float], new_type: str | None = None) -> dict:
+    @staticmethod
+    def tier_for(dims: dict) -> tuple[str, float]:
+        """Derive a relationship tier and affinity score from dimension values."""
+        aff = (
+            0.5 * dims.get("trust", 0.0)
+            + 0.3 * dims.get("affection", 0.0)
+            + 0.2 * dims.get("respect", 0.0)
+        )
+        fam = dims.get("familiarity", 0.0)
+        if aff <= -0.3:
+            return "adversary", aff
+        if aff >= 0.5 and fam >= 0.6:
+            return "close_friend", aff
+        if aff >= 0.25 and fam >= 0.3:
+            return "friend", aff
+        if fam >= 0.1:
+            return "acquaintance", aff
+        return "stranger", aff
+
+    def update(
+        self,
+        target_id: str,
+        deltas: dict[str, float],
+        new_type: str | None = None,
+        *,
+        note: str | None = None,
+    ) -> dict:
         """Update relationship dimensions with bounded deltas.
 
         Args:
             target_id: The other entity.
             deltas: Dict of dimension_name → change value (clamped to MAX_DELTA).
             new_type: Optional new relationship type.
+            note: Optional short context string attached to any key moment recorded
+                by this update.
 
         Returns:
             Updated relationship dict.
         """
-        rel = self.get_or_create(target_id)
+        from ..config import get_config
+        from .. import clock
 
+        cfg = get_config().relationship
+        rel = self.get_or_create(target_id)
+        dims = rel["dimensions"]
+        if not cfg.dynamics:
+            return self._update_legacy(rel, deltas, new_type)
+
+        state = rel.setdefault("state", {}) or {}
+        state.setdefault("updates", 0)
+        state.setdefault("recent", [])
+        state.setdefault("damping_left", 0)
+        state.setdefault("betrayals", 0)
+        now = clock.now()
+        last = state.get("last_update_at")
+        if last:
+            try:
+                elapsed_days = max(0.0, (now - clock.parse_ts(last)).total_seconds() / 86400.0)
+            except ValueError:
+                elapsed_days = 0.0
+            if elapsed_days > 0 and dims.get("tension", 0.0) > 0:
+                dims["tension"] = _clamp(
+                    dims["tension"] - cfg.tension_decay_per_day * elapsed_days, 0.0, 1.0
+                )
+
+        was_damped = state["damping_left"] > 0
+        betrayed_now = False
+        today = now.date().isoformat()
+        applied: dict[str, float] = {}
+        for key, delta in deltas.items():
+            if key not in dims:
+                continue
+            clamped = max(-cfg.max_delta, min(cfg.max_delta, float(delta)))
+            # `pre_scaled` is the clamped-but-not-yet-scaled magnitude. Key
+            # moments are judged against this value (a trust gain of +0.15 is
+            # a key moment even though trust_gain_factor/betrayal_gain_damping
+            # shrink what actually gets applied to the dimension).
+            pre_scaled = clamped
+            if key == "trust":
+                if clamped <= cfg.betrayal_threshold:
+                    state["damping_left"] = cfg.betrayal_damping_turns
+                    state["betrayals"] += 1
+                    betrayed_now = True
+                    self._push_moment(
+                        rel,
+                        f"{today}: betrayal — trust {clamped:+.2f}"
+                        + (f" — {note}" if note else ""),
+                        cfg,
+                    )
+                elif clamped > 0:
+                    clamped *= cfg.trust_gain_factor
+                    if was_damped:
+                        clamped *= cfg.betrayal_gain_damping
+            if key == "familiarity":
+                dims[key] = _clamp(dims[key] + abs(clamped), 0.0, 1.0)
+            elif key == "tension":
+                dims[key] = _clamp(dims[key] + clamped, 0.0, 1.0)
+            else:
+                dims[key] = _clamp(dims[key] + clamped)
+            applied[key] = clamped
+            if abs(pre_scaled) >= cfg.key_moment_threshold and not (
+                key == "trust" and clamped <= cfg.betrayal_threshold
+            ):
+                self._push_moment(
+                    rel,
+                    f"{today}: {key} {pre_scaled:+.2f}" + (f" — {note}" if note else ""),
+                    cfg,
+                )
+        if was_damped and not betrayed_now:
+            state["damping_left"] -= 1
+
+        net = (
+            applied.get("trust", 0.0) + applied.get("affection", 0.0) + applied.get("respect", 0.0)
+        )
+        state["recent"] = (state["recent"] + [[net, applied.get("tension", 0.0)]])[
+            -cfg.trajectory_window :
+        ]
+        net_sum = sum(r[0] for r in state["recent"])
+        tension_sum = sum(abs(r[1]) for r in state["recent"])
+        if net_sum > 0.1:
+            rel["trajectory"] = "warming"
+        elif net_sum < -0.1:
+            rel["trajectory"] = "cooling"
+        elif tension_sum > 0.1:
+            rel["trajectory"] = "volatile"
+        else:
+            rel["trajectory"] = "stable"
+
+        rel["type"] = new_type or self.tier_for(dims)[0]
+        state["updates"] += 1
+        state["last_update_at"] = clock.sqlite_ts(now)
+        rel["state"] = state
+        self.storage.save_relationship(rel)
+        return rel
+
+    def _update_legacy(self, rel: dict, deltas: dict[str, float], new_type: str | None) -> dict:
+        """Legacy (pre-dynamics) update arithmetic, byte-identical to prior behavior."""
         dims = rel["dimensions"]
         for key, delta in deltas.items():
             if key not in dims:
@@ -104,6 +231,14 @@ class RelationshipModel:
         self.storage.save_relationship(rel)
         return rel
 
+    def _push_moment(self, rel: dict, moment: str, cfg) -> None:
+        if cfg.key_moments_limit <= 0:
+            rel["key_moments"] = []
+            return
+        moments = rel.get("key_moments", []) or []
+        moments.append(moment)
+        rel["key_moments"] = moments[-cfg.key_moments_limit :]
+
     def set_baseline(
         self,
         target_id: str,
@@ -139,11 +274,10 @@ class RelationshipModel:
 
     def add_key_moment(self, target_id: str, moment: str) -> None:
         """Record a pivotal moment in the relationship."""
+        from ..config import get_config
+
         rel = self.get_or_create(target_id)
-        moments = rel.get("key_moments", [])
-        moments.append(moment)
-        # Keep only the 20 most recent key moments
-        rel["key_moments"] = moments[-20:]
+        self._push_moment(rel, moment, get_config().relationship)
         self.storage.save_relationship(rel)
 
     def describe(self, target_id: str) -> str:
@@ -199,6 +333,14 @@ class RelationshipModel:
                 if val >= threshold:
                     label = desc
             parts.append(f"  {dim}: {label} ({val:.2f})")
+
+        from ..config import get_config
+
+        if get_config().relationship.dynamics:
+            tier, aff = self.tier_for(dims)
+            parts.append(f"  tier: {rel.get('type', tier)} (affinity {aff:+.2f})")
+            for m in (rel.get("key_moments") or [])[-2:]:
+                parts.append(f"  recent: {m}")
 
         parts.append(f"  trajectory: {rel['trajectory']}")
         return "\n".join(parts)

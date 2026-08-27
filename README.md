@@ -42,9 +42,10 @@ No existing tool does all of this. Woven Imprint does.
 |---|---|---|
 | Memories carry dates; the character knows today's date and can say "three weeks ago" | **Measured** | `eval/bench_longhorizon.py` (60 simulated days) |
 | Old memories stay retrievable by paraphrase (no recency window) | **Measured** | `bench_longhorizon: paraphrase_recall_day5` (crosses 200 active core rows), `tests/test_retrieval_fullscan.py::test_old_core_memory_found_beyond_200_window` |
-| Contradictions supersede older beliefs | **Measured** | `bench_longhorizon: contradiction_supersession` |
+| Contradictions supersede older beliefs | **Measured** | `bench_longhorizon: contradiction_supersession`, `bench_longhorizon: structured_supersession` |
+| Facts are structured and bi-temporal (what she believed on a given date) | **Measured** | `bench_longhorizon: structured_supersession` |
 | Relationship dimensions move with each exchange | **Measured** | `bench_longhorizon: relationship_trajectory` |
-| Slow trust / lasting consequences of betrayal | Planned | roadmap: relationship state machine |
+| Slow trust / lasting consequences of betrayal | **Measured** | `bench_longhorizon: betrayal_has_consequences` — trust drops, tier flips to "adversary", and only partially recovers afterward |
 | Personality drift measurement | Planned | roadmap: drift instrumentation (spike: `experiments/parametric_spike/RESULTS.md`) |
 | One bookkeeping LLM call per turn | **Measured** | `bench_longhorizon: bookkeeping_call_count` |
 
@@ -108,6 +109,12 @@ alice.reflect()
 
 # Relationship tracking — trust, affection, respect evolve per interaction
 print(alice.relationships.describe("player_1"))
+
+# Structured facts — bi-temporal: what she knows now, what she knew as of a date,
+# and the full history of what changed
+print(alice.facts.current("user", "lives_in"))            # [{"object": "Oulu", ...}]
+print(alice.facts.as_of("2026-05-20", "user", "lives_in")) # what was true back then
+print(alice.facts.history("user", "lives_in"))             # every version, oldest first
 
 # Export full character state — portable, self-contained
 alice.export("alice_v1.json")

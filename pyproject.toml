@@ -62,6 +62,7 @@ line-length = 100
 # function parameter named `app_client` then "redefines" the import, which is
 # the intended, unavoidable shape of this pattern.
 "tests/test_demo_memory_routes.py" = ["F811"]
+"tests/test_card_export.py" = ["F811"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

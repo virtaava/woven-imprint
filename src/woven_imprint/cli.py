@@ -194,6 +194,31 @@ def cmd_export(args):
     engine.close()
 
 
+def cmd_export_card(args):
+    """Export a character as a SillyTavern/TavernAI V2 character card (with lorebook)."""
+    import json
+
+    engine = _get_engine(args.db)
+    chars = engine.list_characters()
+    query = args.character.lower()
+    match = next(
+        (c for c in chars if c["id"] == args.character or c["name"].lower().startswith(query)),
+        None,
+    )
+    if not match:
+        print(f"Character not found: {args.character}")
+        engine.close()
+        return
+
+    char = engine.load_character(match["id"])
+    card = char.export_card()
+    output = args.output or f"{char.name.lower().replace(' ', '_')}_card.json"
+    with open(output, "w") as f:
+        json.dump(card, f, indent=2)
+    print(f"Exported {char.name} card to {output}")
+    engine.close()
+
+
 def cmd_delete(args):
     """Delete a character."""
     engine = _get_db_only_engine(args.db)
@@ -553,6 +578,13 @@ def main():
     p_export.add_argument("character", help="Character name or ID")
     p_export.add_argument("-o", "--output", help="Output file path")
 
+    # export-card
+    p_export_card = sub.add_parser(
+        "export-card", help="Export character as a SillyTavern V2 character card"
+    )
+    p_export_card.add_argument("character", help="Character name or ID")
+    p_export_card.add_argument("-o", "--output", help="Output file path")
+
     # delete
     p_delete = sub.add_parser("delete", help="Delete a character")
     p_delete.add_argument("character", help="Character name or ID")
@@ -608,6 +640,7 @@ def main():
         "list": cmd_list,
         "stats": cmd_stats,
         "export": cmd_export,
+        "export-card": cmd_export_card,
         "delete": cmd_delete,
         "import": cmd_import,
         "migrate": cmd_migrate,

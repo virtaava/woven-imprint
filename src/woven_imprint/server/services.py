@@ -241,6 +241,12 @@ def export_character_service(engine, character_id):
     return char.export()
 
 
+def export_character_card_service(engine, character_id):
+    """Export character as a SillyTavern V2 character card dict. Raises KeyError if not found."""
+    char = engine.get_character(character_id)
+    return char.export_card()
+
+
 def import_character_service(engine, data: dict):
     """Import character from JSON dict. Returns character info."""
     import tempfile

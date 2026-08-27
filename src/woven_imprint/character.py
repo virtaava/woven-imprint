@@ -1035,6 +1035,95 @@ class Character:
 
         return data
 
+    def export_card(self, *, core_limit: int = 20) -> dict:
+        """Export as a SillyTavern/TavernAI V2 character card with a lorebook built from
+        pinned memories, current user facts and the most important core memories.
+
+        Round-trip note: re-importing the resulting card (`CharacterImporter.from_file`)
+        wraps every lorebook entry's content as ``[Lore: keys] content``, so exported
+        memory text comes back prefixed rather than verbatim. Facts are exported as
+        lorebook entries (plain text, no structured subject/predicate/object) and come
+        back on import as plain core (or pinned bedrock, if constant) memories, not as
+        `FactStore` facts — structured fact history does not round-trip through the
+        card format.
+        """
+        soft, hard = self.persona.soft, self.persona.hard
+        greetings = soft.get("greetings") or []
+        if isinstance(greetings, str):
+            greetings = [greetings]
+        entries: list[dict] = []
+        order = 0
+        for m in self.memory.pinned():
+            entries.append(
+                {
+                    "keys": _lore_keys(m["content"]),
+                    "content": m["content"],
+                    "enabled": True,
+                    "constant": True,
+                    "insertion_order": order,
+                    "comment": "pinned memory",
+                }
+            )
+            order += 1
+        for f in self.facts.current(subject="user", limit=None):
+            keys = [f["object"]] + [w for w in f["predicate"].split("_") if len(w) > 3]
+            entries.append(
+                {
+                    "keys": keys,
+                    "content": f["statement"],
+                    "enabled": True,
+                    "constant": False,
+                    "insertion_order": order,
+                    "comment": f"fact {f['subject']}.{f['predicate']}",
+                }
+            )
+            order += 1
+        pinned_ids = {m["id"] for m in self.memory.pinned()}
+        core = [
+            m
+            for m in self.memory.get_all(tier="core", limit=None)
+            if m["id"] not in pinned_ids and not m.get("metadata", {}).get("fact_id")
+        ]
+        core.sort(key=lambda m: -float(m.get("importance", 0.5)))
+        for m in core[:core_limit]:
+            entries.append(
+                {
+                    "keys": _lore_keys(m["content"]),
+                    "content": m["content"],
+                    "enabled": True,
+                    "constant": False,
+                    "insertion_order": order,
+                    "comment": "core memory",
+                }
+            )
+            order += 1
+        tags = soft.get("tags") or []
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(",") if t.strip()]
+        return {
+            "spec": "chara_card_v2",
+            "spec_version": "2.0",
+            "data": {
+                "name": self.name,
+                "description": self.persona.backstory or "",
+                "personality": soft.get("personality", ""),
+                "scenario": soft.get("scenario", ""),
+                "first_mes": greetings[0] if greetings else "",
+                "alternate_greetings": list(greetings[1:]),
+                "mes_example": "",
+                "creator_notes": (
+                    self.persona.hard.get("creator_notes") or "exported by woven-imprint"
+                ),
+                "system_prompt": hard.get("hard_constraints", ""),
+                "post_history_instructions": "",
+                "tags": tags,
+                "creator": "woven-imprint",
+                "character_version": "1",
+                "extensions": {"woven_imprint": {"character_id": self.id}},
+                "character_book": {"name": f"{self.name} memories", "entries": entries},
+            },
+        }
+
     def _build_context(
         self,
         user_message: str,
@@ -1593,3 +1682,17 @@ class Character:
                     when = ""
             lines.append(f"- {tier_tag}{when}{cert_tag} {m['content'][:200]}")
         return "\n".join(lines)
+
+
+def _lore_keys(text: str, n: int = 3) -> list[str]:
+    """Pick up to `n` distinctive lowercase words from `text` to use as lorebook
+    trigger keys, skipping short/common filler words. Falls back to a text snippet
+    if nothing distinctive is found."""
+    words = [w.strip(".,;:!?\"'()[]").lower() for w in text.split()]
+    words = [
+        w
+        for w in words
+        if len(w) > 3
+        and w not in ("visitor", "always", "never", "about", "their", "there", "would", "could")
+    ]
+    return words[:n] or [text[:20]]

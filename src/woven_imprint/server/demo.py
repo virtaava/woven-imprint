@@ -35,6 +35,7 @@ from woven_imprint.server.services import (
     delete_character_service,
     delete_fact_service,
     delete_memory_service,
+    export_character_card_service,
     export_character_service,
     extract_last_user_message,
     extract_user_id_from_messages,
@@ -415,6 +416,13 @@ def create_app(
         try:
             data = export_character_service(_engine, character_id)
             return data
+        except KeyError:
+            raise HTTPException(404, f"Character '{character_id}' not found")
+
+    @app.get("/api/characters/{character_id}/card", dependencies=[Depends(_check_auth)])
+    async def export_character_card(character_id: str):
+        try:
+            return export_character_card_service(_engine, character_id)
         except KeyError:
             raise HTTPException(404, f"Character '{character_id}' not found")
 

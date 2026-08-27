@@ -113,7 +113,8 @@ class MemoryStore:
     def get(self, memory_id: str) -> dict | None:
         return self.storage.get_memory(memory_id)
 
-    def get_all(self, tier: str | None = None, limit: int = 1000) -> list[dict]:
+    def get_all(self, tier: str | None = None, limit: int | None = 1000) -> list[dict]:
+        """`limit=None` returns all matching rows (no LIMIT clause)."""
         return self.storage.get_memories(self.character_id, tier=tier, limit=limit)
 
     def count(self, tier: str | None = None) -> int:

@@ -19,7 +19,7 @@ harness"). Spec: `docs/superpowers/specs/2026-08-27-tier3b-external-benchmarks.m
 |---|---|---|
 | **LoCoMo** | 10 conversations, 1,986 questions (282 / 321 / 96 / 841 category 1–4 + 446 category 5 adversarial) | [snap-research/locomo](https://github.com/snap-research/locomo), `data/locomo10.json` |
 | **LoCoMo-Plus** (Cognitive category) | 401 cue/trigger probes: causal / state / goal / value relation types | [xjtuleeyf/Locomo-Plus](https://github.com/xjtuleeyf/Locomo-Plus), `data/locomo_plus.json` — companion to ARR 2026 submission, [arXiv:2602.10715](https://arxiv.org/abs/2602.10715) |
-| **LongMemEval-S** | 500 questions, 6 types, 30 `_abs` (abstention) questions, ~48 sessions / ~494 turns of haystack per question | [xiaowu0162/longmemeval-cleaned](https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned), `longmemeval_s_cleaned.json` |
+| **LongMemEval-S** | 500 questions, 6 types, 30 `_abs` (abstention) questions, ~48 sessions / ~494 turns of haystack per question — **50 of 500 run (see Reproduce)** | [xiaowu0162/longmemeval-cleaned](https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned), `longmemeval_s_cleaned.json` |
 
 LoCoMo's `category` (an int) maps: 1 = multi-hop, 2 = temporal, 3 = open-domain/common-sense,
 4 = single-hop (all four scored against `answer`); 5 = adversarial (no in-conversation answer
@@ -69,14 +69,17 @@ LoCoMo image turns carry a `blip_caption`; these are folded into the turn text a
 own) before ingestion — 1,226 turns and 857 of the 1,986 questions have such a turn as evidence,
 so dropping the caption would silently break recall on a meaningful slice of the benchmark.
 
-LongMemEval-S: message-by-message ingestion as above, but with `fact_extraction_interval = 4`
-(every 4th turn triggers bookkeeping — the ~494-turn-per-question haystack makes interval-1 cost
-prohibitive at scale).
-<!-- T5 --> Task 5 replaces this with **pair-turn ingestion** via a new
-`Character.ingest_exchange(user_turn, assistant_turn, user_id)` — one bookkeeping call per
-user+assistant exchange pair instead of per individual turn, halving call count at the same
-effective granularity (a user/assistant pair is the natural "one thing happened" unit for a
-transcript that already alternates strictly by role).
+LongMemEval-S: **pair-turn ingestion** (`--pair-turns`, on by default for this bench). Each
+consecutive (user, assistant) pair within a session is ingested with one
+`Character.ingest_exchange(user_message, response, user_id)` call — one unified bookkeeping call
+per exchange instead of one per turn, halving bookkeeping calls (the 50-question sample has
+24,639 turns in 2,380 sessions → ≈12.3k exchange calls + 2,380 session-summary calls). Unpaired
+turns (two user turns in a row, a leading assistant turn, a trailing user turn) fall back to
+`Character.ingest()`; the clock advances 30 s per original turn either way.
+`fact_extraction_interval` counts *exchanges* here (one `_turn_count` increment per pair). Note
+that under unified assessment the interval does **not** reduce LLM calls — `_run_bookkeeping`
+always makes its one assessment call (emotion/relationship) and the interval only gates whether
+that call also extracts facts — so LongMemEval-S runs use `--interval 1`, the same as LoCoMo.
 
 Session boundary handling: LongMemEval-S session dates are **not** chronological in the source
 file for 211 of 500 questions — this loader sorts each question's `haystack_sessions` by
@@ -113,8 +116,11 @@ character), `char.end_session()`; then under `clock.override(query_time)`,
 `char.start_session()`, `response = char.chat(trigger_A_line, user_id=user_name)` — the real
 product chat path, at its **default temperature 0.7** (not overridden — this is the real product
 default, not a benchmark-specific choice), max output governed by the product's own chat
-settings. `query_time` = the base conversation's last session time + 7 days (upstream's
-`query_time`); `cue_time` = `query_time` − `time_gap` (upstream's `cue_time`).
+settings. This means memory mode's retrieval and generation budget are **not** the QA path's
+`K=20`/60-token answer: `char.chat()` retrieves the product's own top-10 memories
+(`retriever.retrieve(..., limit=10)`) and generates with `max_tokens=2048`, the same as any live
+product conversation. `query_time` = the base conversation's last session time + 7 days
+(upstream's `query_time`); `cue_time` = `query_time` − `time_gap` (upstream's `cue_time`).
 
 Full-context mode: no Engine/DB — the stitched transcript (every base session, then the cue, then
 the trigger, time-ordered, each block headed by `DATE: ...`, turns rendered as
@@ -147,13 +153,17 @@ whitespace-separated words. The word-count cap exists only to stop a long, other
 answer that happens to contain an abstention-shaped fragment from being misclassified — it is a
 deliberately simple rule, not an NLI judgment, and does not special-case "opens with an
 abstention phrase but then supplies a concrete answer" (a short reply doing both, e.g.
-"Not mentioned; she adopted a dog", is still counted as an abstention). Reported separately as
-`adversarial_accuracy` (LoCoMo cat. 5) / `abstain_accuracy` (LongMemEval `_abs`), excluded from
-the headline J-score — the Mem0/Zep convention, since a "correct" abstention isn't comparable to
-a "correct" factual recall. <!-- T5 --> Task 5 keeps these as two distinct summary keys (already
-split in `metrics.summarize`) rather than merging them, and adds `--delete-db-after-answer` (see
-[Reproduce](#reproduce)) so LongMemEval-S's per-question SQLite databases don't need to be kept
-around after each question is answered.
+"Not mentioned; she adopted a dog", is still counted as an abstention). These are two distinct
+summary keys, `adversarial_accuracy` (LoCoMo) and `abstain_accuracy` (LongMemEval-S), each `null`
+when a run has no items of that kind. Per-category rows are computed over judged (`kind == "qa"`)
+items only; rule-scored items are reported separately (`rule_scored`), so the LoCoMo "5" row is
+the abstention accuracy. LongMemEval-S's `_abs` count is whatever the seeded sample contains: the
+50-question sample holds only 2 `_abs` questions (one `knowledge-update`, one
+`single-session-user`), so its `abstain_accuracy` is anecdotal, not a measurement. Because every
+LongMemEval-S question carries its own haystack, `--delete-db-after-answer` removes a
+conversation's SQLite DB (plus `-wal`/`-shm`) once all its questions are answered and judged,
+keeping only the JSON checkpoints. Never pass it on a LoCoMo memory run that a later
+`--reuse-run` (LoCoMo-Plus) depends on.
 
 ### Metrics
 
@@ -277,6 +287,10 @@ anymore. The spec only requires a LoCoMo full-context baseline; LongMemEval-S is
 
 ## Hardware & runtime
 
+<!-- RUNTIME:MEASURED --> The call-rate/latency/wall-clock figures below are estimates from
+pre-publication smoke runs, to be replaced with measured wall-clock once the real LoCoMo/
+LoCoMo-Plus/LongMemEval-S publication runs referenced in [Reproduce](#reproduce) complete.
+
 - **Host**: DGX Spark (GB10, 128 GB unified memory, ARM64).
 - **Answering + judge model**: Qwen3.5-35B-A3B-FP8 via `vllm-brain` (vLLM Docker), thinking
   disabled (`extra_body={"chat_template_kwargs": {"enable_thinking": False}}` on every call —
@@ -318,14 +332,20 @@ results content).
   to answer", scored by a fixed phrase-and-length rule (see
   [Category 5 / abstention](#category-5--abstention)), not by the LLM judge — it is reported
   separately and excluded from the headline J-score, matching the Mem0/Zep convention.
+- **`is_abstention`'s 12-word cap can misclassify in both directions.** `is_abstention` requires
+  ≤12 words, so a verbose but compliant abstention is scored WRONG; short factual answers
+  containing "unknown"/"not sure" could be scored as abstentions — counts reported with the
+  results.
 - **Blip captions folded into text.** LoCoMo image-sharing turns are ingested as
   `"{text} (shared a photo: {caption})"`; 857 of 1,986 questions depend on evidence in such a
   turn. This is upstream's own rendering convention for these turns, not an invention of this
   harness.
 - **Subset sizes.** LoCoMo and LoCoMo-Plus run in full. LongMemEval-S runs on a seeded stratified
-  sample (round-robin across `question_type` groups) rather than all 500 questions, because full
-  ingestion of ~48 sessions × 500 questions at this hardware's throughput would take on the order
-  of days; the sample size actually run is recorded in each results file's `config.sample`.
+  sample (round-robin across `question_type` groups) rather than all 500 questions — 50, not 500
+  — because at this hardware's realistic bookkeeping throughput (~24 calls/min under
+  `--max_num_seqs 2`) the 50-question sample's ≈12.3k paired bookkeeping calls already cost
+  ~10 hours wall-clock; 100 questions would be ~21 hours and 500 would take on the order of days.
+  The sample size actually run is recorded in each results file's `config.sample`.
 - **`time_gap` regex quirk (LoCoMo-Plus).** `parse_time_gap` is a faithful port of upstream
   `build_conv.parse_time_gap`, including its quirk: it only matches a number token immediately
   followed by whitespace and a unit ("week"/"month"/"year"), so phrases like "several months
@@ -333,10 +353,11 @@ results content).
   15 of the 401 real probes hit this and parse to a zero time gap. This is upstream behavior,
   preserved rather than "fixed", so the harness's probe placement matches what upstream's own
   pipeline would produce.
-- **Rejudge pass = `judge_version: 2`.** Records re-scored by `python -m eval.external rejudge`
-  (fixing an earlier pass's missing reference-date and abstention-detection gaps) carry
-  `judge_version: 2`; records from the original judging pass have no such field. RESULTS.md's
-  external section reports whichever version the majority of a run's records carry.
+- **`judge_version: 2`.** Every record scored by the current judge (a fresh `run()` or a
+  `python -m eval.external rejudge` pass) carries `judge_version: 2`; a record from a run
+  predating the reference-date/abstention-detection fix has no such field (equivalent to `1`).
+  RESULTS.md's external section reports the judge_version carried by the run's records
+  (2 = reference-date judge; absent/1 = pre-fix pass).
 - **Plus accuracy is topical linkage, not recall verification.** The Cognitive judge's question is
   "does the prediction relate to the evidence", not "did the model actually recall and use this
   specific fact" — a response that's merely thematically adjacent to the cue can be marked
@@ -368,8 +389,8 @@ results content).
 All commands assume `.venv/bin/python` (the project venv) and that `vllm-brain` (`:11800`) and
 `llama-embed` (`:11801`) are already running. `--timeout 900` is used throughout (see
 [Hardware & runtime](#hardware--runtime)); `--shard i/n --no-results` runs one of `n` parallel
-workers over conversations `i % n == 0`, and a final unsharded call (no `--shard`) aggregates and
-writes results once every worker has finished.
+workers over conversations at conversation index `% n == i`, and a final unsharded call
+(no `--shard`) aggregates and writes results once every worker has finished.
 
 ```bash
 # 1. Fetch datasets (idempotent; --force to re-download)
@@ -386,6 +407,10 @@ wait
 
 # 3. Re-judge with the reference-date fix (only needed if the run predates it; judge_version -> 2)
 .venv/bin/python -m eval.external rejudge --bench locomo --mode memory \
+  --run-id locomo-mem-v1 --timeout 900
+# re-sums ingest totals and rewrites results with the judge_version-2 records; run only after
+# rejudge has exited
+.venv/bin/python -m eval.external run --bench locomo --mode memory \
   --run-id locomo-mem-v1 --timeout 900
 
 # 4. LoCoMo, full-context baseline — 5-way sharded
@@ -410,18 +435,20 @@ wait
 .venv/bin/python -m eval.external run --bench locomo_plus --mode fullcontext \
   --run-id plus-full-v1 --timeout 900
 
-# 7. LongMemEval-S, memory mode only — 100-question stratified sample, interval 4, 10-way sharded
-#    (est. ~12k answering calls + ~4.8k session-summary calls, ~7h at ~40 calls/min; drop to
-#    --sample 50 if that doesn't fit the time budget)
+# 7. LongMemEval-S, memory mode only — 50-question stratified sample (seed 7; identical to the
+#    first 50 of the 100-question sample under the same seed), 10-way sharded. 24,639 turns /
+#    2,380 sessions -> ~12.3k paired bookkeeping calls + 2.4k session summaries, ~10 h at ~24
+#    calls/min under --max_num_seqs 2; 100 questions would be ~21 h, which is why this
+#    publication runs 50. The aggregate call MUST repeat --sample/--seed exactly, or the loader
+#    reloads all 500 questions and the aggregate starts ingesting the other 450.
 for i in $(seq 0 9); do
   .venv/bin/python -m eval.external run --bench longmemeval_s --mode memory \
-    --run-id lme-s-100-v1 --sample 100 --interval 4 --shard "$i/10" --no-results --timeout 900 &
-    # <!-- T5 --> add --delete-db-after-answer here once Task 5 lands, to avoid keeping
-    # ~100 per-question SQLite DBs on disk after they're no longer needed.
+    --run-id lme-s-50-v1 --sample 50 --seed 7 --interval 1 --delete-db-after-answer \
+    --shard "$i/10" --no-results --timeout 900 &
 done
 wait
 .venv/bin/python -m eval.external run --bench longmemeval_s --mode memory \
-  --run-id lme-s-100-v1 --sample 100 --interval 4 --timeout 900
+  --run-id lme-s-50-v1 --sample 50 --seed 7 --interval 1 --delete-db-after-answer --timeout 900
 ```
 
 Notes from running this for real:

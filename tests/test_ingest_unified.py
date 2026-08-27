@@ -123,3 +123,44 @@ def test_ingest_exchange_legacy_path_when_unified_off():
     assert engine.llm.unified_calls == 0
     assert engine.llm.legacy_calls >= 1
     assert char.facts.count() == 0
+
+
+# --- ingest()/ingest_exchange() flush a live background worker first (item 8) ---------------
+
+
+def test_ingest_flushes_pending_background_worker_before_running_inline():
+    engine, char = _char(True)
+    char.background = True
+    flushed = []
+    original_flush = char.flush
+    char.flush = lambda *a, **kw: (flushed.append(True), original_flush(*a, **kw))[1]
+
+    char.chat("Hello!", user_id="toni")  # background=True -> creates self._worker
+    assert char._worker is not None
+
+    char.ingest("user", "Another turn.", user_id="toni")
+    assert flushed == [True]
+    char.close()
+
+
+def test_ingest_exchange_flushes_pending_background_worker_before_running_inline():
+    engine, char = _char(True)
+    char.background = True
+    flushed = []
+    original_flush = char.flush
+    char.flush = lambda *a, **kw: (flushed.append(True), original_flush(*a, **kw))[1]
+
+    char.chat("Hello!", user_id="toni")  # background=True -> creates self._worker
+    assert char._worker is not None
+
+    char.ingest_exchange("Another turn.", "A reply.", user_id="toni")
+    assert flushed == [True]
+    char.close()
+
+
+def test_ingest_does_not_create_a_worker_when_none_exists():
+    engine, char = _char(True)
+    char.background = False
+    assert char._worker is None
+    char.ingest("user", "First turn ever.", user_id="toni")
+    assert char._worker is None  # flush() no-ops without creating a worker

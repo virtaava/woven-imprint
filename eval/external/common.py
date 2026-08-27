@@ -31,6 +31,7 @@ RESULTS_DIR = ROOT / "eval" / "results"
 BRAIN_URL = "http://127.0.0.1:11800/v1"
 BRAIN_MODEL = "Qwen/Qwen3.5-35B-A3B-FP8"
 EMBED_URL = "http://127.0.0.1:11801/v1"
+EMBED_MODEL = "nomic-embed-text"
 # vLLM's chat template streams Qwen3.5's chain-of-thought straight into
 # message.content unless this is forwarded on every request.
 NO_THINK = {"chat_template_kwargs": {"enable_thinking": False}}
@@ -117,7 +118,7 @@ def embedder() -> OpenAIEmbedding:
     """OpenAIEmbedding pointed at llama-embed (nomic-embed-text, 768d)."""
     from woven_imprint.embedding.openai_embedding import OpenAIEmbedding
 
-    return OpenAIEmbedding(model="nomic-embed-text", api_key="local", base_url=EMBED_URL)
+    return OpenAIEmbedding(model=EMBED_MODEL, api_key="local", base_url=EMBED_URL)
 
 
 def parse_locomo_datetime(s: str) -> datetime:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from eval.external.common import Turn
+from eval.external.common import EMBED_MODEL, Turn
 from eval.external.locomo import load_locomo, load_locomo_plus
 from eval.external.runner import (
     RunConfig,
@@ -206,6 +206,8 @@ def test_run_plus_memory_mode_copies_db_and_judges_each_probe(tmp_path):
     for p in probes:
         assert (run_root / f"{p['probe_id']}.json").exists()
         assert not (run_root / f"{p['probe_id']}.db").exists()  # deleted after judging
+        assert not (run_root / f"{p['probe_id']}.db-wal").exists()
+        assert not (run_root / f"{p['probe_id']}.db-shm").exists()
         assert p["label"] in ("correct", "wrong")
         assert p["base_conv_id"] == "conv-mini-1"
     assert results["summary"]["n_probes"] == 2
@@ -399,6 +401,64 @@ def test_judge_plus_incorrect_label_is_not_treated_as_correct():
     assert result["correct"] is False
 
 
+# --- judge_parsed / judge_version (item 5/6) ------------------------------------------------
+
+
+def test_judge_rule_scored_path_sets_judge_parsed_true():
+    q = _qa_question()
+    q.kind = "adversarial"
+    result = judge(q, "Not mentioned", FakeLLM())
+    assert result["judge_parsed"] is True
+
+
+def test_judge_marks_unparsed_when_llm_returns_non_dict():
+    class _NonDictLLM(FakeLLM):
+        def generate_json(self, messages, **kw):
+            return ["not", "a", "dict"]
+
+    result = judge(_qa_question(), "a cat", _NonDictLLM())
+    assert result["judge_parsed"] is False
+    assert result["label"] == "WRONG"  # not-a-dict also can't be CORRECT
+
+
+def test_judge_marks_unparsed_when_label_missing_or_empty():
+    class _NoLabelLLM(FakeLLM):
+        def generate_json(self, messages, **kw):
+            return {"reason": "forgot the label"}
+
+    result = judge(_qa_question(), "a cat", _NoLabelLLM())
+    assert result["judge_parsed"] is False
+
+
+def test_judge_plus_marks_unparsed_when_llm_returns_non_dict():
+    class _NonDictLLM(FakeLLM):
+        def generate_json(self, messages, **kw):
+            return "not even a list"
+
+    result = judge_plus("evidence", "response", _NonDictLLM())
+    assert result["judge_parsed"] is False
+
+
+def test_run_memory_mode_stamps_judge_version_2_on_every_record(tmp_path):
+    results = run(_cfg("jv1"), llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+    assert results["conversations"]
+    assert all(r["judge_version"] == 2 for r in results["conversations"])
+    assert results["summary"]["n_unparsed"] == 0
+
+
+def test_run_plus_stamps_judge_version_2_on_every_probe(tmp_path):
+    reuse_run = _make_reuse_run(tmp_path, "plus-jv-base")
+    results = run_plus(
+        _plus_cfg("plus-jv", reuse_run=reuse_run),
+        llm=ScriptedLLM(),
+        embedder=FakeEmbedder(),
+        out_dir=tmp_path,
+    )
+    assert results["probes"]
+    assert all(p["judge_version"] == 2 for p in results["probes"])
+    assert results["summary"]["n_unparsed"] == 0
+
+
 # --- Config restore on run() -------------------------------------------------------------
 
 
@@ -434,6 +494,21 @@ def test_run_refuses_unsharded_aggregation_when_db_without_ingest_checkpoint(tmp
     run_root = tmp_path / cfg.run_id
     run_root.mkdir(parents=True)
     (run_root / "conv-mini-1.db").write_text("stale")
+
+    with pytest.raises(RuntimeError, match="Refusing unsharded aggregation"):
+        run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+
+
+def test_run_refuses_unsharded_aggregation_when_ingest_done_but_no_answers_yet(tmp_path):
+    """A shard worker that finished ingestion but hasn't checkpointed its first answer yet
+    leaves an <conv>.ingest.json with no <conv>.answers.json at all — that must look
+    in-progress, not "zero questions, nothing to do"."""
+    cfg = _cfg("agg5")
+    run_root = tmp_path / cfg.run_id
+    run_root.mkdir(parents=True)
+    (run_root / "conv-mini-1.ingest.json").write_text(
+        json.dumps({"turns": 10, "sessions": 2, "llm_calls": 10, "seconds": 1.0})
+    )
 
     with pytest.raises(RuntimeError, match="Refusing unsharded aggregation"):
         run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
@@ -527,6 +602,99 @@ def test_rejudge_only_unjudged_skips_already_rejudged_records(tmp_path):
 
     unchanged = json.loads(answers_path.read_text())
     assert all(r["label"] == "TAMPERED" for r in unchanged)
+
+
+def test_rejudge_without_prior_results_derives_ingest_totals_and_embedding(tmp_path):
+    """rejudge() must not depend on a stored external_<run_id>.json for ingest_totals/embedding —
+    both are always derived fresh: ingest_totals by summing every <conv_id>.ingest.json on disk,
+    embedding from the embedder model constant (memory mode)."""
+    cfg = _cfg("rj3")
+    run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+    (tmp_path / "external_rj3.json").unlink()  # simulate no stored results file
+
+    rejudge_cfg = RunConfig(
+        bench="locomo",
+        mode="memory",
+        run_id="rj3",
+        dataset_path=FIXTURES / "locomo_mini.json",
+    )
+    results = rejudge(rejudge_cfg, llm=ScriptedLLM(), out_dir=tmp_path)
+
+    assert results["ingest_totals"]["turns"] > 0
+    assert results["ingest_totals"]["sessions"] > 0
+    assert results["ingest_totals"]["llm_calls"] > 0
+    assert results["embedding"] == EMBED_MODEL
+
+
+def test_rejudge_forwards_config_from_cli_when_no_stored_results(tmp_path):
+    """When no stored external_<run_id>.json exists, rejudge()'s `config` is built from its own
+    cfg (the CLI's --sample/--seed/--interval/--k), not left at RunConfig defaults."""
+    cfg = _cfg("rj4")
+    run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+    (tmp_path / "external_rj4.json").unlink()
+
+    rejudge_cfg = RunConfig(
+        bench="locomo",
+        mode="memory",
+        run_id="rj4",
+        dataset_path=FIXTURES / "locomo_mini.json",
+        k=42,
+        fact_extraction_interval=3,
+    )
+    results = rejudge(rejudge_cfg, llm=ScriptedLLM(), out_dir=tmp_path)
+
+    assert results["config"]["k"] == 42
+    assert results["config"]["fact_extraction_interval"] == 3
+
+
+# --- LoCoMo-Plus applies the same benchmark config as run() (item 3) -----------------------
+
+
+def test_run_plus_memory_mode_disables_callbacks_refresh_during_probe(tmp_path):
+    """run_plus()'s memory mode must apply the same _benchmark_config() run() does — in
+    particular, callbacks_refresh_on_session_end=False — so a probe's cue-session end_session()
+    never fires the callbacks-hooks LLM call."""
+    reuse_run = _make_reuse_run(tmp_path, "plus-cfgtest-base")
+
+    class _NoCallbacksLLM(ScriptedLLM):
+        def generate_json(self, messages, **kw):
+            system = messages[0].get("content", "") if messages else ""
+            if "conversation hooks for" in system:
+                raise AssertionError(
+                    "callbacks-refresh prompt fired during a locomo_plus memory-mode probe "
+                    "— callbacks_refresh_on_session_end was not disabled"
+                )
+            return super().generate_json(messages, **kw)
+
+    woven_cfg = get_config()
+    original_refresh = woven_cfg.maintenance.callbacks_refresh_on_session_end
+
+    run_plus(
+        _plus_cfg("plus-cfgtest", reuse_run=reuse_run),
+        llm=_NoCallbacksLLM(),
+        embedder=FakeEmbedder(),
+        out_dir=tmp_path,
+    )
+
+    # Restored afterwards regardless of what the probe loop did.
+    assert woven_cfg.maintenance.callbacks_refresh_on_session_end == original_refresh
+
+
+def test_run_plus_fullcontext_mode_does_not_touch_benchmark_config(tmp_path):
+    """Full-context mode never touches an Engine/Character, so it must not mutate config."""
+    woven_cfg = get_config()
+    original_interval = woven_cfg.memory.fact_extraction_interval
+    original_refresh = woven_cfg.maintenance.callbacks_refresh_on_session_end
+
+    run_plus(
+        _plus_cfg("plus-cfgtest-full", mode="fullcontext"),
+        llm=ScriptedLLM(),
+        embedder=FakeEmbedder(),
+        out_dir=tmp_path,
+    )
+
+    assert woven_cfg.memory.fact_extraction_interval == original_interval
+    assert woven_cfg.maintenance.callbacks_refresh_on_session_end == original_refresh
 
 
 # --- LoCoMo-Plus reuse-run WAL checkpoint (item 13) -----------------------------------------
@@ -743,10 +911,11 @@ def test_run_longmemeval_answers_and_reports_per_type_category_and_abstain(tmp_p
     )
 
     summary = results["summary"]
-    # question_type values from the fixture are reported as categories.
-    assert {"single-session-user", "temporal-reasoning", "knowledge-update"} <= set(
-        summary["per_category"]
-    )
+    # question_type values from the fixture are reported as categories — for "qa"-kind
+    # questions only; the "_abs" question's "knowledge-update" category is rule-scored instead.
+    assert {"single-session-user", "temporal-reasoning"} <= set(summary["per_category"])
+    assert "knowledge-update" not in summary["per_category"]
+    assert summary["rule_scored"]["knowledge-update"]["n"] == 1
     # The _abs question is scored as an abstention, separate from overall_j/adversarial_accuracy.
     assert summary["abstain_accuracy"] is not None
     assert summary["adversarial_accuracy"] is None  # LongMemEval has no adversarial kind

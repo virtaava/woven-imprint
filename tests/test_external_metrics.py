@@ -58,14 +58,17 @@ def test_is_abstention_does_not_flag_concrete_answers(phrase):
     assert not is_abstention(phrase), phrase
 
 
-def _item(category, kind, correct, f1=0.5, prompt_tokens_est=10):
-    return {
+def _item(category, kind, correct, f1=0.5, prompt_tokens_est=10, judge_parsed=None):
+    item = {
         "category": category,
         "kind": kind,
         "correct": correct,
         "f1": f1,
         "prompt_tokens_est": prompt_tokens_est,
     }
+    if judge_parsed is not None:
+        item["judge_parsed"] = judge_parsed
+    return item
 
 
 def test_summarize_categories_and_adversarial_accuracy():
@@ -82,8 +85,10 @@ def test_summarize_categories_and_adversarial_accuracy():
     assert 0.0 <= summary["overall_j"] <= 1.0
     # overall_j is computed over the 5 "qa" items only (3 correct / 5)
     assert summary["overall_j"] == 3 / 5
-    assert set(summary["per_category"]) == {"1", "2", "3", "4", "5"}
+    # per_category is "qa" only now — the adversarial category-5 item lives in rule_scored.
+    assert set(summary["per_category"]) == {"1", "2", "3", "4"}
     assert summary["per_category"]["1"]["n"] == 2
+    assert summary["rule_scored"] == {"5": {"n": 1, "accuracy": 1.0}}
     assert summary["adversarial_accuracy"] == 1.0
     assert summary["abstain_accuracy"] is None
     assert summary["n_questions"] == 6
@@ -97,4 +102,34 @@ def test_summarize_abstain_accuracy_separate_from_overall():
     ]
     summary = summarize(items)
     assert summary["overall_j"] == 1.0  # only the one "qa" item counts
+    assert "temporal-reasoning" not in summary["per_category"]  # rule-scored, not judged
     assert summary["abstain_accuracy"] == 0.5
+    assert summary["rule_scored"]["temporal-reasoning"] == {"n": 2, "accuracy": 0.5}
+
+
+def test_summarize_rule_scored_empty_when_no_rule_scored_items():
+    items = [_item("1", "qa", True)]
+    summary = summarize(items)
+    assert summary["rule_scored"] == {}
+
+
+def test_summarize_n_unparsed_counts_only_explicit_false():
+    items = [
+        _item("1", "qa", True, judge_parsed=True),
+        _item("1", "qa", False, judge_parsed=False),
+        _item("2", "qa", False),  # no judge_parsed field at all -> not counted
+    ]
+    summary = summarize(items)
+    assert summary["n_unparsed"] == 1
+
+
+def test_summarize_plus_n_unparsed_counts_only_explicit_false():
+    from eval.external.metrics import summarize_plus
+
+    items = [
+        {"relation_type": "causal", "time_gap": "1 week", "correct": True, "judge_parsed": True},
+        {"relation_type": "causal", "time_gap": "1 week", "correct": False, "judge_parsed": False},
+        {"relation_type": "state", "time_gap": "2 months", "correct": False},
+    ]
+    summary = summarize_plus(items)
+    assert summary["n_unparsed"] == 1

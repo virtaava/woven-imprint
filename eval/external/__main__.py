@@ -108,6 +108,20 @@ def main(argv: list[str] | None = None) -> int:
     rejudge_parser.add_argument(
         "--timeout", type=int, default=900, help="Per-request LLM timeout in seconds"
     )
+    rejudge_parser.add_argument(
+        "--sample",
+        type=int,
+        default=None,
+        help="Stratified sample size (longmemeval_s) — must match the original run's --sample "
+        "so the reload doesn't pull in conversations that were never run",
+    )
+    rejudge_parser.add_argument("--seed", type=int, default=7)
+    rejudge_parser.add_argument(
+        "--interval", type=int, default=1, help="Recorded into config when no stored results exist"
+    )
+    rejudge_parser.add_argument(
+        "--k", type=int, default=20, help="Recorded into config when no stored results exist"
+    )
 
     args = parser.parse_args(argv)
 
@@ -162,6 +176,10 @@ def main(argv: list[str] | None = None) -> int:
             mode=args.mode,
             run_id=args.run_id,
             timeout=args.timeout,
+            sample=args.sample,
+            seed=args.seed,
+            fact_extraction_interval=args.interval,
+            k=args.k,
         )
         results = rejudge(cfg, only_unjudged=args.only_unjudged)
         summary = results["summary"]

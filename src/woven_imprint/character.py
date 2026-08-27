@@ -569,11 +569,18 @@ class Character:
         (fact extraction, relationship assessment) as :meth:`chat`, but no
         LLM generation call is made.
 
+        This call is synchronous: bookkeeping always runs inline on the calling thread, even
+        when ``self.background`` is on for :meth:`chat`. If a background worker is already
+        running from an earlier :meth:`chat` call, it is flushed first (see :meth:`flush`) so
+        this ingested turn's bookkeeping never runs out of order with turns `chat()` already
+        queued ahead of it.
+
         When ``self.unified_assessment`` is on (the default), bookkeeping
         routes through the single unified turn-assessment call — the same
         path :meth:`chat` uses — so structured (subject, predicate, object)
-        facts are now created on ingest, not just free-text ones. When off,
-        the legacy per-subsystem path (:meth:`_extract_memories`) runs
+        facts are now created on ingest, not just free-text ones; that same call also updates
+        mood (emotional state), the narrative arc beat, and the relationship model, not just
+        facts. When off, the legacy per-subsystem path (:meth:`_extract_memories`) runs
         unchanged.
 
         Args:
@@ -617,6 +624,12 @@ class Character:
         else:
             user_msg, response = "", content
 
+        # This call is synchronous — if a background worker is already draining bookkeeping
+        # from earlier chat() calls, flush it first so this ingest's bookkeeping (below) can't
+        # run out of order with turns already queued ahead of it.
+        if self._worker is not None:
+            self.flush()
+
         # Run bookkeeping (non-fatal, same as chat)
         try:
             if self.unified_assessment:
@@ -649,10 +662,18 @@ class Character:
         would store them (``"[User] ..."`` / ``"[{name}] ..."``), and ``_turn_count`` advances
         by one for the whole exchange, not two.
 
+        This call is synchronous: bookkeeping always runs inline on the calling thread, even
+        when ``self.background`` is on for :meth:`chat`. If a background worker is already
+        running from an earlier :meth:`chat` call, it is flushed first (see :meth:`flush`) so
+        this exchange's bookkeeping never runs out of order with turns `chat()` already queued
+        ahead of it.
+
         When ``self.unified_assessment`` is on (the default), bookkeeping routes through the
         single unified turn-assessment call (:meth:`_run_bookkeeping`) — the same path
-        :meth:`chat` uses — so structured (subject, predicate, object) facts are created. When
-        off, the legacy per-subsystem path (:meth:`_extract_memories`) runs unchanged.
+        :meth:`chat` uses — so structured (subject, predicate, object) facts are created; that
+        same call also updates mood (emotional state), the narrative arc beat, and the
+        relationship model, not just facts. When off, the legacy per-subsystem path
+        (:meth:`_extract_memories`) runs unchanged.
 
         Args:
             user_message: What the user said.
@@ -692,6 +713,11 @@ class Character:
             session_id=self._session_id,
             importance=0.5,
         )
+
+        # This call is synchronous — if a background worker is already draining bookkeeping
+        # from earlier chat() calls, flush it first (see ingest()'s identical guard above).
+        if self._worker is not None:
+            self.flush()
 
         # Run bookkeeping once for the whole exchange (non-fatal, same as ingest/chat)
         try:

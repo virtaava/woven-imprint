@@ -1,10 +1,11 @@
 import httpx
-import openai
 import pytest
 import requests
 
-from woven_imprint.llm import resilience
-from woven_imprint.llm.resilience import (  # noqa: F401
+openai = pytest.importorskip("openai")
+
+from woven_imprint.llm import resilience  # noqa: E402
+from woven_imprint.llm.resilience import (  # noqa: E402, F401
     CircuitBreaker,
     _is_retryable,
     resilient_call,

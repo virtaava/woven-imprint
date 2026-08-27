@@ -36,8 +36,10 @@ def _locomo_result(**overrides) -> dict:
                 "3": {"n": 96, "j": 0.83, "f1": 0.58},
                 "4": {"n": 841, "j": 0.83, "f1": 0.57},
             },
+            "rule_scored": {"5": {"n": 446, "accuracy": 0.71}},
             "adversarial_accuracy": 0.71,
             "abstain_accuracy": None,
+            "n_unparsed": 0,
             "mean_prompt_tokens_est": 612.3,
         },
         "conversations": [{"qid": "conv-1-q0", "judge_version": 2}],
@@ -114,6 +116,24 @@ def test_render_external_locomo_table_rows():
     # Per-category rows, numerically sorted.
     assert "| 1 | 282 | 79.0% | 0.510 |" in section
     assert "| 4 | 841 | 83.0% | 0.570 |" in section
+    # Rule-scored (abstention) row, labelled and rendered separately from the judged categories.
+    assert "category (abstention rule)" in section
+    assert "| 5 | 446 | 71.0% |" in section
+
+
+def test_render_external_judge_version_reports_the_set_present():
+    """A run with a mix of judge_version 2 and un-rejudged (missing-field) records must report
+    both, not just the first record's version."""
+    external = {
+        "locomo:memory": _locomo_result(
+            conversations=[
+                {"qid": "conv-1-q0", "judge_version": 2},
+                {"qid": "conv-1-q1"},  # predates the field -> normalizes to "1"
+            ]
+        )
+    }
+    section = render_external(external)
+    assert "Judge version: 1,2" in section
 
 
 def test_render_external_locomo_plus_table_rows():

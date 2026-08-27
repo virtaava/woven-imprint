@@ -98,9 +98,16 @@ def summarize(items: list[dict]) -> dict:
     F1 are computed over ``kind == "qa"`` items only — adversarial (LoCoMo category 5) and
     abstain (LongMemEval ``_abs``) items are reported separately as accuracy, per the Mem0/Zep
     convention (a "correct" abstention is not comparable to a "correct" factual recall).
+
+    ``per_category`` is likewise computed over ``kind == "qa"`` items only. Rule-scored items
+    (adversarial/abstain — scored by ``is_abstention``, never by the LLM judge) are reported
+    separately under ``rule_scored`` (``{category: {n, accuracy}}``) so e.g. LoCoMo's category-5
+    row lives there instead of being mixed into the judged per-category table.
     """
+    qa_items = [it for it in items if it.get("kind") == "qa"]
+
     per_category: dict[str, dict] = {}
-    for it in items:
+    for it in qa_items:
         cat = str(it.get("category"))
         bucket = per_category.setdefault(cat, {"n": 0, "correct": 0, "f1_sum": 0.0})
         bucket["n"] += 1
@@ -116,11 +123,22 @@ def summarize(items: list[dict]) -> dict:
         for cat, b in per_category.items()
     }
 
-    qa_items = [it for it in items if it.get("kind") == "qa"]
     overall_j = sum(1 for it in qa_items if it.get("correct")) / len(qa_items) if qa_items else 0.0
     overall_f1 = (
         sum(float(it.get("f1", 0.0)) for it in qa_items) / len(qa_items) if qa_items else 0.0
     )
+
+    rule_scored_items = [it for it in items if it.get("kind") in ("adversarial", "abstain")]
+    rule_scored: dict[str, dict] = {}
+    for it in rule_scored_items:
+        cat = str(it.get("category"))
+        bucket = rule_scored.setdefault(cat, {"n": 0, "correct": 0})
+        bucket["n"] += 1
+        bucket["correct"] += 1 if it.get("correct") else 0
+    rule_scored_out = {
+        cat: {"n": b["n"], "accuracy": b["correct"] / b["n"] if b["n"] else 0.0}
+        for cat, b in rule_scored.items()
+    }
 
     adversarial_items = [it for it in items if it.get("kind") == "adversarial"]
     adversarial_accuracy = (
@@ -139,14 +157,18 @@ def summarize(items: list[dict]) -> dict:
     prompt_tokens = [float(it.get("prompt_tokens_est", 0)) for it in items]
     mean_prompt_tokens = sum(prompt_tokens) / len(prompt_tokens) if prompt_tokens else 0.0
 
+    n_unparsed = sum(1 for it in items if it.get("judge_parsed") is False)
+
     return {
         "n_questions": len(items),
         "overall_j": overall_j,
         "overall_f1": overall_f1,
         "per_category": per_category_out,
+        "rule_scored": rule_scored_out,
         "adversarial_accuracy": adversarial_accuracy,
         "abstain_accuracy": abstain_accuracy,
         "mean_prompt_tokens_est": mean_prompt_tokens,
+        "n_unparsed": n_unparsed,
     }
 
 
@@ -169,13 +191,16 @@ def summarize_plus(items: list[dict]) -> dict:
     Each item is expected to carry ``relation_type``, ``time_gap``, ``correct`` (bool),
     ``prompt_tokens_est`` (int), ``llm_calls`` (int), and ``seconds`` (float). Reports overall
     ``cognitive_accuracy`` (mean ``correct``) plus per-``relation_type`` and per-``time_gap``
-    breakdowns, and mean tokens/LLM-calls/seconds per probe.
+    breakdowns, mean tokens/LLM-calls/seconds per probe, and ``n_unparsed`` (count of records
+    with ``judge_parsed is False`` — the Cognitive judge returned something that wasn't a dict,
+    or had no usable ``label``).
     """
     n = len(items)
     overall = sum(1 for it in items if it.get("correct")) / n if n else 0.0
     tokens = [float(it.get("prompt_tokens_est", 0)) for it in items]
     seconds = [float(it.get("seconds", 0.0)) for it in items]
     calls = [float(it.get("llm_calls", 0)) for it in items]
+    n_unparsed = sum(1 for it in items if it.get("judge_parsed") is False)
 
     return {
         "n_probes": n,
@@ -185,4 +210,5 @@ def summarize_plus(items: list[dict]) -> dict:
         "mean_prompt_tokens_est": sum(tokens) / n if n else 0.0,
         "mean_seconds": sum(seconds) / n if n else 0.0,
         "mean_llm_calls": sum(calls) / n if n else 0.0,
+        "n_unparsed": n_unparsed,
     }

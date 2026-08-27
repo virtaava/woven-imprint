@@ -24,8 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `unified_assessment` is on (the default): it routes through `_run_bookkeeping` — the same
   single-call emotion/relationship/beat/facts path `chat()` uses — instead of the legacy
   `_extract_memories`. This means ingested turns can now produce structured
-  (subject, predicate, object) facts, not just free-text ones. The legacy path is unchanged and
-  still used when `unified_assessment` is off.
+  (subject, predicate, object) facts, not just free-text ones (and, under unified assessment,
+  the same call also updates mood and narrative arc, not just facts). The legacy path is
+  unchanged and still used when `unified_assessment` is off. Both `ingest()` and
+  `ingest_exchange()` are fully synchronous — bookkeeping always runs inline on the calling
+  thread, even with `background=True` — and flush any background worker still draining bookkeeping
+  from earlier `chat()` calls before running their own, so the two never interleave out of order.
 - **`Character.ingest_exchange(user_message, response, user_id=None)`** — like `ingest()` but
   records one user turn + one character reply as a single unit (one `_turn_count` increment, one
   unified bookkeeping call instead of two). For importing transcripts of paired user/assistant

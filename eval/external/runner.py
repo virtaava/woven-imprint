@@ -26,6 +26,7 @@ import json
 import shutil
 import sqlite3
 import time
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -38,7 +39,7 @@ from woven_imprint.engine import Engine
 from woven_imprint.llm.base import LLMProvider
 
 from . import metrics, report
-from .common import DATA_DIR, RESULTS_DIR, RUNS_DIR, Conversation, Probe, Question
+from .common import DATA_DIR, EMBED_MODEL, RESULTS_DIR, RUNS_DIR, Conversation, Probe, Question
 from .common import brain_llm as _brain_llm
 from .common import embedder as _make_embedder
 from .locomo import load_locomo, load_locomo_plus
@@ -340,6 +341,10 @@ def judge(q: Question, response: str, llm) -> dict:
     abstention detection alone — the gold behavior *is* declining to answer, so there is nothing
     for an LLM judge to usefully compare against, and skipping the call saves one generation per
     such question. A label is still recorded for reporting symmetry with judged questions.
+
+    ``judge_parsed`` is ``True`` for the rule-scored (no-LLM-call) path — there is nothing to
+    fail to parse — and, for the LLM-judged path, ``False`` when the LLM's JSON response wasn't
+    a dict or carried no non-empty ``label`` (a parse/format failure, not a WRONG verdict).
     """
     started = time.perf_counter()
     if q.kind in ("adversarial", "abstain"):
@@ -348,6 +353,7 @@ def judge(q: Question, response: str, llm) -> dict:
             "label": "CORRECT" if correct else "WRONG",
             "reason": "scored by abstention rule (no judge call)",
             "correct": correct,
+            "judge_parsed": True,
             "seconds": time.perf_counter() - started,
         }
 
@@ -357,6 +363,7 @@ def judge(q: Question, response: str, llm) -> dict:
     )
     label = ""
     reason = ""
+    parsed = isinstance(result, dict) and bool(str(result.get("label", "")).strip())
     if isinstance(result, dict):
         label = str(result.get("label", ""))
         reason = str(result.get("reason", ""))
@@ -367,6 +374,7 @@ def judge(q: Question, response: str, llm) -> dict:
         "label": "CORRECT" if correct else "WRONG",
         "reason": reason,
         "correct": correct,
+        "judge_parsed": parsed,
         "seconds": time.perf_counter() - started,
     }
 
@@ -384,7 +392,9 @@ def _score(cfg: "RunConfig", q: Question, ans: dict, llm) -> dict:
         "label": jr["label"],
         "judge_reason": jr["reason"],
         "correct": jr["correct"],
+        "judge_parsed": jr["judge_parsed"],
         "judge_seconds": jr["seconds"],
+        "judge_version": 2,
         "f1": metrics.token_f1(ans["response"], q.answer),
         "asked_on": q.asked_at.date().isoformat(),
     }
@@ -414,26 +424,29 @@ def _answer_questions(
     return [answered[q.qid] for q in questions]
 
 
+def _delete_db_with_sidecars(db_path: Path) -> None:
+    """Delete ``db_path`` and its ``-wal``/``-shm`` sidecars (SQLite's write-ahead-log journal
+    files) — missing files are fine. Shared by every call site that removes a benchmark SQLite
+    DB, so none of them can forget a sidecar and leave a stale ``-wal`` next to a deleted/absent
+    ``.db`` (which would replay stray pages into whatever gets created at that path next).
+    """
+    db_path.unlink(missing_ok=True)
+    db_path.with_name(db_path.name + "-wal").unlink(missing_ok=True)
+    db_path.with_name(db_path.name + "-shm").unlink(missing_ok=True)
+
+
 def _cleanup_mid_ingest_db(paths: dict[str, Path]) -> None:
     """If ``paths["db"]`` exists without its ``paths["ingest"]`` checkpoint, a prior run was
     killed mid-ingestion — delete the DB (and its WAL/SHM sidecar files) so the conversation
     restarts ingestion from scratch rather than risk double-ingesting on top of it.
-
-    The WAL/SHM sidecar files (SQLite's write-ahead-log journal) must go too: leaving a stale
-    ``-wal`` next to a fresh, empty ``.db`` would replay uncommitted pages from the killed run
-    into the new one on open.
     """
     if not paths["ingest"].exists() and paths["db"].exists():
-        paths["db"].unlink()
-        paths["db"].with_name(paths["db"].name + "-wal").unlink(missing_ok=True)
-        paths["db"].with_name(paths["db"].name + "-shm").unlink(missing_ok=True)
+        _delete_db_with_sidecars(paths["db"])
 
 
 def _delete_conversation_db(paths: dict[str, Path]) -> None:
     """Delete ``paths["db"]`` and its ``-wal``/``-shm`` sidecars (checkpoints untouched)."""
-    paths["db"].unlink(missing_ok=True)
-    paths["db"].with_name(paths["db"].name + "-wal").unlink(missing_ok=True)
-    paths["db"].with_name(paths["db"].name + "-shm").unlink(missing_ok=True)
+    _delete_db_with_sidecars(paths["db"])
 
 
 def _process_conversation_memory(
@@ -524,6 +537,8 @@ def judge_plus(evidence: str, response: str, llm) -> dict:
 
     Unlike :func:`judge`, there is no gold answer — the probe's cue is the only evidence, and
     the label is lowercase (``"correct"``/``"wrong"``) per the upstream JSON schema.
+    ``judge_parsed`` is ``False`` when the LLM's JSON response wasn't a dict or carried no
+    non-empty ``label`` — see :func:`judge`.
     """
     started = time.perf_counter()
     result = llm.generate_json_robust(
@@ -531,6 +546,7 @@ def judge_plus(evidence: str, response: str, llm) -> dict:
     )
     label = ""
     reason = ""
+    parsed = isinstance(result, dict) and bool(str(result.get("label", "")).strip())
     if isinstance(result, dict):
         label = str(result.get("label", ""))
         reason = str(result.get("reason", ""))
@@ -540,6 +556,7 @@ def judge_plus(evidence: str, response: str, llm) -> dict:
         "label": "correct" if correct else "wrong",
         "reason": reason,
         "correct": correct,
+        "judge_parsed": parsed,
         "seconds": time.perf_counter() - started,
     }
 
@@ -641,11 +658,13 @@ def _process_probe_memory(
         "label": jr["label"],
         "reason": jr["reason"],
         "correct": jr["correct"],
+        "judge_parsed": jr["judge_parsed"],
+        "judge_version": 2,
         "prompt_tokens_est": prompt_chars // 4,
         "llm_calls": counting_llm.calls,
         "seconds": time.perf_counter() - started,
     }
-    db_path.unlink(missing_ok=True)
+    _delete_db_with_sidecars(db_path)
     return record
 
 
@@ -683,6 +702,8 @@ def _process_probe_fullcontext(
         "label": jr["label"],
         "reason": jr["reason"],
         "correct": jr["correct"],
+        "judge_parsed": jr["judge_parsed"],
+        "judge_version": 2,
         "prompt_tokens_est": len(probe.stitched_text) // 4,
         "llm_calls": counting_llm.calls,
         "seconds": time.perf_counter() - started,
@@ -745,26 +766,34 @@ def run_plus(
     base_llm = llm if llm is not None else _brain_llm(timeout=cfg.timeout)
     base_embedder = embedder if embedder is not None else _make_embedder()
 
-    records: list[dict] = []
-    for i, probe in enumerate(probes):
-        checkpoint_path = _probe_checkpoint_path(run_root, probe.probe_id)
-        if checkpoint_path.exists():
-            records.append(_load_json(checkpoint_path, {}))
-            continue
+    # Memory mode probes drive char.chat() (see _process_probe_memory) — apply the same
+    # benchmark config run() applies to memory-mode ingestion/answering, so a Plus probe's
+    # end_session() doesn't fire the callbacks-hooks LLM call and fact_extraction_interval is
+    # consistent across benches. Full-context mode never touches an Engine/Character, so it
+    # needs no config mutation.
+    benchmark_cm = _benchmark_config(cfg) if cfg.mode == "memory" else nullcontext()
 
-        conv = conv_by_id[probe.base_conv_id]
-        if cfg.mode == "memory":
-            assert reuse_root is not None
-            record = _process_probe_memory(
-                probe, conv, cfg, base_llm, base_embedder, reuse_root, run_root
-            )
-        else:
-            record = _process_probe_fullcontext(probe, conv, cfg, base_llm)
+    with benchmark_cm:
+        records: list[dict] = []
+        for i, probe in enumerate(probes):
+            checkpoint_path = _probe_checkpoint_path(run_root, probe.probe_id)
+            if checkpoint_path.exists():
+                records.append(_load_json(checkpoint_path, {}))
+                continue
 
-        _save_json(checkpoint_path, record)
-        records.append(record)
-        if (i + 1) % _LOG_EVERY == 0:
-            print(f"  {i + 1}/{len(probes)} probes judged", flush=True)
+            conv = conv_by_id[probe.base_conv_id]
+            if cfg.mode == "memory":
+                assert reuse_root is not None
+                record = _process_probe_memory(
+                    probe, conv, cfg, base_llm, base_embedder, reuse_root, run_root
+                )
+            else:
+                record = _process_probe_fullcontext(probe, conv, cfg, base_llm)
+
+            _save_json(checkpoint_path, record)
+            records.append(record)
+            if (i + 1) % _LOG_EVERY == 0:
+                print(f"  {i + 1}/{len(probes)} probes judged", flush=True)
 
     summary = metrics.summarize_plus(records)
     results = {
@@ -808,15 +837,18 @@ def _assert_safe_to_aggregate(
     A ``run(shard=None, write_results=True)`` call is meant to be the *last* step, run once all
     parallel ``--shard i/n`` workers have finished — it reads/aggregates every conversation, so
     if it races a live shard worker it can e.g. see a ``.db`` that worker just created but
-    hasn't finished ingesting into yet, or a partial ``.answers.json``. Two signs of "still in
-    progress" are checked per conversation:
+    hasn't finished ingesting into yet, or a partial/missing ``.answers.json``. Three signs of
+    "still in progress" are checked per conversation:
 
     - a ``<conv>.db`` exists without its ``<conv>.ingest.json`` (mid-ingestion, or a kill this
       call's own restart-cleanup would normally handle — but that cleanup only runs once this
       call actually starts processing the conversation, which is exactly what we're trying to
       gate here).
+    - a ``<conv>.ingest.json`` exists but ``<conv>.answers.json`` does not yet (ingestion
+      finished, answering hasn't started or hasn't checkpointed its first question yet —
+      ``_answer_questions`` only creates ``.answers.json`` after the first question is scored).
     - a ``<conv>.answers.json`` exists with fewer records than the conversation has questions
-      (mid-answering).
+      (mid-answering, at least one question already checkpointed).
 
     Pass ``cfg.force_aggregate=True`` (CLI ``--force-aggregate``) to skip this check, e.g. when
     intentionally aggregating a deliberately-incomplete run.
@@ -831,12 +863,18 @@ def _assert_safe_to_aggregate(
             problems.append(f"{conv.conv_id}: .db exists without .ingest.json (mid-ingest)")
             continue
 
-        if paths["answers"].exists():
-            n_questions = (
-                len(conv.questions[: cfg.max_questions])
-                if cfg.max_questions
-                else len(conv.questions)
+        n_questions = (
+            len(conv.questions[: cfg.max_questions]) if cfg.max_questions else len(conv.questions)
+        )
+
+        if paths["ingest"].exists() and not paths["answers"].exists() and n_questions:
+            problems.append(
+                f"{conv.conv_id}: .ingest.json exists without .answers.json "
+                f"(mid-answering, 0/{n_questions} questions answered)"
             )
+            continue
+
+        if paths["answers"].exists():
             n_answered = len(_load_json(paths["answers"], []))
             if n_answered < n_questions:
                 problems.append(
@@ -850,6 +888,31 @@ def _assert_safe_to_aggregate(
             "wait for them to finish. If this is intentional (e.g. a deliberately partial run), "
             "pass --force-aggregate."
         )
+
+
+@contextmanager
+def _benchmark_config(cfg: "RunConfig"):
+    """Mutate the process-global woven-imprint config for the duration of a memory-mode
+    benchmark run/probe, restoring the previous values in ``finally``.
+
+    Sets ``memory.fact_extraction_interval = cfg.fact_extraction_interval`` and
+    ``maintenance.callbacks_refresh_on_session_end = False`` — the latter so a benchmark
+    conversation's `end_session()` never fires the callbacks-hooks LLM call, which is product
+    behavior irrelevant to (and an uncounted cost in) a benchmark run. Used by both :func:`run`
+    and :func:`run_plus` so memory mode applies the identical benchmark config in either path;
+    ``get_config()`` is process-global state, so a caller running multiple benches/modes in one
+    process (or a test suite sharing a process) must not leak one run's settings into the next.
+    """
+    woven_cfg = get_config()
+    prev_interval = woven_cfg.memory.fact_extraction_interval
+    prev_refresh = woven_cfg.maintenance.callbacks_refresh_on_session_end
+    woven_cfg.memory.fact_extraction_interval = cfg.fact_extraction_interval
+    woven_cfg.maintenance.callbacks_refresh_on_session_end = False
+    try:
+        yield woven_cfg
+    finally:
+        woven_cfg.memory.fact_extraction_interval = prev_interval
+        woven_cfg.maintenance.callbacks_refresh_on_session_end = prev_refresh
 
 
 def run(
@@ -892,19 +955,14 @@ def run(
     base_llm = llm if llm is not None else _brain_llm(timeout=cfg.timeout)
     base_embedder = embedder if embedder is not None else _make_embedder()
 
-    woven_cfg = None
-    prev_interval = None
-    prev_refresh = None
     if cfg.mode == "memory":
-        woven_cfg = get_config()
-        prev_interval = woven_cfg.memory.fact_extraction_interval
-        prev_refresh = woven_cfg.maintenance.callbacks_refresh_on_session_end
-        woven_cfg.memory.fact_extraction_interval = cfg.fact_extraction_interval
-        woven_cfg.maintenance.callbacks_refresh_on_session_end = False
+        benchmark_cm = _benchmark_config(cfg)
     elif cfg.mode != "fullcontext":
         raise ValueError(f"Unknown mode {cfg.mode!r}; expected 'memory' or 'fullcontext'")
+    else:
+        benchmark_cm = nullcontext()
 
-    try:
+    with benchmark_cm:
         all_records: list[dict] = []
         ingest_totals = {"turns": 0, "sessions": 0, "llm_calls": 0, "seconds": 0.0}
 
@@ -955,15 +1013,6 @@ def run(
             report.write_judge_sample(all_records, n=60, seed=7, results_dir=results_dir)
 
         return results
-    finally:
-        # get_config() is process-global state; restore whatever this call mutated so a caller
-        # that runs multiple benches/modes in one process (or a test suite sharing a process)
-        # doesn't leak this run's settings into the next one.
-        if woven_cfg is not None:
-            assert prev_interval is not None
-            assert prev_refresh is not None
-            woven_cfg.memory.fact_extraction_interval = prev_interval
-            woven_cfg.maintenance.callbacks_refresh_on_session_end = prev_refresh
 
 
 def rejudge(
@@ -978,15 +1027,18 @@ def rejudge(
     For every ``<conv_id>.answers.json`` under the run root: reloads the dataset with the same
     loader :func:`run` uses (to recover each question's ``asked_at``, needed for the judge's
     reference-date line — see ``prompts.judge_messages``) and maps ``qid -> Question``. The
-    reload always uses the *full* dataset (``cfg.sample``/``cfg.max_questions`` are not
-    round-tripped from the original run) — a superset is safe here since this function only
-    touches conversations that already have an ``.answers.json`` on disk; the extra
-    (never-run) conversations the reload produces are just skipped.
+    reload uses ``cfg.sample``/``cfg.seed`` (LongMemEval-S) same as :func:`run` — pass
+    ``--sample``/``--seed`` matching the original run so the reload reproduces the same subset;
+    omitting them (the CLI default) reloads the *full* dataset instead, which is still safe here
+    since this function only touches conversations that already have an ``.answers.json`` on
+    disk — the extra (never-run) conversations a superset reload produces are just skipped.
+    ``cfg.max_questions`` is never round-tripped from the original run either way.
 
     Per record: ``kind == "qa"`` records are re-judged with :func:`judge` (``response``/``gold``
-    untouched; ``label``/``judge_reason``/``correct``/``judge_seconds`` overwritten).
-    ``adversarial``/``abstain`` records are re-scored with the current
-    ``metrics.is_abstention`` (no judge call, same as :func:`judge`'s own short-circuit). Every
+    untouched; ``label``/``judge_reason``/``correct``/``judge_parsed``/``judge_seconds``
+    overwritten). ``adversarial``/``abstain`` records are re-scored with the current
+    ``metrics.is_abstention`` (no judge call, same as :func:`judge`'s own short-circuit;
+    ``judge_parsed`` set ``True``, matching :func:`judge`'s rule-scored path). Every
     touched record gets ``token_f1`` recomputed, an ``asked_on`` date recorded (going forward,
     :func:`run` records this itself — see ``_score``), and ``judge_version: 2`` set. With
     ``only_unjudged=True``, a record already carrying ``judge_version == 2`` is skipped —
@@ -994,12 +1046,17 @@ def rejudge(
     atomically (via :func:`_save_json`) once all its records are processed.
 
     Finally recomputes ``summary`` and calls ``report.write_results``/``write_judge_sample``
-    exactly like :func:`run` — same results dict shape. ``model``/``judge``/``embedding``/
-    ``config``/``ingest_totals`` are copied from the run's existing ``external_<run_id>.json``
-    (its persisted run metadata) when one exists under the results dir, so the rewritten results
-    still describe what was actually used at run time rather than this rejudge call's own
-    (possibly different) CLI flags; when no such file exists yet, they're built fresh from
-    ``cfg``.
+    exactly like :func:`run` — same results dict shape. ``ingest_totals`` is always derived
+    fresh by summing every ``<conv_id>.ingest.json`` checkpoint actually on disk under the run
+    root (not read from any stored results file — those checkpoints are ground truth for what
+    ingestion actually did), and ``embedding`` is always the embedder model constant
+    (``common.EMBED_MODEL``) when ``cfg.mode == "memory"`` (``None`` for fullcontext, which never
+    embeds). Only ``config`` is copied from the run's existing ``external_<run_id>.json`` (its
+    persisted run metadata) when one exists under the results dir, so a rewritten LoCoMo/
+    LongMemEval-S results file still records the original run's ``k``/``sample``/``seed``/
+    ``fact_extraction_interval``/etc.; when no such file exists yet, ``config`` is built fresh
+    from this call's own ``cfg`` (the CLI's ``--sample``/``--seed``/``--interval``/``--k`` flags
+    are forwarded into it — see ``__main__.py``'s ``rejudge`` subcommand).
     """
     started_at = datetime.now(timezone.utc)
 
@@ -1044,12 +1101,14 @@ def rejudge(
                 rec["label"] = jr["label"]
                 rec["judge_reason"] = jr["reason"]
                 rec["correct"] = jr["correct"]
+                rec["judge_parsed"] = jr["judge_parsed"]
                 rec["judge_seconds"] = jr["seconds"]
             elif kind in ("adversarial", "abstain"):
                 correct = metrics.is_abstention(response)
                 rec["label"] = "CORRECT" if correct else "WRONG"
                 rec["judge_reason"] = "scored by abstention rule (no judge call)"
                 rec["correct"] = correct
+                rec["judge_parsed"] = True
             else:
                 continue
 
@@ -1063,17 +1122,14 @@ def rejudge(
 
     summary = metrics.summarize(all_records)
 
+    model = getattr(base_llm, "model", None)
+    judge_model = model
+    embedding = EMBED_MODEL if cfg.mode == "memory" else None
+
     stored = _load_json(results_dir / f"external_{cfg.run_id}.json", None)
     if stored:
-        model = stored.get("model")
-        judge_model = stored.get("judge")
-        embedding = stored.get("embedding")
         run_config = stored.get("config", {})
-        ingest_totals = stored.get("ingest_totals", {})
     else:
-        model = getattr(base_llm, "model", None)
-        judge_model = model
-        embedding = None
         run_config = {
             "k": cfg.k,
             "fact_extraction_interval": cfg.fact_extraction_interval,
@@ -1087,7 +1143,18 @@ def rejudge(
             "max_questions": cfg.max_questions,
             "shard": None,
         }
-        ingest_totals = {"turns": 0, "sessions": 0, "llm_calls": 0, "seconds": 0.0}
+
+    # Ground truth for what ingestion actually did — always summed fresh from every
+    # <conv_id>.ingest.json checkpoint on disk, never trusted from a stored results file
+    # (which may predate a later re-ingest, or simply not exist yet).
+    ingest_totals: dict[str, Any] = {"turns": 0, "sessions": 0, "llm_calls": 0, "seconds": 0.0}
+    if cfg.mode == "memory":
+        for ingest_path in sorted(run_root.glob("*.ingest.json")):
+            stats = _load_json(ingest_path, {})
+            for key in ("turns", "sessions", "llm_calls", "seconds"):
+                ingest_totals[key] += stats.get(key, 0)
+            if "pair_turns" in stats:
+                ingest_totals["pair_turns"] = stats["pair_turns"]
 
     results = {
         "run_id": cfg.run_id,

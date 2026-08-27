@@ -24,8 +24,13 @@ def _load(path: Path) -> dict:
 
 
 def _write(path: Path, data: dict) -> None:
+    """Write ``data`` to ``path`` via a same-directory tmp file + ``Path.replace`` — atomic on
+    POSIX, so a reader never observes a partially-written results/judge-sample file (same
+    technique as ``runner._save_json``)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, default=str))
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, default=str))
+    tmp.replace(path)
 
 
 def write_results(results: dict, results_dir: Path | str | None = None) -> None:

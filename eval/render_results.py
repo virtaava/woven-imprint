@@ -88,13 +88,19 @@ def _cat_sort_key(cat: str) -> tuple:
         return (1, str(cat))
 
 
-def _first_judge_version(result: dict) -> Any:
-    """Best-effort: the `judge_version` most per-question records carry after a `rejudge` pass
-    (2), or None if the run predates that field / has no per-question records."""
+def _judge_versions(result: dict) -> str | None:
+    """The set of `judge_version` values actually present across `result`'s per-question
+    records, rendered as a sorted comma-joined string (e.g. "2" or "1,2" for a run rejudged
+    partway through, or after a rejudge that hit `--only-unjudged`). A record with no
+    `judge_version` field at all (predates the field, i.e. the original pre-fix judging pass)
+    normalizes to "1". Returns None only when there are no per-question records to inspect."""
+    versions: set[str] = set()
     for rec in result.get("conversations") or []:
-        if isinstance(rec, dict) and "judge_version" in rec:
-            return rec["judge_version"]
-    return None
+        if isinstance(rec, dict):
+            versions.add(str(rec.get("judge_version", 1)))
+    if not versions:
+        return None
+    return ",".join(sorted(versions))
 
 
 def _render_qa_bench(key: str, result: dict) -> list[str]:
@@ -109,9 +115,9 @@ def _render_qa_bench(key: str, result: dict) -> list[str]:
     ]
     if result.get("rejudged_at"):
         lines.append(f"- Rejudged at: {result['rejudged_at']}")
-    judge_version = _first_judge_version(result)
-    if judge_version is not None:
-        lines.append(f"- Judge version: {judge_version}")
+    judge_versions = _judge_versions(result)
+    if judge_versions is not None:
+        lines.append(f"- Judge version: {judge_versions}")
     lines += [
         f"- Overall J (categories 1-4 / non-abstain): {_fmt_pct(summary.get('overall_j'))} "
         f"(n={summary.get('n_questions', 'n/a')})",
@@ -130,6 +136,14 @@ def _render_qa_bench(key: str, result: dict) -> list[str]:
             lines.append(
                 f"| {cat} | {b.get('n', 'n/a')} | {_fmt_pct(b.get('j'))} | {_fmt_num(b.get('f1'), 3)} |"
             )
+        lines.append("")
+
+    rule_scored = summary.get("rule_scored") or {}
+    if rule_scored:
+        lines += ["| category (abstention rule) | n | accuracy |", "|---|---|---|"]
+        for cat in sorted(rule_scored, key=_cat_sort_key):
+            b = rule_scored.get(cat) or {}
+            lines.append(f"| {cat} | {b.get('n', 'n/a')} | {_fmt_pct(b.get('accuracy'))} |")
         lines.append("")
     return lines
 

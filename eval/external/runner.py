@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sqlite3
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -45,7 +46,10 @@ from .longmemeval import load_longmemeval_s
 from .prompts import judge_messages, plus_judge_messages, qa_messages
 
 # Full-context transcripts are truncated to this many characters (from the END — the most
-# recent, most-likely-relevant material) before being sent as the answering prompt.
+# recent, most-likely-relevant material) before being sent as the answering prompt. This never
+# actually triggers for LoCoMo (max transcript ~117,075 chars, well under this limit).
+# LongMemEval-S transcripts run ~500K chars — well over this limit — but LongMemEval-S is NOT
+# run in fullcontext mode, so its transcripts never hit this truncation path either.
 FULLCONTEXT_CHAR_LIMIT = 220_000
 
 QA_MAX_TOKENS = 60
@@ -94,6 +98,8 @@ class RunConfig:
         None  # (index, count): process conversations where i % count == index
     )
     write_results: bool = True  # shard workers pass False; the final unsharded call aggregates
+    timeout: int = 900  # seconds; passed to brain_llm(timeout=...)
+    force_aggregate: bool = False  # bypass the unsharded-aggregation safety check (see run())
 
 
 class _CountingLLM(LLMProvider):
@@ -133,21 +139,28 @@ class _CountingLLM(LLMProvider):
 
 
 def _load_json(path: Path, default: Any) -> Any:
-    if path.exists():
+    """Load JSON from ``path``, or ``default`` if it's missing or unreadable.
+
+    A checkpoint file that fails to parse (truncated by a kill mid-write, or — before
+    :func:`_save_json` was made atomic — a torn write racing a reader) is treated the same as a
+    missing checkpoint rather than crashing the run: a warning is printed and ``default`` is
+    returned, so the caller just redoes that unit of work.
+    """
+    if not path.exists():
+        return default
+    try:
         return json.loads(path.read_text())
-    return default
+    except json.JSONDecodeError as exc:
+        print(f"warning: {path} is not valid JSON ({exc}); treating as missing", flush=True)
+        return default
 
 
 def _save_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, default=str))
+    """Write ``data`` to ``path`` via a same-directory tmp file + ``Path.replace``.
 
-
-def _save_json_atomic(path: Path, data: Any) -> None:
-    """Write ``data`` to ``path`` via a same-directory tmp file + rename.
-
-    Used for LoCoMo-Plus per-probe checkpoints: a killed run must never leave a
-    partially-written ``<probe_id>.json`` that a resumed run would mistake for "done".
+    ``Path.replace`` is atomic on POSIX (same filesystem), so a reader (this process resuming
+    after a kill, or a sibling shard worker) never observes a partially-written checkpoint —
+    it's either the old complete content or the new complete content, never a torn mix.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -285,15 +298,18 @@ def judge(q: Question, response: str, llm) -> dict:
             "seconds": time.perf_counter() - started,
         }
 
+    asked_on = q.asked_at.date().isoformat()
     result = llm.generate_json_robust(
-        judge_messages(q.question, q.answer, response), temperature=JUDGE_TEMPERATURE
+        judge_messages(q.question, q.answer, response, asked_on), temperature=JUDGE_TEMPERATURE
     )
     label = ""
     reason = ""
     if isinstance(result, dict):
         label = str(result.get("label", ""))
         reason = str(result.get("reason", ""))
-    correct = "correct" in label.lower()
+    # Exact match, not substring: "INCORRECT" contains "CORRECT" as a substring and must grade
+    # WRONG, not CORRECT.
+    correct = label.strip().upper() == "CORRECT"
     return {
         "label": "CORRECT" if correct else "WRONG",
         "reason": reason,
@@ -317,6 +333,7 @@ def _score(cfg: "RunConfig", q: Question, ans: dict, llm) -> dict:
         "correct": jr["correct"],
         "judge_seconds": jr["seconds"],
         "f1": metrics.token_f1(ans["response"], q.answer),
+        "asked_on": q.asked_at.date().isoformat(),
     }
 
 
@@ -344,6 +361,21 @@ def _answer_questions(
     return [answered[q.qid] for q in questions]
 
 
+def _cleanup_mid_ingest_db(paths: dict[str, Path]) -> None:
+    """If ``paths["db"]`` exists without its ``paths["ingest"]`` checkpoint, a prior run was
+    killed mid-ingestion — delete the DB (and its WAL/SHM sidecar files) so the conversation
+    restarts ingestion from scratch rather than risk double-ingesting on top of it.
+
+    The WAL/SHM sidecar files (SQLite's write-ahead-log journal) must go too: leaving a stale
+    ``-wal`` next to a fresh, empty ``.db`` would replay uncommitted pages from the killed run
+    into the new one on open.
+    """
+    if not paths["ingest"].exists() and paths["db"].exists():
+        paths["db"].unlink()
+        paths["db"].with_name(paths["db"].name + "-wal").unlink(missing_ok=True)
+        paths["db"].with_name(paths["db"].name + "-shm").unlink(missing_ok=True)
+
+
 def _process_conversation_memory(
     conv: Conversation,
     cfg: "RunConfig",
@@ -352,11 +384,7 @@ def _process_conversation_memory(
     run_root: Path,
 ) -> tuple[dict, list[dict]]:
     paths = _conv_paths(run_root, conv.conv_id)
-
-    # A DB with no ingest checkpoint means a prior run was killed mid-ingestion — restart that
-    # conversation's ingestion from scratch rather than risk double-ingesting on top of it.
-    if not paths["ingest"].exists() and paths["db"].exists():
-        paths["db"].unlink()
+    _cleanup_mid_ingest_db(paths)
 
     counting_llm = _CountingLLM(base_llm)
     engine = Engine(db_path=paths["db"], llm=counting_llm, embedding=base_embedder)
@@ -418,7 +446,8 @@ def judge_plus(evidence: str, response: str, llm) -> dict:
     if isinstance(result, dict):
         label = str(result.get("label", ""))
         reason = str(result.get("reason", ""))
-    correct = "correct" in label.lower()
+    # Exact match, not substring — same reasoning as judge()'s CORRECT/INCORRECT fix.
+    correct = label.strip().lower() == "correct"
     return {
         "label": "correct" if correct else "wrong",
         "reason": reason,
@@ -431,6 +460,32 @@ def _probe_checkpoint_path(run_root: Path, probe_id: str) -> Path:
     return run_root / f"{probe_id}.json"
 
 
+def _checkpoint_and_verify_wal(db_path: Path) -> None:
+    """Force a WAL checkpoint on ``db_path`` and verify it actually cleared.
+
+    The storage layer opens SQLite in WAL mode and only checkpoints on the *last* connection's
+    close — so a base DB whose ``-wal`` sidecar is non-empty (another connection still has it
+    open, or the base run's Engine hasn't been closed yet) would be copied with recent writes
+    still sitting in the WAL, nearly empty on disk, silently producing garbage probes if copied
+    as-is. ``PRAGMA wal_checkpoint(TRUNCATE)`` forces those pages back into the main DB file and
+    truncates the WAL; if the WAL still has content afterward, some other connection is holding
+    it open and it isn't safe to copy.
+    """
+    conn = sqlite3.connect(str(db_path), timeout=30)
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+    finally:
+        conn.close()
+
+    wal_path = db_path.with_name(db_path.name + "-wal")
+    if wal_path.exists() and wal_path.stat().st_size > 0:
+        raise RuntimeError(
+            f"base DB {db_path} has a live WAL ({wal_path} is non-empty after checkpoint) — "
+            "base run still in progress? Refusing to copy a possibly-incomplete DB."
+        )
+
+
 def _process_probe_memory(
     probe: Probe,
     conv: Conversation,
@@ -440,12 +495,15 @@ def _process_probe_memory(
     reuse_root: Path,
     run_root: Path,
 ) -> dict:
-    """LoCoMo-Plus memory mode for one probe: copy the base conversation's ingested DB, ingest
-    the cue as its own session, then answer the trigger via ``Character.chat()`` — the real
-    product path, per the spec's "LoCoMo-Plus answering" protocol.
+    """LoCoMo-Plus memory mode for one probe: WAL-checkpoint and copy the base conversation's
+    ingested DB, ingest the cue as its own session, then answer the trigger via
+    ``Character.chat()`` — the real product path, per the spec's "LoCoMo-Plus answering"
+    protocol.
 
     The DB copy is deleted after judging (each is small, but 401 of them add up on disk, and
-    nothing after this function needs it — only the checkpoint JSON is kept).
+    nothing after this function needs it — only the checkpoint JSON is kept). The source DB is
+    checkpointed (see :func:`_checkpoint_and_verify_wal`) before every copy, not just the first,
+    since the same base DB is reused across many probes.
     """
     started = time.perf_counter()
     source_db = reuse_root / f"{probe.base_conv_id}.db"
@@ -456,6 +514,8 @@ def _process_probe_memory(
             f"under {reuse_root} — run the LoCoMo memory-mode bench with --run-id {cfg.reuse_run!r} "
             "first (locomo_plus memory mode reuses its ingested DBs)."
         )
+
+    _checkpoint_and_verify_wal(source_db)
 
     db_path = run_root / f"{probe.probe_id}.db"
     shutil.copy2(source_db, db_path)
@@ -594,7 +654,7 @@ def run_plus(
             raise ValueError(f"bad shard {cfg.shard!r}")
         probes = [p for i, p in enumerate(probes) if i % count == index]
 
-    base_llm = llm if llm is not None else _brain_llm()
+    base_llm = llm if llm is not None else _brain_llm(timeout=cfg.timeout)
     base_embedder = embedder if embedder is not None else _make_embedder()
 
     records: list[dict] = []
@@ -613,7 +673,7 @@ def run_plus(
         else:
             record = _process_probe_fullcontext(probe, conv, cfg, base_llm)
 
-        _save_json_atomic(checkpoint_path, record)
+        _save_json(checkpoint_path, record)
         records.append(record)
         if (i + 1) % _LOG_EVERY == 0:
             print(f"  {i + 1}/{len(probes)} probes judged", flush=True)
@@ -651,6 +711,59 @@ def run_plus(
     return results
 
 
+def _assert_safe_to_aggregate(
+    run_root: Path, conversations: list[Conversation], cfg: "RunConfig"
+) -> None:
+    """Refuse to run the final unsharded aggregation call while shard workers may still be
+    writing to ``run_root``.
+
+    A ``run(shard=None, write_results=True)`` call is meant to be the *last* step, run once all
+    parallel ``--shard i/n`` workers have finished — it reads/aggregates every conversation, so
+    if it races a live shard worker it can e.g. see a ``.db`` that worker just created but
+    hasn't finished ingesting into yet, or a partial ``.answers.json``. Two signs of "still in
+    progress" are checked per conversation:
+
+    - a ``<conv>.db`` exists without its ``<conv>.ingest.json`` (mid-ingestion, or a kill this
+      call's own restart-cleanup would normally handle — but that cleanup only runs once this
+      call actually starts processing the conversation, which is exactly what we're trying to
+      gate here).
+    - a ``<conv>.answers.json`` exists with fewer records than the conversation has questions
+      (mid-answering).
+
+    Pass ``cfg.force_aggregate=True`` (CLI ``--force-aggregate``) to skip this check, e.g. when
+    intentionally aggregating a deliberately-incomplete run.
+    """
+    if cfg.force_aggregate:
+        return
+
+    problems: list[str] = []
+    for conv in conversations:
+        paths = _conv_paths(run_root, conv.conv_id)
+        if paths["db"].exists() and not paths["ingest"].exists():
+            problems.append(f"{conv.conv_id}: .db exists without .ingest.json (mid-ingest)")
+            continue
+
+        if paths["answers"].exists():
+            n_questions = (
+                len(conv.questions[: cfg.max_questions])
+                if cfg.max_questions
+                else len(conv.questions)
+            )
+            n_answered = len(_load_json(paths["answers"], []))
+            if n_answered < n_questions:
+                problems.append(
+                    f"{conv.conv_id}: {n_answered}/{n_questions} questions answered (mid-answering)"
+                )
+
+    if problems:
+        raise RuntimeError(
+            "Refusing unsharded aggregation run — this run looks like it's still in progress "
+            f"under {run_root}: " + "; ".join(problems) + ". If shard workers are still running, "
+            "wait for them to finish. If this is intentional (e.g. a deliberately partial run), "
+            "pass --force-aggregate."
+        )
+
+
 def run(
     cfg: "RunConfig",
     llm: LLMProvider | None = None,
@@ -685,42 +798,194 @@ def run(
             raise ValueError(f"bad shard {cfg.shard!r}")
         conversations = [c for i, c in enumerate(conversations) if i % count == index]
 
-    base_llm = llm if llm is not None else _brain_llm()
+    if cfg.shard is None and cfg.write_results:
+        _assert_safe_to_aggregate(run_root, conversations, cfg)
+
+    base_llm = llm if llm is not None else _brain_llm(timeout=cfg.timeout)
     base_embedder = embedder if embedder is not None else _make_embedder()
 
+    woven_cfg = None
+    prev_interval = None
+    prev_refresh = None
     if cfg.mode == "memory":
         woven_cfg = get_config()
+        prev_interval = woven_cfg.memory.fact_extraction_interval
+        prev_refresh = woven_cfg.maintenance.callbacks_refresh_on_session_end
         woven_cfg.memory.fact_extraction_interval = cfg.fact_extraction_interval
         woven_cfg.maintenance.callbacks_refresh_on_session_end = False
     elif cfg.mode != "fullcontext":
         raise ValueError(f"Unknown mode {cfg.mode!r}; expected 'memory' or 'fullcontext'")
 
+    try:
+        all_records: list[dict] = []
+        ingest_totals = {"turns": 0, "sessions": 0, "llm_calls": 0, "seconds": 0.0}
+
+        for conv in conversations:
+            if cfg.mode == "memory":
+                ingest_stats, records = _process_conversation_memory(
+                    conv, cfg, base_llm, base_embedder, run_root
+                )
+            else:
+                ingest_stats, records = _process_conversation_fullcontext(
+                    conv, cfg, base_llm, run_root
+                )
+
+            for key in ingest_totals:
+                ingest_totals[key] += ingest_stats.get(key, 0)
+            all_records.extend(records)
+
+        summary = metrics.summarize(all_records)
+
+        results = {
+            "run_id": cfg.run_id,
+            "bench": cfg.bench,
+            "mode": cfg.mode,
+            "model": getattr(base_llm, "model", None),
+            "judge": getattr(base_llm, "model", None),
+            "embedding": getattr(base_embedder, "model", None),
+            "timestamp": started_at.isoformat(),
+            "config": {
+                "k": cfg.k,
+                "fact_extraction_interval": cfg.fact_extraction_interval,
+                "max_tokens": {"qa": QA_MAX_TOKENS},
+                "temperature": {"qa": QA_TEMPERATURE, "judge": JUDGE_TEMPERATURE},
+                "limit_conversations": cfg.limit_conversations,
+                "sample": cfg.sample,
+                "seed": cfg.seed,
+                "max_sessions": cfg.max_sessions,
+                "max_questions": cfg.max_questions,
+                "shard": list(cfg.shard) if cfg.shard else None,
+            },
+            "summary": summary,
+            "ingest_totals": ingest_totals,
+            "conversations": all_records,
+        }
+
+        if cfg.write_results and not cfg.run_id.startswith("smoke"):
+            report.write_results(results, results_dir=results_dir)
+            report.write_judge_sample(all_records, n=60, seed=7, results_dir=results_dir)
+
+        return results
+    finally:
+        # get_config() is process-global state; restore whatever this call mutated so a caller
+        # that runs multiple benches/modes in one process (or a test suite sharing a process)
+        # doesn't leak this run's settings into the next one.
+        if woven_cfg is not None:
+            assert prev_interval is not None
+            assert prev_refresh is not None
+            woven_cfg.memory.fact_extraction_interval = prev_interval
+            woven_cfg.maintenance.callbacks_refresh_on_session_end = prev_refresh
+
+
+def rejudge(
+    cfg: "RunConfig",
+    llm: LLMProvider | None = None,
+    out_dir: str | Path | None = None,
+    only_unjudged: bool = False,
+) -> dict:
+    """Re-judge every answered question in an existing run, in place — no re-ingesting or
+    re-answering.
+
+    For every ``<conv_id>.answers.json`` under the run root: reloads the dataset with the same
+    loader :func:`run` uses (to recover each question's ``asked_at``, needed for the judge's
+    reference-date line — see ``prompts.judge_messages``) and maps ``qid -> Question``. The
+    reload always uses the *full* dataset (``cfg.sample``/``cfg.max_questions`` are not
+    round-tripped from the original run) — a superset is safe here since this function only
+    touches conversations that already have an ``.answers.json`` on disk; the extra
+    (never-run) conversations the reload produces are just skipped.
+
+    Per record: ``kind == "qa"`` records are re-judged with :func:`judge` (``response``/``gold``
+    untouched; ``label``/``judge_reason``/``correct``/``judge_seconds`` overwritten).
+    ``adversarial``/``abstain`` records are re-scored with the current
+    ``metrics.is_abstention`` (no judge call, same as :func:`judge`'s own short-circuit). Every
+    touched record gets ``token_f1`` recomputed, an ``asked_on`` date recorded (going forward,
+    :func:`run` records this itself — see ``_score``), and ``judge_version: 2`` set. With
+    ``only_unjudged=True``, a record already carrying ``judge_version == 2`` is skipped —
+    lets a killed rejudge pass resume cheaply. Each conversation's checkpoint is rewritten
+    atomically (via :func:`_save_json`) once all its records are processed.
+
+    Finally recomputes ``summary`` and calls ``report.write_results``/``write_judge_sample``
+    exactly like :func:`run` — same results dict shape. ``model``/``judge``/``embedding``/
+    ``config``/``ingest_totals`` are copied from the run's existing ``external_<run_id>.json``
+    (its persisted run metadata) when one exists under the results dir, so the rewritten results
+    still describe what was actually used at run time rather than this rejudge call's own
+    (possibly different) CLI flags; when no such file exists yet, they're built fresh from
+    ``cfg``.
+    """
+    started_at = datetime.now(timezone.utc)
+
+    base = Path(out_dir) if out_dir else None
+    run_root = (base / cfg.run_id) if base else (RUNS_DIR / cfg.run_id)
+    results_dir = base if base else RESULTS_DIR
+    if not run_root.exists():
+        raise ValueError(f"run root {run_root} does not exist — nothing to rejudge")
+
+    loader = _LOADERS.get(cfg.bench)
+    if loader is None:
+        raise ValueError(f"Unknown bench {cfg.bench!r}; choices: {sorted(_LOADERS)}")
+
+    dataset_path = Path(cfg.dataset_path) if cfg.dataset_path else DATA_DIR / f"{cfg.bench}.json"
+    conversations = loader(dataset_path, cfg)
+    questions_by_qid: dict[str, Question] = {
+        q.qid: q for conv in conversations for q in conv.questions
+    }
+
+    base_llm = llm if llm is not None else _brain_llm(timeout=cfg.timeout)
+
     all_records: list[dict] = []
-    ingest_totals = {"turns": 0, "sessions": 0, "llm_calls": 0, "seconds": 0.0}
-
     for conv in conversations:
-        if cfg.mode == "memory":
-            ingest_stats, records = _process_conversation_memory(
-                conv, cfg, base_llm, base_embedder, run_root
-            )
-        else:
-            ingest_stats, records = _process_conversation_fullcontext(conv, cfg, base_llm, run_root)
+        answers_path = run_root / f"{conv.conv_id}.answers.json"
+        if not answers_path.exists():
+            continue
+        records = _load_json(answers_path, [])
+        if not records:
+            continue
 
-        for key in ingest_totals:
-            ingest_totals[key] += ingest_stats.get(key, 0)
+        for rec in records:
+            if only_unjudged and rec.get("judge_version") == 2:
+                continue
+            kind = rec.get("kind")
+            response = rec.get("response", "")
+            q = questions_by_qid.get(rec.get("qid"))
+
+            if kind == "qa":
+                if q is None:
+                    continue  # unknown qid (dataset changed underneath us) — leave as-is
+                jr = judge(q, response, base_llm)
+                rec["label"] = jr["label"]
+                rec["judge_reason"] = jr["reason"]
+                rec["correct"] = jr["correct"]
+                rec["judge_seconds"] = jr["seconds"]
+            elif kind in ("adversarial", "abstain"):
+                correct = metrics.is_abstention(response)
+                rec["label"] = "CORRECT" if correct else "WRONG"
+                rec["judge_reason"] = "scored by abstention rule (no judge call)"
+                rec["correct"] = correct
+            else:
+                continue
+
+            if q is not None:
+                rec["asked_on"] = q.asked_at.date().isoformat()
+            rec["f1"] = metrics.token_f1(response, rec.get("gold", ""))
+            rec["judge_version"] = 2
+
+        _save_json(answers_path, records)
         all_records.extend(records)
 
     summary = metrics.summarize(all_records)
 
-    results = {
-        "run_id": cfg.run_id,
-        "bench": cfg.bench,
-        "mode": cfg.mode,
-        "model": getattr(base_llm, "model", None),
-        "judge": getattr(base_llm, "model", None),
-        "embedding": getattr(base_embedder, "model", None),
-        "timestamp": started_at.isoformat(),
-        "config": {
+    stored = _load_json(results_dir / f"external_{cfg.run_id}.json", None)
+    if stored:
+        model = stored.get("model")
+        judge_model = stored.get("judge")
+        embedding = stored.get("embedding")
+        run_config = stored.get("config", {})
+        ingest_totals = stored.get("ingest_totals", {})
+    else:
+        model = getattr(base_llm, "model", None)
+        judge_model = model
+        embedding = None
+        run_config = {
             "k": cfg.k,
             "fact_extraction_interval": cfg.fact_extraction_interval,
             "max_tokens": {"qa": QA_MAX_TOKENS},
@@ -730,14 +995,26 @@ def run(
             "seed": cfg.seed,
             "max_sessions": cfg.max_sessions,
             "max_questions": cfg.max_questions,
-            "shard": list(cfg.shard) if cfg.shard else None,
-        },
+            "shard": None,
+        }
+        ingest_totals = {"turns": 0, "sessions": 0, "llm_calls": 0, "seconds": 0.0}
+
+    results = {
+        "run_id": cfg.run_id,
+        "bench": cfg.bench,
+        "mode": cfg.mode,
+        "model": model,
+        "judge": judge_model,
+        "embedding": embedding,
+        "timestamp": started_at.isoformat(),
+        "rejudged_at": started_at.isoformat(),
+        "config": run_config,
         "summary": summary,
         "ingest_totals": ingest_totals,
         "conversations": all_records,
     }
 
-    if cfg.write_results and not cfg.run_id.startswith("smoke"):
+    if not cfg.run_id.startswith("smoke"):
         report.write_results(results, results_dir=results_dir)
         report.write_judge_sample(all_records, n=60, seed=7, results_dir=results_dir)
 

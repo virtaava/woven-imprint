@@ -1,12 +1,28 @@
 import json
 import shutil
+import sqlite3
 from pathlib import Path
 
 import pytest
 
-from eval.external.runner import RunConfig, run, run_plus
+from eval.external.locomo import load_locomo, load_locomo_plus
+from eval.external.runner import (
+    RunConfig,
+    _assert_safe_to_aggregate,
+    _checkpoint_and_verify_wal,
+    _cleanup_mid_ingest_db,
+    _load_json,
+    _process_probe_memory,
+    _save_json,
+    judge,
+    judge_plus,
+    rejudge,
+    run,
+    run_plus,
+)
 from tests.helpers import FakeEmbedder, FakeLLM
 from woven_imprint import clock
+from woven_imprint.config import get_config
 
 FIXTURES = Path(__file__).resolve().parent.parent / "eval" / "external" / "fixtures"
 
@@ -276,3 +292,325 @@ def test_run_plus_limit_caps_probes(tmp_path):
     cfg.limit_conversations = 1
     results = run_plus(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
     assert len(results["probes"]) == 1
+
+
+# --- Atomic checkpoints ------------------------------------------------------------------
+
+
+def test_save_json_is_atomic_and_leaves_no_tmp_file(tmp_path):
+    path = tmp_path / "x.json"
+    _save_json(path, {"a": 1})
+    assert json.loads(path.read_text()) == {"a": 1}
+    assert not path.with_suffix(path.suffix + ".tmp").exists()
+
+
+def test_load_json_treats_corrupt_file_as_missing(tmp_path, capsys):
+    path = tmp_path / "x.json"
+    path.write_text("{not valid json")
+
+    result = _load_json(path, "default")
+
+    assert result == "default"
+    assert "warning" in capsys.readouterr().out.lower()
+
+
+def test_load_json_missing_file_returns_default(tmp_path):
+    assert _load_json(tmp_path / "nope.json", []) == []
+
+
+def test_cleanup_mid_ingest_db_removes_db_and_wal_shm_without_ingest_checkpoint(tmp_path):
+    db = tmp_path / "conv-x.db"
+    wal = tmp_path / "conv-x.db-wal"
+    shm = tmp_path / "conv-x.db-shm"
+    db.write_text("stale")
+    wal.write_text("stale-wal")
+    shm.write_text("stale-shm")
+    paths = {"db": db, "ingest": tmp_path / "conv-x.ingest.json", "answers": tmp_path / "x"}
+
+    _cleanup_mid_ingest_db(paths)
+
+    assert not db.exists() and not wal.exists() and not shm.exists()
+
+
+def test_cleanup_mid_ingest_db_leaves_db_alone_when_ingest_checkpoint_present(tmp_path):
+    db = tmp_path / "conv-x.db"
+    ingest = tmp_path / "conv-x.ingest.json"
+    db.write_text("real db")
+    ingest.write_text("{}")
+    paths = {"db": db, "ingest": ingest, "answers": tmp_path / "x"}
+
+    _cleanup_mid_ingest_db(paths)
+
+    assert db.exists()
+
+
+# --- Judge label exact-match ------------------------------------------------------------
+
+
+class _LabelLLM(FakeLLM):
+    """Returns a fixed judge label verbatim, to test judge()'s exact-match parsing."""
+
+    def __init__(self, label: str):
+        super().__init__()
+        self._label = label
+
+    def generate_json(self, messages, **kw):
+        return {"label": self._label, "reason": "scripted"}
+
+
+def _qa_question():
+    from datetime import datetime, timezone
+
+    from eval.external.common import Question
+
+    return Question(
+        qid="q1",
+        question="What pet did Alice adopt?",
+        answer="a cat",
+        category="1",
+        evidence=[],
+        asked_at=datetime(2023, 1, 2, tzinfo=timezone.utc),
+        kind="qa",
+    )
+
+
+def test_judge_incorrect_label_is_not_treated_as_correct():
+    result = judge(_qa_question(), "a dog", _LabelLLM("INCORRECT"))
+    assert result["label"] == "WRONG"
+    assert result["correct"] is False
+
+
+def test_judge_exact_correct_label_with_whitespace_and_case():
+    result = judge(_qa_question(), "a cat", _LabelLLM("  correct \n"))
+    assert result["label"] == "CORRECT"
+    assert result["correct"] is True
+
+
+def test_judge_plus_incorrect_label_is_not_treated_as_correct():
+    class _PlusLabelLLM(FakeLLM):
+        def generate_json(self, messages, **kw):
+            return {"label": "incorrectly linked", "reason": "scripted"}
+
+    result = judge_plus("some evidence", "some response", _PlusLabelLLM())
+    assert result["label"] == "wrong"
+    assert result["correct"] is False
+
+
+# --- Config restore on run() -------------------------------------------------------------
+
+
+def test_run_restores_mutated_config_fields(tmp_path):
+    woven_cfg = get_config()
+    original_interval = woven_cfg.memory.fact_extraction_interval
+    original_refresh = woven_cfg.maintenance.callbacks_refresh_on_session_end
+
+    cfg = _cfg("cfgrestore")
+    cfg.fact_extraction_interval = original_interval + 5
+    run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+
+    assert woven_cfg.memory.fact_extraction_interval == original_interval
+    assert woven_cfg.maintenance.callbacks_refresh_on_session_end == original_refresh
+
+
+# --- Unsharded-aggregation guard ----------------------------------------------------------
+
+
+def test_run_refuses_unsharded_aggregation_when_answers_incomplete(tmp_path):
+    cfg = _cfg("agg1")
+    run_root = tmp_path / cfg.run_id
+    run_root.mkdir(parents=True)
+    # Fewer answer records than the fixture's 6 questions -> looks like a shard still working.
+    (run_root / "conv-mini-1.answers.json").write_text(json.dumps([{"qid": "conv-mini-1-q0"}]))
+
+    with pytest.raises(RuntimeError, match="Refusing unsharded aggregation"):
+        run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+
+
+def test_run_refuses_unsharded_aggregation_when_db_without_ingest_checkpoint(tmp_path):
+    cfg = _cfg("agg2")
+    run_root = tmp_path / cfg.run_id
+    run_root.mkdir(parents=True)
+    (run_root / "conv-mini-1.db").write_text("stale")
+
+    with pytest.raises(RuntimeError, match="Refusing unsharded aggregation"):
+        run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+
+
+def test_force_aggregate_bypasses_the_guard(tmp_path):
+    cfg = _cfg("agg3")
+    cfg.force_aggregate = True
+    run_root = tmp_path / cfg.run_id
+    run_root.mkdir(parents=True)
+    (run_root / "conv-mini-1.answers.json").write_text(json.dumps([{"qid": "conv-mini-1-q0"}]))
+
+    # Doesn't raise; proceeds to (re-)ingest and answer normally.
+    results = run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+    assert results["summary"]["n_questions"] == 6
+
+
+def test_assert_safe_to_aggregate_passes_on_fresh_run_dir(tmp_path):
+    cfg = _cfg("agg4")
+    conversations = run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)[
+        "conversations"
+    ]
+    assert conversations  # sanity: fixture produced records
+    # A freshly-finished run always looks safe to re-aggregate.
+    from eval.external.locomo import load_locomo
+
+    FIXTURES_LOCOMO = load_locomo(FIXTURES / "locomo_mini.json")
+    _assert_safe_to_aggregate(tmp_path / cfg.run_id, FIXTURES_LOCOMO, cfg)  # no raise
+
+
+# --- rejudge -------------------------------------------------------------------------------
+
+
+def test_rejudge_restores_a_tampered_label(tmp_path):
+    cfg = _cfg("rj1")
+    run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+
+    answers_path = tmp_path / "rj1" / "conv-mini-1.answers.json"
+    answers = json.loads(answers_path.read_text())
+    # ScriptedLLM's memory-mode answers are deterministically "Not mentioned" for every
+    # non-color question, so every "qa" record here is genuinely WRONG (gold text like "a cat"
+    # never appears in "Not mentioned") — tamper one to a fabricated CORRECT and confirm
+    # rejudge (re-running the same deterministic judge) flips it back.
+    qa_record = next(r for r in answers if r["kind"] == "qa")
+    tampered_qid = qa_record["qid"]
+    assert qa_record["label"] == "WRONG"  # sanity: this is genuinely wrong pre-tamper
+    for r in answers:
+        if r["qid"] == tampered_qid:
+            r["label"] = "CORRECT"
+            r["correct"] = True
+    answers_path.write_text(json.dumps(answers))
+
+    rejudge_cfg = RunConfig(
+        bench="locomo",
+        mode="memory",
+        run_id="rj1",
+        dataset_path=FIXTURES / "locomo_mini.json",
+    )
+    results = rejudge(rejudge_cfg, llm=ScriptedLLM(), out_dir=tmp_path)
+
+    # rejudge re-derives the label from the (deterministic) judge rather than trusting the
+    # tampered value — it comes back WRONG, same as the original untampered run.
+    restored = json.loads(answers_path.read_text())
+    fixed = next(r for r in restored if r["qid"] == tampered_qid)
+    assert fixed["label"] == "WRONG"
+    assert fixed["correct"] is False
+    assert fixed["judge_version"] == 2
+
+    assert (tmp_path / "external_rj1.json").exists()
+    assert results["summary"]["n_questions"] == 6
+
+
+def test_rejudge_only_unjudged_skips_already_rejudged_records(tmp_path):
+    cfg = _cfg("rj2")
+    run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+
+    answers_path = tmp_path / "rj2" / "conv-mini-1.answers.json"
+    answers = json.loads(answers_path.read_text())
+    for r in answers:
+        r["judge_version"] = 2
+        r["label"] = "TAMPERED"
+    answers_path.write_text(json.dumps(answers))
+
+    rejudge_cfg = RunConfig(
+        bench="locomo",
+        mode="memory",
+        run_id="rj2",
+        dataset_path=FIXTURES / "locomo_mini.json",
+    )
+    rejudge(rejudge_cfg, llm=ScriptedLLM(), out_dir=tmp_path, only_unjudged=True)
+
+    unchanged = json.loads(answers_path.read_text())
+    assert all(r["label"] == "TAMPERED" for r in unchanged)
+
+
+# --- LoCoMo-Plus reuse-run WAL checkpoint (item 13) -----------------------------------------
+
+
+def test_checkpoint_and_verify_wal_raises_while_a_reader_holds_the_wal_open(tmp_path):
+    db_path = tmp_path / "base.db"
+    writer = sqlite3.connect(str(db_path))
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute("CREATE TABLE t(x)")
+    writer.execute("INSERT INTO t VALUES (1)")
+    writer.commit()
+
+    # A second connection with an open read transaction blocks wal_checkpoint(TRUNCATE) from
+    # actually truncating the WAL, even though the insert above is already committed.
+    reader = sqlite3.connect(str(db_path))
+    reader.execute("BEGIN")
+    reader.execute("SELECT * FROM t").fetchall()
+
+    wal_path = db_path.with_name(db_path.name + "-wal")
+    assert wal_path.exists() and wal_path.stat().st_size > 0
+
+    try:
+        with pytest.raises(RuntimeError, match="live WAL"):
+            _checkpoint_and_verify_wal(db_path)
+    finally:
+        reader.close()
+        writer.close()
+
+    # No reader left holding it open -> checkpoint now succeeds and the data survives.
+    _checkpoint_and_verify_wal(db_path)
+    check = sqlite3.connect(str(db_path))
+    try:
+        assert check.execute("SELECT x FROM t").fetchall() == [(1,)]
+    finally:
+        check.close()
+
+
+def test_process_probe_memory_refuses_a_source_db_with_a_live_wal(tmp_path):
+    reuse_run = _make_reuse_run(tmp_path, "wal-base")
+    reuse_root = tmp_path / reuse_run
+    base_convs = load_locomo(FIXTURES / "locomo_mini.json")
+    probes = load_locomo_plus(FIXTURES / "locomo_plus_mini.json", base_convs)
+    probe = probes[0]
+    conv = base_convs[0]
+
+    source_db = reuse_root / f"{probe.base_conv_id}.db"
+    wal_path = source_db.with_name(source_db.name + "-wal")
+
+    # Write an extra row directly (bypassing the product path — just needs the WAL non-empty)
+    # and hold a read transaction open on a second connection so it can't be checkpointed away.
+    writer = sqlite3.connect(str(source_db))
+    writer.execute("CREATE TABLE wal_probe_test(x)")
+    writer.execute("INSERT INTO wal_probe_test VALUES (1)")
+    writer.commit()
+
+    reader = sqlite3.connect(str(source_db))
+    reader.execute("BEGIN")
+    reader.execute("SELECT * FROM wal_probe_test").fetchall()
+
+    assert wal_path.exists() and wal_path.stat().st_size > 0
+
+    run_root = tmp_path / "wal-run"
+    run_root.mkdir()
+    cfg = RunConfig(bench="locomo_plus", mode="memory", run_id="wal-run", reuse_run=reuse_run)
+
+    try:
+        with pytest.raises(RuntimeError, match="live WAL"):
+            _process_probe_memory(
+                probe, conv, cfg, ScriptedLLM(), FakeEmbedder(), reuse_root, run_root
+            )
+        assert not (run_root / f"{probe.probe_id}.db").exists()  # never copied
+    finally:
+        reader.close()
+        writer.close()
+
+    # Closing the reader lets the checkpoint go through; the probe now processes normally.
+    # (The DB copy is deleted by _process_probe_memory itself once judging is done — that's
+    # existing, documented behavior — so we verify the row survived the checkpoint on the
+    # *source* DB, which is what actually gets copied.)
+    record = _process_probe_memory(
+        probe, conv, cfg, ScriptedLLM(), FakeEmbedder(), reuse_root, run_root
+    )
+    assert record["probe_id"] == probe.probe_id
+    assert not wal_path.exists() or wal_path.stat().st_size == 0
+    check = sqlite3.connect(str(source_db))
+    try:
+        assert check.execute("SELECT x FROM wal_probe_test").fetchall() == [(1,)]
+    finally:
+        check.close()

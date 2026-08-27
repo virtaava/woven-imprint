@@ -17,6 +17,16 @@ import requests
 
 from ..log import logger
 
+try:
+    import openai
+
+    _OPENAI_RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
+        openai.APITimeoutError,
+        openai.APIConnectionError,
+    )
+except ImportError:  # openai is an optional dependency
+    _OPENAI_RETRYABLE_EXCEPTIONS = ()
+
 
 # Errors that are worth retrying
 _RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
@@ -26,7 +36,7 @@ _RETRYABLE_EXCEPTIONS = (
     ConnectionError,
     TimeoutError,
     OSError,
-)
+) + _OPENAI_RETRYABLE_EXCEPTIONS
 
 
 def _is_retryable(exc: Exception) -> bool:

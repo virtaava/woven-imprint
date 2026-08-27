@@ -1,3 +1,5 @@
+import httpx
+import openai
 import pytest
 import requests
 
@@ -41,6 +43,19 @@ def test_permanent_error_not_retried():
     with pytest.raises(ValueError):
         resilient_call(bad, provider_name="t2")
     assert calls["n"] == 1
+
+
+def test_openai_timeout_and_connection_errors_are_retried():
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise openai.APITimeoutError(request=httpx.Request("POST", "http://x"))
+        return "ok"
+
+    assert resilient_call(flaky, provider_name="t-openai") == "ok"
+    assert calls["n"] == 3
 
 
 def test_duck_typed_status_code_is_retryable():

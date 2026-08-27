@@ -24,7 +24,7 @@ JUDGE_SYSTEM = (
     "response conveys the same information as the gold answer. Be lenient: accept paraphrases, partial dates "
     "that agree with the gold date, equivalent relative/absolute time expressions, and extra correct detail. "
     "Mark WRONG if the response contradicts the gold answer, is missing the key fact, or answers a different "
-    "question."
+    "question. Relative time expressions in the response are interpreted relative to the reference date."
 )
 
 
@@ -40,12 +40,18 @@ def qa_messages(memory_block: str, question: str, today: str) -> list[dict]:
     ]
 
 
-def judge_messages(question: str, gold: str, response: str) -> list[dict]:
-    """Build the judge prompt; asks for JSON ``{"label": "CORRECT"|"WRONG", "reason": str}``."""
+def judge_messages(question: str, gold: str, response: str, asked_on: str) -> list[dict]:
+    """Build the judge prompt; asks for JSON ``{"label": "CORRECT"|"WRONG", "reason": str}``.
+
+    ``asked_on`` is the question's ``asked_at`` date (``q.asked_at.date().isoformat()``) — the
+    judge needs it to resolve relative time expressions in the response (e.g. "last week") the
+    same way the QA prompt's "Today is {today}" line let the model resolve them when answering.
+    """
     user = (
         f"Question: {question}\n"
         f"Gold answer: {gold}\n"
-        f"Model response: {response}\n\n"
+        f"Model response: {response}\n"
+        f"Reference date (when the question was asked): {asked_on}\n\n"
         'Reply with JSON only: {"label": "CORRECT" or "WRONG", "reason": "..."}'
     )
     return [

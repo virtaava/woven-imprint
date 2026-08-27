@@ -68,10 +68,13 @@ def write_judge_sample(
     """Stratified sample (by category, verdict) of judged items for human calibration review.
 
     Merge-written into ``external_judge_sample.json`` keyed by ``f"{bench}:{mode}"`` (read from
-    the items themselves), same convention as :func:`write_results`.
+    the items themselves), same convention as :func:`write_results`. Only ``kind == "qa"``
+    records are sampled — adversarial/abstain records are rule-scored by
+    ``metrics.is_abstention``, not by the LLM judge, so they aren't useful for judge-calibration
+    review.
     """
     rdir = Path(results_dir) if results_dir else RESULTS_DIR
-    judged = [it for it in items if it.get("label") is not None]
+    judged = [it for it in items if it.get("label") is not None and it.get("kind") == "qa"]
     if not judged:
         return
     sample = _stratified_sample(judged, n, seed)

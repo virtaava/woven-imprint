@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from .fetch import DATASETS, fetch
-from .runner import RunConfig, run, run_plus
+from .runner import RunConfig, rejudge, run, run_plus
 
 
 def _parse_shard(value: str | None) -> tuple[int, int] | None:
@@ -63,6 +63,29 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip writing eval/results files (use for shard workers; aggregate with a final run)",
     )
+    run_parser.add_argument(
+        "--timeout", type=int, default=900, help="Per-request LLM timeout in seconds"
+    )
+    run_parser.add_argument(
+        "--force-aggregate",
+        action="store_true",
+        help="Skip the unsharded-aggregation safety check (only if you know shard workers are done)",
+    )
+
+    rejudge_parser = sub.add_parser(
+        "rejudge", help="Re-run the judge over an existing run's answer checkpoints, in place"
+    )
+    rejudge_parser.add_argument("--bench", required=True, choices=["locomo", "longmemeval_s"])
+    rejudge_parser.add_argument("--mode", required=True, choices=["memory", "fullcontext"])
+    rejudge_parser.add_argument("--run-id", required=True)
+    rejudge_parser.add_argument(
+        "--only-unjudged",
+        action="store_true",
+        help="Skip records already carrying judge_version 2 (resume a killed rejudge pass)",
+    )
+    rejudge_parser.add_argument(
+        "--timeout", type=int, default=900, help="Per-request LLM timeout in seconds"
+    )
 
     args = parser.parse_args(argv)
 
@@ -87,6 +110,8 @@ def main(argv: list[str] | None = None) -> int:
             max_sessions=args.max_sessions,
             max_questions=args.max_questions,
             reuse_run=args.reuse_run,
+            timeout=args.timeout,
+            force_aggregate=args.force_aggregate,
         )
         if cfg.bench == "locomo_plus":
             results = run_plus(cfg)
@@ -105,6 +130,23 @@ def main(argv: list[str] | None = None) -> int:
                 f"n={summary['n_questions']} adversarial_acc={summary['adversarial_accuracy']} "
                 f"abstain_acc={summary['abstain_accuracy']}"
             )
+        return 0
+
+    if args.command == "rejudge":
+        cfg = RunConfig(
+            bench=args.bench,
+            mode=args.mode,
+            run_id=args.run_id,
+            timeout=args.timeout,
+        )
+        results = rejudge(cfg, only_unjudged=args.only_unjudged)
+        summary = results["summary"]
+        print(
+            f"\n{cfg.bench}:{cfg.mode} run {cfg.run_id} rejudged — "
+            f"overall_j={summary['overall_j']:.3f} overall_f1={summary['overall_f1']:.3f} "
+            f"n={summary['n_questions']} adversarial_acc={summary['adversarial_accuracy']} "
+            f"abstain_acc={summary['abstain_accuracy']}"
+        )
         return 0
 
     return 1

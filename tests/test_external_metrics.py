@@ -1,3 +1,5 @@
+import pytest
+
 from eval.external.metrics import is_abstention, summarize, token_f1
 
 
@@ -18,6 +20,42 @@ def test_is_abstention():
     assert is_abstention("Not mentioned")
     assert is_abstention("I don't know / not mentioned in memories.")
     assert not is_abstention("Paris")
+
+
+def test_token_f1_ignores_articles_and_punctuation():
+    assert token_f1("a cat", "the cat") == 1.0
+    assert token_f1("She adopted a cat.", "She adopted the cat") == 1.0
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "Not mentioned",
+        "not mentioned in the memories",
+        "The conversation does not mention it",
+        "The memories do not mention this",
+        "I do not have this information",
+        "I don't have that information",
+        "Sorry, I cannot answer that",
+        "There is no info about that",
+        "No information available",
+        "unknown based on the memories",
+    ],
+)
+def test_is_abstention_catches_required_phrases(phrase):
+    assert is_abstention(phrase), phrase
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "She adopted a dog",
+        "Paris",
+        "Mostly sourdough bread, it's her favorite thing to bake",
+    ],
+)
+def test_is_abstention_does_not_flag_concrete_answers(phrase):
+    assert not is_abstention(phrase), phrase
 
 
 def _item(category, kind, correct, f1=0.5, prompt_tokens_est=10):

@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   vLLM. Omitted from the request entirely when not set.
 - **`providers.create_llm()` now passes `timeout=cfg.llm.timeout`** to `OpenAILLM` — previously
   silently dropped, so the configured LLM timeout never reached the OpenAI-compatible provider.
+- **`resilience.resilient_call()` now retries `openai.APITimeoutError`/`openai.APIConnectionError`**
+  (guarded import — a no-op if `openai` isn't installed), so a vLLM/OpenAI-compatible call that
+  times out or drops its connection gets the same retry/backoff/circuit-breaker treatment as a
+  `requests` timeout instead of failing the whole run immediately.
 
 ### Changed (behavior)
 - **`Character.ingest()` now uses unified bookkeeping and creates structured facts** when

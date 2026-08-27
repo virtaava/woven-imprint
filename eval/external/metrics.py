@@ -3,23 +3,32 @@
 from __future__ import annotations
 
 import re
+import string
 from collections import Counter
 
-_WORD_RE = re.compile(r"[a-z0-9]+")
+_PUNCT_RE = re.compile(f"[{re.escape(string.punctuation)}]")
+_ARTICLE_RE = re.compile(r"\b(a|an|the)\b", re.IGNORECASE)
+_WS_RE = re.compile(r"\s+")
 
-_ABSTAIN_RE = re.compile(
-    r"not mentioned|don'?t know|do not know|no information|cannot find|unable to find|"
-    r"not stated|not specified|not sure|no mention|unknown",
-    re.IGNORECASE,
-)
+
+def _normalize_answer(text: str) -> str:
+    """SQuAD-style normalization: lowercase, strip punctuation, drop articles (a/an/the), and
+    collapse whitespace. Used for token-F1 so wording differences like "8 May 2023" vs.
+    "May 8, 2023" or "a cat" vs. "the cat" don't cost overlap."""
+    s = (text or "").lower()
+    s = _PUNCT_RE.sub(" ", s)
+    s = _ARTICLE_RE.sub(" ", s)
+    return _WS_RE.sub(" ", s).strip()
 
 
 def _tokenize(text: str) -> list[str]:
-    return _WORD_RE.findall((text or "").lower())
+    normalized = _normalize_answer(text)
+    return normalized.split() if normalized else []
 
 
 def token_f1(pred: str, gold: str) -> float:
-    """Token-level F1 between a prediction and a gold answer (order-insensitive, bag-of-words)."""
+    """Token-level F1 between a prediction and a gold answer (order-insensitive, bag-of-words,
+    SQuAD-style normalized — see :func:`_normalize_answer`)."""
     pred_tokens = _tokenize(pred)
     gold_tokens = _tokenize(gold)
     if not pred_tokens or not gold_tokens:
@@ -33,9 +42,52 @@ def token_f1(pred: str, gold: str) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
+_ABSTAIN_PATTERNS = (
+    r"not mentioned",
+    r"does not mention",
+    r"doesn'?t mention",
+    r"do not mention",
+    r"don'?t mention",
+    r"do not have (?:this|that|the|any) information",
+    r"don'?t have (?:this|that|the|any) information",
+    r"cannot answer",
+    r"can'?t answer",
+    r"no info\b",
+    r"no information",
+    r"don'?t know",
+    r"do not know",
+    r"not stated",
+    r"not specified",
+    r"not sure",
+    r"no mention",
+    r"unable to find",
+    r"cannot find",
+    r"unknown",
+)
+_ABSTAIN_RE = re.compile("|".join(_ABSTAIN_PATTERNS), re.IGNORECASE)
+
+# A response longer than this is assumed to be supplying a concrete answer rather than merely
+# declining to answer, even if it happens to contain an abstention-shaped phrase somewhere.
+_MAX_ABSTAIN_WORDS = 12
+
+
 def is_abstention(response: str) -> bool:
-    """True when ``response`` reads as an explicit "I don't know / not mentioned" abstention."""
-    return bool(_ABSTAIN_RE.search(response or ""))
+    """True when ``response`` reads as an explicit "I don't know / not mentioned" abstention.
+
+    Rule (deliberately simple, not a full NLI judgment): the response matches one of a fixed set
+    of abstention phrase patterns (see ``_ABSTAIN_PATTERNS``) AND has at most
+    ``_MAX_ABSTAIN_WORDS`` (12) whitespace-separated words. The word-count cap exists only to
+    keep a long, otherwise-substantive answer that happens to contain an abstention-shaped
+    fragment from being misclassified; it does not attempt to detect "opens with an abstention
+    phrase but then supplies a concrete answer" as its own case — a short reply that does both
+    (e.g. "Not mentioned; she adopted a dog") is still counted as an abstention under this rule.
+    """
+    text = (response or "").strip()
+    if not text:
+        return False
+    if len(text.split()) > _MAX_ABSTAIN_WORDS:
+        return False
+    return bool(_ABSTAIN_RE.search(text))
 
 
 def summarize(items: list[dict]) -> dict:

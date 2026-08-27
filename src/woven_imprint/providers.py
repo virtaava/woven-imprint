@@ -40,6 +40,7 @@ def create_llm(cfg: WovenConfig | None = None) -> LLMProvider:
             model=cfg.llm.model,
             api_key=cfg.llm.api_key,
             base_url=cfg.llm.base_url,
+            timeout=cfg.llm.timeout,
         )
     elif provider == "anthropic":
         from .llm.anthropic_llm import AnthropicLLM

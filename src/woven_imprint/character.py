@@ -569,6 +569,13 @@ class Character:
         (fact extraction, relationship assessment) as :meth:`chat`, but no
         LLM generation call is made.
 
+        When ``self.unified_assessment`` is on (the default), bookkeeping
+        routes through the single unified turn-assessment call — the same
+        path :meth:`chat` uses — so structured (subject, predicate, object)
+        facts are now created on ingest, not just free-text ones. When off,
+        the legacy per-subsystem path (:meth:`_extract_memories`) runs
+        unchanged.
+
         Args:
             role: ``"user"`` or ``"assistant"`` — who said it.
             content: The message text.
@@ -602,19 +609,20 @@ class Character:
             importance=0.5,
         )
 
-        # Subsystem updates — fact extraction + relationship assessment
-        # We need a user_msg / response pair for _extract_memories.
-        # Accumulate and run extraction when we have both sides.
-        # For simplicity, run extraction on every ingest using the content
-        # as the relevant side and an empty string for the other.
+        # Subsystem updates — fact extraction + relationship assessment.
+        # We need a user_msg / response pair for bookkeeping; the side that
+        # didn't speak this turn is an empty string.
         if role == "user":
             user_msg, response = content, ""
         else:
             user_msg, response = "", content
 
-        # Run extraction (non-fatal, same as chat)
+        # Run bookkeeping (non-fatal, same as chat)
         try:
-            self._extract_memories(user_msg, response, user_id, session_id=self._session_id)
+            if self.unified_assessment:
+                self._run_bookkeeping(user_msg, response, user_id, self._session_id)
+            else:
+                self._extract_memories(user_msg, response, user_id, session_id=self._session_id)
         except Exception as e:
             logger.debug("Ingest extraction failed: %s", e)
 

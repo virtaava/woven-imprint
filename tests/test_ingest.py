@@ -48,6 +48,21 @@ class FakeLLM:
         user = messages[-1].get("content", "") if messages else ""
         system = messages[0].get("content", "") if messages else ""
 
+        # Unified bookkeeping (emotion + relationship + beat + facts in one call)
+        if "bookkeeping assistant" in system.lower():
+            return {
+                "emotion": {"mood": "neutral", "intensity": 0.5, "cause": ""},
+                "relationship": {
+                    "trust": 0.03,
+                    "affection": 0.01,
+                    "respect": 0.02,
+                    "familiarity": 0.05,
+                    "tension": 0.0,
+                },
+                "beat": None,
+                "facts": ["The user mentioned something notable"],
+            }
+
         # Fact extraction
         if "extract" in system.lower() or "facts" in user.lower():
             return ["The user mentioned something notable"]

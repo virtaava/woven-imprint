@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (Tier 3b — external benchmarks · library enablers)
+- **`OpenAILLM(extra_body=...)`** — an optional dict forwarded verbatim into every
+  `chat.completions.create` call (`generate`, `generate_stream`, `generate_json`) when set, e.g.
+  `{"chat_template_kwargs": {"enable_thinking": False}}` to disable Qwen3.5's reasoning mode on
+  vLLM. Omitted from the request entirely when not set.
+- **`providers.create_llm()` now passes `timeout=cfg.llm.timeout`** to `OpenAILLM` — previously
+  silently dropped, so the configured LLM timeout never reached the OpenAI-compatible provider.
+
+### Changed (behavior)
+- **`Character.ingest()` now uses unified bookkeeping and creates structured facts** when
+  `unified_assessment` is on (the default): it routes through `_run_bookkeeping` — the same
+  single-call emotion/relationship/beat/facts path `chat()` uses — instead of the legacy
+  `_extract_memories`. This means ingested turns can now produce structured
+  (subject, predicate, object) facts, not just free-text ones. The legacy path is unchanged and
+  still used when `unified_assessment` is off.
+
 ### Added (Tier 3a — editable memory · interchange)
 - **Memory & fact mutation** — every memory and fact is now viewable and editable, from the
   library, HTTP, and MCP:

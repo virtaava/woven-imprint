@@ -81,3 +81,45 @@ def test_ingest_assistant_turn_is_character_speech():
     char.ingest("assistant", "I remember the harbor.", user_id="toni")
     mems = char.memory.get_all(tier="buffer")
     assert mems and mems[0]["content"].startswith("[Ada]") and mems[0]["role"] == "character"
+
+
+# --- ingest_exchange -----------------------------------------------------------------------
+
+
+def test_ingest_exchange_makes_one_unified_call_per_exchange():
+    engine, char = _char(True)
+    char.ingest_exchange("I live in Oulu these days.", "That's a beautiful city!", user_id="toni")
+    assert engine.llm.unified_calls == 1
+    assert engine.llm.legacy_calls == 0
+    assert engine.llm.generate_calls == 0
+    assert char.facts.find_active("user", "lives_in")["object"] == "Oulu"
+
+
+def test_ingest_exchange_stores_both_sides_in_buffer_memory():
+    engine, char = _char(True)
+    char.ingest_exchange("I live in Oulu these days.", "That's a beautiful city!", user_id="toni")
+    mems = char.memory.get_all(tier="buffer")
+    contents = [m["content"] for m in mems]
+    roles = {m["content"]: m["role"] for m in mems}
+    assert any(c.startswith("[User]") and "Oulu" in c for c in contents)
+    assert any(c.startswith("[Ada]") and "beautiful" in c for c in contents)
+    for c, r in roles.items():
+        if c.startswith("[User]"):
+            assert r == "user"
+        else:
+            assert r == "character"
+
+
+def test_ingest_exchange_increments_turn_count_once():
+    engine, char = _char(True)
+    before = char._turn_count
+    char.ingest_exchange("Hello there.", "Hi!", user_id="toni")
+    assert char._turn_count == before + 1
+
+
+def test_ingest_exchange_legacy_path_when_unified_off():
+    engine, char = _char(False)
+    char.ingest_exchange("I live in Oulu these days.", "That's a beautiful city!", user_id="toni")
+    assert engine.llm.unified_calls == 0
+    assert engine.llm.legacy_calls >= 1
+    assert char.facts.count() == 0

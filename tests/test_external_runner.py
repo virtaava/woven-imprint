@@ -1,16 +1,19 @@
 import json
 import shutil
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+from eval.external.common import Turn
 from eval.external.locomo import load_locomo, load_locomo_plus
 from eval.external.runner import (
     RunConfig,
     _assert_safe_to_aggregate,
     _checkpoint_and_verify_wal,
     _cleanup_mid_ingest_db,
+    _ingest_session_turns,
     _load_json,
     _process_probe_memory,
     _save_json,
@@ -614,3 +617,182 @@ def test_process_probe_memory_refuses_a_source_db_with_a_live_wal(tmp_path):
         assert check.execute("SELECT x FROM wal_probe_test").fetchall() == [(1,)]
     finally:
         check.close()
+
+
+# --- pair_turns (Task 5, part B/D) ----------------------------------------------------------
+
+
+def test_pair_turns_defaults_true_for_longmemeval_s_false_otherwise():
+    assert RunConfig(bench="longmemeval_s", mode="memory", run_id="x").pair_turns is True
+    assert RunConfig(bench="locomo", mode="memory", run_id="x").pair_turns is False
+    assert RunConfig(bench="locomo_plus", mode="memory", run_id="x").pair_turns is False
+    # Explicit value always wins over the bench-based default.
+    assert (
+        RunConfig(bench="longmemeval_s", mode="memory", run_id="x", pair_turns=False).pair_turns
+        is False
+    )
+    assert RunConfig(bench="locomo", mode="memory", run_id="x", pair_turns=True).pair_turns is True
+
+
+class _RecordingChar:
+    """Stand-in for Character in _ingest_session_turns tests — just records what was called."""
+
+    def __init__(self):
+        self.calls: list[tuple] = []
+
+    def ingest(self, role, text, user_id=None):
+        self.calls.append(("ingest", role, text))
+
+    def ingest_exchange(self, user_message, response, user_id=None):
+        self.calls.append(("exchange", user_message, response))
+
+
+def _turn(role: str, text: str):
+    return Turn(
+        speaker=role,
+        role=role,
+        text=text,
+        dia_id=None,
+        at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+def test_ingest_session_turns_pairs_consecutive_user_assistant_turns():
+    char = _RecordingChar()
+    turns = [
+        _turn("assistant", "A0"),  # no preceding user -> unpaired
+        _turn("user", "U1"),
+        _turn("assistant", "A1"),  # U1/A1 -> paired
+        _turn("user", "U2"),
+        _turn("user", "U3"),  # U2 followed by another user -> unpaired
+        _turn("assistant", "A3"),  # U3/A3 -> paired
+        _turn("user", "U4"),  # trailing user, nothing follows -> unpaired
+    ]
+    clock.override(datetime(2024, 1, 1, tzinfo=timezone.utc))
+    n = _ingest_session_turns(char, turns, user_id="toni", pair_turns=True)
+
+    assert n == len(turns)
+    assert char.calls == [
+        ("ingest", "assistant", "A0"),
+        ("exchange", "U1", "A1"),
+        ("ingest", "user", "U2"),
+        ("exchange", "U3", "A3"),
+        ("ingest", "user", "U4"),
+    ]
+    # Clock advanced 30s per turn consumed regardless of how turns were grouped.
+    assert clock.now() == datetime(2024, 1, 1, 0, 3, 30, tzinfo=timezone.utc)
+
+
+def test_ingest_session_turns_pair_turns_false_never_pairs():
+    char = _RecordingChar()
+    turns = [_turn("user", "U1"), _turn("assistant", "A1")]
+    clock.override(datetime(2024, 1, 1, tzinfo=timezone.utc))
+    n = _ingest_session_turns(char, turns, user_id="toni", pair_turns=False)
+
+    assert n == 2
+    assert char.calls == [("ingest", "user", "U1"), ("ingest", "assistant", "A1")]
+
+
+LME_FIXTURES = Path(__file__).resolve().parent.parent / "eval" / "external" / "fixtures"
+
+
+def _lme_cfg(run_id: str, **overrides) -> RunConfig:
+    kwargs = dict(
+        bench="longmemeval_s",
+        mode="memory",
+        run_id=run_id,
+        dataset_path=LME_FIXTURES / "longmemeval_mini.json",
+    )
+    kwargs.update(overrides)
+    return RunConfig(**kwargs)
+
+
+def test_run_longmemeval_pairs_turns_by_default_halving_bookkeeping_calls(tmp_path):
+    # longmemeval_mini.json: 3 conversations, each 2 sessions of exactly one (user, assistant)
+    # pair -> with pairing, ingestion makes 1 exchange call + 1 session-summary call per
+    # session = 2 calls/session, 4 calls/conversation, 12 total.
+    cfg = _lme_cfg("lme-paired")
+    assert cfg.pair_turns is True
+    results = run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+
+    assert results["ingest_totals"]["llm_calls"] == 12
+    assert results["ingest_totals"]["turns"] == 12  # 3 convs * 2 sessions * 2 turns
+    assert results["config"]["pair_turns"] is True
+    assert results["summary"]["n_questions"] == 3
+
+    for conv_id in ("lme-mini-1", "lme-mini-2", "lme-mini-3_abs"):
+        ingest_stats = json.loads((tmp_path / "lme-paired" / f"{conv_id}.ingest.json").read_text())
+        assert ingest_stats["llm_calls"] == 4
+        assert ingest_stats["pair_turns"] is True
+
+
+def test_run_longmemeval_no_pair_turns_makes_one_ingest_call_per_turn(tmp_path):
+    # Same fixture, pairing off: 2 turns/session -> 2 ingest calls + 1 session-summary call =
+    # 3 calls/session, 6 calls/conversation, 18 total (vs 12 with pairing) — confirms pairing
+    # actually halves (not just changes) the bookkeeping call count.
+    cfg = _lme_cfg("lme-unpaired", pair_turns=False)
+    results = run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+
+    assert results["ingest_totals"]["llm_calls"] == 18
+    assert results["config"]["pair_turns"] is False
+
+
+def test_run_longmemeval_answers_and_reports_per_type_category_and_abstain(tmp_path):
+    results = run(
+        _lme_cfg("lme-answer"), llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path
+    )
+
+    summary = results["summary"]
+    # question_type values from the fixture are reported as categories.
+    assert {"single-session-user", "temporal-reasoning", "knowledge-update"} <= set(
+        summary["per_category"]
+    )
+    # The _abs question is scored as an abstention, separate from overall_j/adversarial_accuracy.
+    assert summary["abstain_accuracy"] is not None
+    assert summary["adversarial_accuracy"] is None  # LongMemEval has no adversarial kind
+
+    answers = json.loads((tmp_path / "lme-answer" / "lme-mini-3_abs.answers.json").read_text())
+    assert answers[0]["kind"] == "abstain"
+
+
+def test_run_longmemeval_resumes_after_pairing_without_reingesting(tmp_path):
+    cfg = _lme_cfg("lme-resume")
+    first = run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+    second = run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+    assert first["ingest_totals"]["llm_calls"] == second["ingest_totals"]["llm_calls"] == 12
+
+
+# --- delete_db_after_answer (Task 5, part E) -------------------------------------------------
+
+
+def test_delete_db_after_answer_removes_db_but_keeps_checkpoints(tmp_path):
+    cfg = _cfg("delkeep")
+    cfg.delete_db_after_answer = True
+    results = run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+
+    run_root = tmp_path / "delkeep"
+    conv_id = "conv-mini-1"
+    assert not (run_root / f"{conv_id}.db").exists()
+    assert not (run_root / f"{conv_id}.db-wal").exists()
+    assert not (run_root / f"{conv_id}.db-shm").exists()
+    assert (run_root / f"{conv_id}.ingest.json").exists()
+    assert (run_root / f"{conv_id}.answers.json").exists()
+    assert results["summary"]["n_questions"] == 6
+
+
+def test_delete_db_after_answer_false_keeps_db_by_default(tmp_path):
+    run(_cfg("delkeep-off"), llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+    assert (tmp_path / "delkeep-off" / "conv-mini-1.db").exists()
+
+
+def test_delete_db_after_answer_resumes_cleanly_once_all_answers_exist(tmp_path):
+    """After the .db is deleted, re-running run() over an already-fully-answered conversation
+    must not try to recreate/re-ingest it (a fresh empty .db would have no character in it)."""
+    cfg = _cfg("delresume")
+    cfg.delete_db_after_answer = True
+    run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+    assert not (tmp_path / "delresume" / "conv-mini-1.db").exists()
+
+    second = run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+    assert second["summary"]["n_questions"] == 6
+    assert not (tmp_path / "delresume" / "conv-mini-1.db").exists()  # still not recreated

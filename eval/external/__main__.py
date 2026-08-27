@@ -71,6 +71,28 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip the unsharded-aggregation safety check (only if you know shard workers are done)",
     )
+    pair_group = run_parser.add_mutually_exclusive_group()
+    pair_group.add_argument(
+        "--pair-turns",
+        dest="pair_turns",
+        action="store_true",
+        default=None,
+        help="Ingest consecutive (user, assistant) turns as one Character.ingest_exchange() "
+        "call (default: on for --bench longmemeval_s, off otherwise)",
+    )
+    pair_group.add_argument(
+        "--no-pair-turns",
+        dest="pair_turns",
+        action="store_false",
+        default=None,
+        help="Ingest every turn individually via Character.ingest() (see --pair-turns)",
+    )
+    run_parser.add_argument(
+        "--delete-db-after-answer",
+        action="store_true",
+        help="Delete a conversation's .db (+ -wal/-shm) once its answers are complete and "
+        "judged — keeps the ingest.json/answers.json checkpoints",
+    )
 
     rejudge_parser = sub.add_parser(
         "rejudge", help="Re-run the judge over an existing run's answer checkpoints, in place"
@@ -112,6 +134,8 @@ def main(argv: list[str] | None = None) -> int:
             reuse_run=args.reuse_run,
             timeout=args.timeout,
             force_aggregate=args.force_aggregate,
+            pair_turns=args.pair_turns,
+            delete_db_after_answer=args.delete_db_after_answer,
         )
         if cfg.bench == "locomo_plus":
             results = run_plus(cfg)

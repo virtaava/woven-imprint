@@ -635,6 +635,82 @@ class Character:
             except Exception as e:
                 logger.debug("Periodic state save failed: %s", e)
 
+    def ingest_exchange(self, user_message: str, response: str, user_id: str | None = None) -> None:
+        """Record one user turn + one character reply as a single unit, without calling the LLM.
+
+        Use this to import a transcript of user/assistant dialogue (e.g. a benchmark
+        conversation or a SillyTavern log) turn by turn while keeping bookkeeping cost down:
+        unlike two back-to-back :meth:`ingest` calls (one per side, each triggering its own
+        bookkeeping pass), this makes exactly one unified assessment call per exchange — the
+        same call :meth:`chat` makes for a live turn — because the user message and the
+        character's reply are already paired, the way they are in a real conversation.
+
+        Both sides are stored in the conversation buffer and context exactly as :meth:`ingest`
+        would store them (``"[User] ..."`` / ``"[{name}] ..."``), and ``_turn_count`` advances
+        by one for the whole exchange, not two.
+
+        When ``self.unified_assessment`` is on (the default), bookkeeping routes through the
+        single unified turn-assessment call (:meth:`_run_bookkeeping`) — the same path
+        :meth:`chat` uses — so structured (subject, predicate, object) facts are created. When
+        off, the legacy per-subsystem path (:meth:`_extract_memories`) runs unchanged.
+
+        Args:
+            user_message: What the user said.
+            response: What the character said in reply.
+            user_id: Optional user identifier for relationship tracking.
+        """
+        if not self._session_id:
+            self.start_session()
+
+        # Input size limit (same as chat/ingest)
+        from .config import get_config
+
+        _cfg = get_config()
+        if len(user_message) > _cfg.memory.max_message_length:
+            user_message = user_message[: _cfg.memory.max_message_length]
+        if len(response) > _cfg.memory.max_message_length:
+            response = response[: _cfg.memory.max_message_length]
+
+        # Store both turns in the conversation buffer
+        self._context.add_turn("user", user_message)
+        self._context.add_turn("assistant", response)
+        self._persist_turn("user", user_message)
+        self._persist_turn("assistant", response)
+
+        # Store both sides as buffer memory
+        self.memory.add(
+            content=f"[User] {user_message}",
+            tier="buffer",
+            role="user",
+            session_id=self._session_id,
+            importance=0.5,
+        )
+        self.memory.add(
+            content=f"[{self.name}] {response}",
+            tier="buffer",
+            role="character",
+            session_id=self._session_id,
+            importance=0.5,
+        )
+
+        # Run bookkeeping once for the whole exchange (non-fatal, same as ingest/chat)
+        try:
+            if self.unified_assessment:
+                self._run_bookkeeping(user_message, response, user_id, self._session_id)
+            else:
+                self._extract_memories(user_message, response, user_id, session_id=self._session_id)
+        except Exception as e:
+            logger.debug("Ingest exchange bookkeeping failed: %s", e)
+
+        self._turn_count += 1
+
+        # Periodic maintenance (same as chat/ingest)
+        if self._turn_count % _cfg.memory.state_save_interval == 0:
+            try:
+                self._save_state()
+            except Exception as e:
+                logger.debug("Periodic state save failed: %s", e)
+
     def observe(
         self,
         event: str,

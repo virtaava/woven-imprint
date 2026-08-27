@@ -1,9 +1,12 @@
+from collections import Counter
 from datetime import timezone
 from pathlib import Path
 
-from eval.external.common import parse_locomo_datetime
+import pytest
+
+from eval.external.common import DATA_DIR, parse_locomo_datetime
 from eval.external.locomo import load_locomo, load_locomo_plus
-from eval.external.longmemeval import load_longmemeval_s
+from eval.external.longmemeval import _stratified_sample, load_longmemeval_s
 
 FIX = Path(__file__).resolve().parent.parent / "eval" / "external" / "fixtures"
 
@@ -79,3 +82,65 @@ def test_longmemeval_sessions_sorted_chronologically(tmp_path):
     conv = load_longmemeval_s(p)[0]
     ats = [s.at for s in conv.sessions]
     assert ats == sorted(ats) and len(ats) == len(item["haystack_dates"])
+
+
+# --- Stratified sample: prefix stability -------------------------------------------------
+
+
+def _synthetic_items(counts: dict[str, int]) -> list[dict]:
+    """Build a synthetic LongMemEval-shaped item list: ``{question_id, question_type}`` only
+    (the fields ``_stratified_sample`` actually reads)."""
+    items = []
+    for qtype, n in counts.items():
+        for j in range(n):
+            items.append({"question_id": f"{qtype}-{j}", "question_type": qtype})
+    return items
+
+
+def _balance(items: list[dict]) -> int:
+    counts = Counter(it["question_type"] for it in items)
+    return max(counts.values()) - min(counts.values())
+
+
+def test_stratified_sample_is_prefix_stable_and_balanced():
+    # ~120 items across 6 types, uneven counts per type — each type still has more than
+    # ceil(100 / 6) items so no type exhausts before the largest sample (100) is drawn (a type
+    # smaller than that would cap out early and necessarily throw off the max-min<=1 balance
+    # check below, which is an inherent property of round-robin sampling, not a bug).
+    items = _synthetic_items({"t0": 17, "t1": 18, "t2": 19, "t3": 20, "t4": 21, "t5": 25})
+    assert len(items) == 120
+
+    sample_50 = _stratified_sample(items, 50, seed=7)
+    sample_100 = _stratified_sample(items, 100, seed=7)
+
+    assert len(sample_50) == 50 and len(sample_100) == 100
+    ids_50 = [it["question_id"] for it in sample_50]
+    ids_100 = [it["question_id"] for it in sample_100]
+    assert ids_50 == ids_100[:50]
+
+    assert _balance(sample_50) <= 1
+    assert _balance(sample_100) <= 1
+
+
+@pytest.mark.skipif(
+    not (DATA_DIR / "longmemeval_s.json").exists(),
+    reason="longmemeval_s.json not fetched (gitignored, 277 MB)",
+)
+def test_stratified_sample_prefix_stable_on_real_longmemeval_s():
+    import json
+
+    data = json.loads((DATA_DIR / "longmemeval_s.json").read_text())
+
+    sample_50 = _stratified_sample(data, 50, seed=7)
+    sample_100 = _stratified_sample(data, 100, seed=7)
+
+    ids_50 = [it["question_id"] for it in sample_50]
+    ids_100 = [it["question_id"] for it in sample_100]
+    assert ids_50 == ids_100[:50]
+    assert _balance(sample_50) <= 1
+    assert _balance(sample_100) <= 1
+
+    counts_50 = Counter(it["question_type"] for it in sample_50)
+    counts_100 = Counter(it["question_type"] for it in sample_100)
+    print(f"\nlongmemeval_s per-type counts, sample=50: {dict(counts_50)}")
+    print(f"longmemeval_s per-type counts, sample=100: {dict(counts_100)}")

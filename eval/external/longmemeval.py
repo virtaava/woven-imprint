@@ -28,7 +28,16 @@ def parse_longmemeval_datetime(s: str) -> datetime:
 
 
 def _stratified_sample(items: list[dict], k: int, seed: int) -> list[dict]:
-    """Round-robin sample across ``question_type`` groups, seeded per-group shuffle."""
+    """Round-robin sample across ``question_type`` groups, seeded per-group shuffle.
+
+    For a fixed ``seed``, each type's shuffled order and the round-robin visiting order (types
+    sorted alphabetically) depend only on ``seed`` and ``items`` — never on ``k`` — so the
+    algorithm produces one deterministic infinite sequence per ``(items, seed)`` and ``k`` only
+    decides where to cut it: ``_stratified_sample(items, 50, seed)`` is exactly the first 50
+    elements of ``_stratified_sample(items, 100, seed)``. Per-type counts stay balanced (max -
+    min across types <= 1) at every prefix length, since round-robin draws one item per type per
+    lap before starting the next lap.
+    """
     groups: dict[str, list[dict]] = {}
     for it in items:
         groups.setdefault(it["question_type"], []).append(it)

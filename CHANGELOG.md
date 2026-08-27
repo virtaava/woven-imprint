@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_extract_memories`. This means ingested turns can now produce structured
   (subject, predicate, object) facts, not just free-text ones. The legacy path is unchanged and
   still used when `unified_assessment` is off.
+- **`Character.ingest_exchange(user_message, response, user_id=None)`** — like `ingest()` but
+  records one user turn + one character reply as a single unit (one `_turn_count` increment, one
+  unified bookkeeping call instead of two). For importing transcripts of paired user/assistant
+  dialogue, e.g. benchmark haystacks or SillyTavern logs, where the two sides are already known
+  together.
 
 ### Added (Tier 3b — external benchmarks · harness + docs)
 - **`eval/external/` harness** (`python -m eval.external fetch|run|rejudge`): publishes

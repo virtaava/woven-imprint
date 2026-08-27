@@ -100,6 +100,24 @@ class RunConfig:
     write_results: bool = True  # shard workers pass False; the final unsharded call aggregates
     timeout: int = 900  # seconds; passed to brain_llm(timeout=...)
     force_aggregate: bool = False  # bypass the unsharded-aggregation safety check (see run())
+    # Pair each (user, assistant) turn during ingestion into one `Character.ingest_exchange()`
+    # call instead of two `Character.ingest()` calls — halves bookkeeping LLM calls, since
+    # ingest_exchange makes one unified-assessment call per exchange rather than one per turn.
+    # `None` (the CLI's unset default) resolves in `__post_init__` to True for
+    # bench=="longmemeval_s" (where the haystack is turn-by-turn dialogue and the call-count
+    # savings matter most) and False otherwise (LoCoMo's speaker order isn't guaranteed
+    # strict user/assistant alternation, and existing LoCoMo/LoCoMo-Plus runs should keep their
+    # established per-turn ingestion behavior).
+    pair_turns: bool | None = None
+    # After a conversation's answers are complete and judged, delete its .db (+ -wal/-shm) —
+    # keeps only the ingest.json/answers.json checkpoints. LongMemEval-S's per-question DBs
+    # (~40 sessions each, one full haystack ingested) add up across 100 questions; nothing
+    # downstream needs the DB once every question for that conversation is answered.
+    delete_db_after_answer: bool = False
+
+    def __post_init__(self) -> None:
+        if self.pair_turns is None:
+            self.pair_turns = self.bench == "longmemeval_s"
 
 
 class _CountingLLM(LLMProvider):
@@ -183,13 +201,44 @@ def _character_persona(conv: Conversation) -> dict:
     }
 
 
+def _ingest_session_turns(char, turns: list, user_id: str | None, pair_turns: bool) -> int:
+    """Ingest one session's turns into ``char``, advancing the clock 30s per original turn
+    consumed (before ingesting, so ``created_at`` stays monotonic exactly as the un-paired
+    per-turn loop did).
+
+    When ``pair_turns``, a ``user`` turn immediately followed by an ``assistant`` turn is
+    ingested as a single :meth:`Character.ingest_exchange` call (one bookkeeping LLM call for
+    both sides, clock advanced 60s — 30s per turn consumed). An unpaired turn — two ``user``
+    turns in a row, an ``assistant`` turn with no preceding ``user`` turn, or a trailing
+    ``user`` turn at the end of the session — falls back to :meth:`Character.ingest` (clock
+    advanced 30s). Returns the number of turns consumed (``== len(turns)``).
+    """
+    i = 0
+    n = len(turns)
+    while i < n:
+        turn = turns[i]
+        if pair_turns and turn.role == "user" and i + 1 < n and turns[i + 1].role == "assistant":
+            nxt = turns[i + 1]
+            clock.advance(timedelta(seconds=30 * 2))
+            char.ingest_exchange(turn.text, nxt.text, user_id=user_id)
+            i += 2
+        else:
+            clock.advance(timedelta(seconds=30))
+            char.ingest(turn.role, turn.text, user_id=user_id)
+            i += 1
+    return n
+
+
 def ingest_conversation(conv: Conversation, engine: Engine, cfg: "RunConfig") -> dict:
     """Ingest ``conv``'s sessions into ``engine``, message by message, under clock control.
 
     Creates the character (id = ``conv.conv_id``) and ingests every session (capped at
     ``cfg.max_sessions`` for smoke runs), advancing the clock 30s per turn so ``created_at`` is
-    monotonic. Returns ``{turns, sessions, llm_calls, seconds}``. Idempotency (skip if already
-    done) is the caller's responsibility via the ``<conv_id>.ingest.json`` checkpoint.
+    monotonic. When ``cfg.pair_turns`` is set, consecutive (user, assistant) turns within a
+    session are ingested as a single ``Character.ingest_exchange()`` call each — see
+    :func:`_ingest_session_turns`. Returns ``{turns, sessions, llm_calls, seconds, pair_turns}``.
+    Idempotency (skip if already done) is the caller's responsibility via the
+    ``<conv_id>.ingest.json`` checkpoint.
     """
     started = time.perf_counter()
     llm = engine.llm
@@ -197,7 +246,13 @@ def ingest_conversation(conv: Conversation, engine: Engine, cfg: "RunConfig") ->
 
     sessions = conv.sessions[: cfg.max_sessions] if cfg.max_sessions else conv.sessions
     if not sessions:
-        return {"turns": 0, "sessions": 0, "llm_calls": 0, "seconds": 0.0}
+        return {
+            "turns": 0,
+            "sessions": 0,
+            "llm_calls": 0,
+            "seconds": 0.0,
+            "pair_turns": bool(cfg.pair_turns),
+        }
 
     clock.override(sessions[0].at)
     char = engine.create_character(
@@ -212,10 +267,7 @@ def ingest_conversation(conv: Conversation, engine: Engine, cfg: "RunConfig") ->
     for session in sessions:
         clock.override(session.at)
         char.start_session()
-        for turn in session.turns:
-            clock.advance(timedelta(seconds=30))
-            char.ingest(turn.role, turn.text, user_id=conv.user_name)
-            turns += 1
+        turns += _ingest_session_turns(char, session.turns, conv.user_name, bool(cfg.pair_turns))
         char.end_session()
 
     elapsed = time.perf_counter() - started
@@ -225,6 +277,7 @@ def ingest_conversation(conv: Conversation, engine: Engine, cfg: "RunConfig") ->
         "sessions": len(sessions),
         "llm_calls": calls_after - calls_before,
         "seconds": elapsed,
+        "pair_turns": bool(cfg.pair_turns),
     }
 
 
@@ -376,6 +429,13 @@ def _cleanup_mid_ingest_db(paths: dict[str, Path]) -> None:
         paths["db"].with_name(paths["db"].name + "-shm").unlink(missing_ok=True)
 
 
+def _delete_conversation_db(paths: dict[str, Path]) -> None:
+    """Delete ``paths["db"]`` and its ``-wal``/``-shm`` sidecars (checkpoints untouched)."""
+    paths["db"].unlink(missing_ok=True)
+    paths["db"].with_name(paths["db"].name + "-wal").unlink(missing_ok=True)
+    paths["db"].with_name(paths["db"].name + "-shm").unlink(missing_ok=True)
+
+
 def _process_conversation_memory(
     conv: Conversation,
     cfg: "RunConfig",
@@ -384,10 +444,32 @@ def _process_conversation_memory(
     run_root: Path,
 ) -> tuple[dict, list[dict]]:
     paths = _conv_paths(run_root, conv.conv_id)
+    expected = conv.questions[: cfg.max_questions] if cfg.max_questions else conv.questions
+
+    # cfg.delete_db_after_answer may have removed the .db on a prior (fully completed) pass —
+    # if every expected question is already answered, there is nothing left that needs the DB,
+    # so don't recreate an empty one (Engine() would silently make a fresh, character-less
+    # file) and don't re-ingest; just replay the checkpoints.
+    if expected and not paths["db"].exists() and paths["answers"].exists():
+        answered = {a["qid"]: a for a in _load_json(paths["answers"], [])}
+        if all(q.qid in answered for q in expected):
+            ingest_stats = _load_json(
+                paths["ingest"],
+                {
+                    "turns": 0,
+                    "sessions": 0,
+                    "llm_calls": 0,
+                    "seconds": 0.0,
+                    "pair_turns": bool(cfg.pair_turns),
+                },
+            )
+            return ingest_stats, [answered[q.qid] for q in expected]
+
     _cleanup_mid_ingest_db(paths)
 
     counting_llm = _CountingLLM(base_llm)
     engine = Engine(db_path=paths["db"], llm=counting_llm, embedding=base_embedder)
+    completed = False
     try:
         if paths["ingest"].exists():
             ingest_stats = _load_json(paths["ingest"], {})
@@ -411,9 +493,15 @@ def _process_conversation_memory(
             f"calls ({ingest_stats.get('seconds', 0.0):.1f}s); {len(records)} questions answered",
             flush=True,
         )
+        completed = True
         return ingest_stats, records
     finally:
         engine.close()
+        # Only delete once every expected question has been answered and judged (`completed`
+        # is set just before returning, above) — never on an exception mid-way, which would
+        # strand the conversation with no way to resume ingestion.
+        if completed and cfg.delete_db_after_answer:
+            _delete_conversation_db(paths)
 
 
 def _process_conversation_fullcontext(
@@ -847,6 +935,7 @@ def run(
             "config": {
                 "k": cfg.k,
                 "fact_extraction_interval": cfg.fact_extraction_interval,
+                "pair_turns": bool(cfg.pair_turns),
                 "max_tokens": {"qa": QA_MAX_TOKENS},
                 "temperature": {"qa": QA_TEMPERATURE, "judge": JUDGE_TEMPERATURE},
                 "limit_conversations": cfg.limit_conversations,
@@ -988,6 +1077,7 @@ def rejudge(
         run_config = {
             "k": cfg.k,
             "fact_extraction_interval": cfg.fact_extraction_interval,
+            "pair_turns": bool(cfg.pair_turns),
             "max_tokens": {"qa": QA_MAX_TOKENS},
             "temperature": {"qa": QA_TEMPERATURE, "judge": JUDGE_TEMPERATURE},
             "limit_conversations": cfg.limit_conversations,

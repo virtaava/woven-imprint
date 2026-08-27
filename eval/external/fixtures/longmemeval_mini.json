@@ -1,0 +1,62 @@
+[
+  {
+    "question_id": "lme-mini-1",
+    "question_type": "single-session-user",
+    "question": "What degree is the user studying for?",
+    "question_date": "2023/06/10 (Sat) 09:00",
+    "answer": "a nursing degree",
+    "answer_session_ids": ["lme-mini-1-sess-0"],
+    "haystack_dates": ["2023/06/01 (Thu) 10:00", "2023/06/05 (Mon) 14:30"],
+    "haystack_session_ids": ["lme-mini-1-sess-0", "lme-mini-1-sess-1"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I just enrolled in a nursing degree program at the community college."},
+        {"role": "assistant", "content": "That's wonderful! Nursing is a rewarding field."}
+      ],
+      [
+        {"role": "user", "content": "My first exam is next week and I'm a bit nervous."},
+        {"role": "assistant", "content": "You'll do great, good luck studying!"}
+      ]
+    ]
+  },
+  {
+    "question_id": "lme-mini-2",
+    "question_type": "temporal-reasoning",
+    "question": "How many days after starting the garden did the user harvest tomatoes?",
+    "question_date": "2023/07/15 (Sat) 12:00",
+    "answer": "3 days",
+    "answer_session_ids": ["lme-mini-2-sess-0", "lme-mini-2-sess-1"],
+    "haystack_dates": ["2023/07/01 (Sat) 08:00", "2023/07/04 (Tue) 16:00"],
+    "haystack_session_ids": ["lme-mini-2-sess-0", "lme-mini-2-sess-1"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I started my vegetable garden today, planted tomatoes and basil."},
+        {"role": "assistant", "content": "Exciting! Tomatoes and basil grow well together."}
+      ],
+      [
+        {"role": "user", "content": "I harvested my first tomatoes from the garden today."},
+        {"role": "assistant", "content": "That's a quick turnaround, congratulations!"}
+      ]
+    ]
+  },
+  {
+    "question_id": "lme-mini-3_abs",
+    "question_type": "knowledge-update",
+    "question": "What car does the user currently drive?",
+    "question_date": "2023/08/20 (Sun) 10:00",
+    "answer": "not mentioned",
+    "answer_session_ids": [],
+    "haystack_dates": ["2023/08/01 (Tue) 09:00", "2023/08/03 (Thu) 11:00"],
+    "haystack_session_ids": ["lme-mini-3-sess-0", "lme-mini-3-sess-1"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I sold my old bike since I don't use it much anymore."},
+        {"role": "assistant", "content": "Makes sense if it wasn't getting used."}
+      ],
+      [
+        {"role": "user", "content": "Work has been busy lately, lots of meetings."},
+        {"role": "assistant", "content": "Hope things calm down for you soon."}
+      ]
+    ]
+  }
+]

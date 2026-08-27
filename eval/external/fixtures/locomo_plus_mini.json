@@ -1,0 +1,22 @@
+[
+  {
+    "relation_type": "causal",
+    "cue_dialogue": "A: Ever since Whiskers scratched the new sofa, I've been keeping her claws trimmed every week.\nB: That sounds like a smart routine to protect your furniture.",
+    "trigger_query": "A: I just bought a new sofa and I'm already worried about it getting ruined.",
+    "time_gap": "two weeks later",
+    "model_name": "gpt-4o-mini",
+    "scores": {"mpnet": 0.41, "bge": 0.55, "bm25": 1.2, "combined": 0.48},
+    "ranks": {"mpnet": 120, "bge": 90, "bm25": 15, "combined": 12},
+    "final_similarity_score": 0.48
+  },
+  {
+    "relation_type": "goal",
+    "cue_dialogue": "A: My goal this year is to open my own bakery by the coast.\nB: That's an exciting dream, I hope it works out.",
+    "trigger_query": "A: I've been saving up and scouting locations for a storefront lately.",
+    "time_gap": "three months later",
+    "model_name": "gpt-4o-mini",
+    "scores": {"mpnet": 0.38, "bge": 0.5, "bm25": 1.0, "combined": 0.44},
+    "ranks": {"mpnet": 200, "bge": 150, "bm25": 40, "combined": 30},
+    "final_similarity_score": 0.44
+  }
+]

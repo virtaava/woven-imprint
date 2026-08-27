@@ -55,6 +55,39 @@ def test_edit_object_only_falls_back_when_object_not_in_statement():
     assert engine.storage.get_memory(m["id"])["content"] == out["statement"]
 
 
+def test_edit_object_only_uses_word_boundaries_not_substring():
+    engine, char = _char()
+    m = char.memory.add("The kettle lets off steam; the visitor likes tea.", tier="core")
+    f = char.facts.add(
+        subject="user",
+        predicate="likes",
+        object="tea",
+        statement=m["content"],
+        memory_id=m["id"],
+    )
+    out = char.facts.edit(f["id"], object="coffee")
+    assert out["object"] == "coffee"
+    assert out["statement"] == "The kettle lets off steam; the visitor likes coffee."
+    assert "scoffeem" not in out["statement"]
+    assert engine.storage.get_memory(m["id"])["content"] == out["statement"]
+
+
+def test_edit_object_only_falls_back_when_no_bounded_match():
+    engine, char = _char()
+    m = char.memory.add("The kettle lets off steam.", tier="core")
+    f = char.facts.add(
+        subject="user",
+        predicate="likes",
+        object="tea",
+        statement=m["content"],
+        memory_id=m["id"],
+    )
+    out = char.facts.edit(f["id"], object="coffee")
+    assert out["object"] == "coffee"
+    assert out["statement"] == "The kettle lets off steam — now: coffee."
+    assert engine.storage.get_memory(m["id"])["content"] == out["statement"]
+
+
 def test_retract_expires_without_successor_and_archives_memory():
     engine, char = _char()
     m = char.memory.add("The visitor plays chess.", tier="core")

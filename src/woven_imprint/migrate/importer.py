@@ -354,7 +354,8 @@ class CharacterImporter:
             examples = _substitute_macros(card["mes_example"], name)[:1000]
             result["speaking_style"] = self._extract_speaking_style(examples, result["name"])
 
-        # Scenario, system prompt, tags, creator notes pass through (macros substituted).
+        # Scenario and system prompt pass through with macros substituted; tags and
+        # creator notes pass through as-is (author-facing metadata, not model-facing text).
         if card.get("scenario"):
             result["scenario"] = _substitute_macros(card["scenario"], name)
         if card.get("system_prompt"):

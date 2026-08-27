@@ -40,12 +40,14 @@ def _norm_time(value: str | None) -> str | None:
 def _derive_statement(old_statement: str, old_object: str, new_object: str) -> str:
     """Derive a new statement for an object-only fact edit.
 
-    Case-insensitive replace of the old object text in the old statement if it
-    appears there; otherwise append a "— now: <new_object>." clause so the
-    statement still reflects the update.
+    Word-boundary, case-insensitive replace of the old object text in the old
+    statement if it appears there as a whole word/phrase (not as a substring
+    of a larger word — e.g. object "tea" must not match inside "steam");
+    otherwise append a "— now: <new_object>." clause so the statement still
+    reflects the update.
     """
     if old_object:
-        pattern = re.compile(re.escape(old_object), re.IGNORECASE)
+        pattern = re.compile(r"(?<!\w)" + re.escape(old_object) + r"(?!\w)", re.IGNORECASE)
         if pattern.search(old_statement):
             return pattern.sub(new_object, old_statement, count=1)
     return f"{old_statement.rstrip('.')} — now: {new_object}."

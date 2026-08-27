@@ -62,7 +62,8 @@ class Character:
 
         # Sub-systems
         self.memory = MemoryStore(storage, embedder, char_id)
-        self.facts = FactStore(storage, char_id)
+        self.facts = FactStore(storage, char_id, embedder=embedder)
+        self.memory.facts = self.facts
         self.retriever = MemoryRetriever(storage, embedder, char_id)
         self.belief = BeliefReviser(storage, char_id, embedder=embedder)
         self.relationships = RelationshipModel(storage, char_id)

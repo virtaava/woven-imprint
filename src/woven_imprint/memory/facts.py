@@ -37,9 +37,11 @@ def _norm_time(value: str | None) -> str | None:
 
 
 class FactStore:
-    def __init__(self, storage: SQLiteStorage, character_id: str):
+    def __init__(self, storage: SQLiteStorage, character_id: str, embedder=None):
         self.storage = storage
         self.character_id = character_id
+        # Used by `edit()` to re-embed a linked memory when its content changes.
+        self.embedder = embedder
 
     def add(
         self,
@@ -123,6 +125,49 @@ class FactStore:
             expired_at=clock.sqlite_ts(),
             superseded_by=superseded_by,
         )
+
+    def edit(
+        self, fact_id: str, *, object: str | None = None, statement: str | None = None
+    ) -> dict:
+        """Edit a fact in place; if linked to a memory and `statement` changes, updates
+        the memory's content too (re-embedding through `self.embedder` when present) so
+        text and record stay consistent."""
+        f = self.get(fact_id)
+        if f is None or f.get("character_id") != self.character_id:
+            raise KeyError(fact_id)
+        self.storage.update_fact_fields(fact_id, object=object, statement=statement)
+        if statement is not None and f.get("memory_id") and self.embedder is not None:
+            self.storage.update_memory_fields(
+                f["memory_id"], content=statement, embedding=self.embedder.embed(statement)
+            )
+        updated = self.get(fact_id)
+        assert updated is not None
+        return updated
+
+    def retract(self, fact_id: str) -> dict:
+        """Expire a fact now with no successor and mark it retracted; archives the
+        linked memory (if it still exists)."""
+        f = self.get(fact_id)
+        if f is None or f.get("character_id") != self.character_id:
+            raise KeyError(fact_id)
+        now = clock.sqlite_ts()
+        if f.get("valid_to") is None:
+            self.storage.expire_fact(fact_id, valid_to=now, expired_at=now, superseded_by=None)
+        meta = dict(f.get("metadata") or {})
+        meta["retracted"] = True
+        self.storage.update_fact_fields(fact_id, metadata=meta)
+        if f.get("memory_id") and self.storage.get_memory(f["memory_id"]) is not None:
+            self.storage.update_memory_status(f["memory_id"], "archived")
+        updated = self.get(fact_id)
+        assert updated is not None
+        return updated
+
+    def delete(self, fact_id: str) -> None:
+        """Hard delete of the fact row only (memory untouched)."""
+        f = self.get(fact_id)
+        if f is None or f.get("character_id") != self.character_id:
+            raise KeyError(fact_id)
+        self.storage.delete_fact(fact_id)
 
     def bump_certainty(self, fact_id: str, delta: float = 0.15) -> None:
         f = self.get(fact_id)

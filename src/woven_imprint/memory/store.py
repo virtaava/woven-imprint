@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
 from ..clock import sqlite_ts
 from ..embedding.base import EmbeddingProvider
 from ..storage.sqlite import SQLiteStorage
 from ..utils.text import generate_id
+
+if TYPE_CHECKING:
+    from .facts import FactStore
 
 
 def guard_embedding_dimension(storage: SQLiteStorage, embedding: list[float] | None) -> None:
@@ -42,6 +46,9 @@ class MemoryStore:
         self.storage = storage
         self.embedder = embedder
         self.character_id = character_id
+        # Wired up by Character right after construction (`char.memory.facts = char.facts`)
+        # so `delete()` can retract facts pointing at a deleted memory.
+        self.facts: FactStore | None = None
 
     def add(
         self,
@@ -123,6 +130,61 @@ class MemoryStore:
     def archive(self, memory_id: str) -> None:
         """Move memory to archived status (excluded from retrieval)."""
         self.storage.update_memory_status(memory_id, "archived")
+
+    def edit(
+        self,
+        memory_id: str,
+        *,
+        content: str | None = None,
+        importance: float | None = None,
+        tier: str | None = None,
+    ) -> dict:
+        """Edit a memory in place. Re-embeds when `content` actually changes.
+
+        Raises `KeyError` if the memory doesn't exist (or belongs to another
+        character); `ValueError` on an invalid `tier`.
+        """
+        row = self.storage.get_memory(memory_id)
+        if row is None or row.get("character_id") != self.character_id:
+            raise KeyError(memory_id)
+        embedding = None
+        if content is not None and content != row["content"]:
+            embedding = self.embedder.embed(content)
+            guard_embedding_dimension(self.storage, embedding)
+        else:
+            content = None
+        self.storage.update_memory_fields(
+            memory_id, content=content, embedding=embedding, importance=importance, tier=tier
+        )
+        updated = self.storage.get_memory(memory_id)
+        assert updated is not None
+        return updated
+
+    def delete(self, memory_id: str) -> None:
+        """Hard delete a memory. Retracts any fact still pointing at it — deleting a
+        memory means "forget this"."""
+        row = self.storage.get_memory(memory_id)
+        if row is None or row.get("character_id") != self.character_id:
+            raise KeyError(memory_id)
+        if self.facts is not None:
+            for fid in self.storage.unlink_fact_memory(memory_id):
+                self.facts.retract(fid)
+        self.storage.delete_memory(memory_id)
+
+    def pin(self, memory_id: str, pinned: bool = True) -> dict:
+        """Set `metadata.pinned` on a memory (pinned memories are always in the prompt)."""
+        row = self.storage.get_memory(memory_id)
+        if row is None or row.get("character_id") != self.character_id:
+            raise KeyError(memory_id)
+        meta = dict(row.get("metadata") or {})
+        meta["pinned"] = bool(pinned)
+        self.storage.update_memory_fields(memory_id, metadata=meta)
+        updated = self.storage.get_memory(memory_id)
+        assert updated is not None
+        return updated
+
+    def pinned(self) -> list[dict]:
+        return self.storage.list_pinned_memories(self.character_id)
 
     def needs_consolidation(self, threshold: int = 100) -> bool:
         """Check if buffer has exceeded consolidation threshold."""

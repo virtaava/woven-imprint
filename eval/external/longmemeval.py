@@ -61,9 +61,13 @@ def load_longmemeval_s(
 
         sessions: list[Session] = []
         session_ids = item.get("haystack_session_ids") or []
-        for i, (raw_turns, date_str) in enumerate(
-            zip(item["haystack_sessions"], item["haystack_dates"])
-        ):
+        # haystack_dates are NOT chronological in the source file for 211/500
+        # questions; ingest in time order so recency/temporal reasoning is sane.
+        indexed = sorted(
+            enumerate(zip(item["haystack_sessions"], item["haystack_dates"])),
+            key=lambda e: parse_longmemeval_datetime(e[1][1]),
+        )
+        for i, (raw_turns, date_str) in indexed:
             at = parse_longmemeval_datetime(date_str)
             turns = [
                 Turn(

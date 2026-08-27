@@ -7,7 +7,7 @@
       "session_1": [
         {"speaker": "Alice", "dia_id": "D1:1", "text": "Hey Bob! I finally adopted a cat named Whiskers."},
         {"speaker": "Bob", "dia_id": "D1:2", "text": "That's great! What color is Whiskers?"},
-        {"speaker": "Alice", "dia_id": "D1:3", "text": "She's orange and white. I got her from the shelter on 1st January."},
+        {"speaker": "Alice", "dia_id": "D1:3", "text": "She's orange and white. I got her from the shelter on 1st January.", "img_url": ["x.jpg"], "blip_caption": "a cat sitting on a windowsill"},
         {"speaker": "Bob", "dia_id": "D1:4", "text": "Nice, shelters need more adopters like you."}
       ],
       "session_1_date_time": "1:00 pm on 1 January, 2023",

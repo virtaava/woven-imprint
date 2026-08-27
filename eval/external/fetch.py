@@ -75,10 +75,14 @@ def fetch(name: str, force: bool = False) -> Path:
             raise ValueError(
                 f"{name}: server Content-Length {content_length} != expected {expected_size}"
             )
-        with open(tmp, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=1 << 20):
-                if chunk:
-                    f.write(chunk)
+        try:
+            with open(tmp, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=1 << 20):
+                    if chunk:
+                        f.write(chunk)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
 
     actual_size = tmp.stat().st_size
     if actual_size != expected_size:

@@ -98,6 +98,20 @@ def parse_ab_dialogue(text: str) -> list[dict[str, str]]:
     return turns
 
 
+def _turn_text(t: dict) -> str:
+    """Turn text with the image caption folded in.
+
+    LoCoMo image turns carry ``blip_caption`` (and ``img_url``); upstream renders
+    them as ``{speaker} said, "{text}" and shared {caption}.`` and 857/1986
+    questions have such a turn as evidence, so the caption is part of the content.
+    """
+    text = (t.get("text") or "").strip()
+    caption = (t.get("blip_caption") or "").strip()
+    if caption:
+        return f"{text} (shared a photo: {caption})" if text else f"(shared a photo: {caption})"
+    return text
+
+
 def load_locomo(path: str | Path) -> list[Conversation]:
     data = json.loads(Path(path).read_text())
     conversations: list[Conversation] = []
@@ -116,7 +130,7 @@ def load_locomo(path: str | Path) -> list[Conversation]:
                 Turn(
                     speaker=t["speaker"],
                     role="user" if t["speaker"] == user_name else "assistant",
-                    text=t["text"],
+                    text=_turn_text(t),
                     dia_id=t.get("dia_id"),
                     at=at + timedelta(seconds=j),
                 )

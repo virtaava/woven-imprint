@@ -57,3 +57,25 @@ def test_load_longmemeval_mini_and_sample():
     assert {"qa", "abstain"} <= kinds
     sampled = load_longmemeval_s(FIX / "longmemeval_mini.json", sample=2, seed=1)
     assert len(sampled) == 2
+
+
+def test_locomo_image_caption_folded_into_turn_text():
+    convs = load_locomo(FIX / "locomo_mini.json")
+    turn = convs[0].sessions[0].turns[2]
+    assert "shared a photo: a cat sitting on a windowsill" in turn.text
+    assert "windowsill" in convs[0].transcript_text
+
+
+def test_longmemeval_sessions_sorted_chronologically(tmp_path):
+    import json
+
+    data = json.loads((FIX / "longmemeval_mini.json").read_text())
+    item = data[0]
+    # Reverse the haystack order in the file; loader must restore time order.
+    item["haystack_sessions"] = list(reversed(item["haystack_sessions"]))
+    item["haystack_dates"] = list(reversed(item["haystack_dates"]))
+    p = tmp_path / "lme.json"
+    p.write_text(json.dumps([item]))
+    conv = load_longmemeval_s(p)[0]
+    ats = [s.at for s in conv.sessions]
+    assert ats == sorted(ats) and len(ats) == len(item["haystack_dates"])

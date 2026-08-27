@@ -1052,25 +1052,40 @@ class Character:
         5. Keep if room: emotional state, arc, relationship description
         6. Compress conversation if still over budget
         """
-        budget_chars = self._context.budget.total * 4  # tokens → chars
+        from .config import get_config
+
+        # Read the token budget live (not `self._context.budget.total`, which is
+        # frozen at Character construction) so a runtime config change — e.g. the
+        # tiny-budget shedding test — actually takes effect on the next turn.
+        budget_chars = get_config().context.total_tokens * 4  # tokens → chars
 
         # Components with their priority (lower = keep longer)
         system_prompt = self.persona.build_system_prompt()
         emotion_desc = self.emotion.describe()
         arc_desc = self.arc.describe()
-        memory_text = self._format_memories(memories)
 
-        # Volatile block (today's date/emotion/arc/relationship/memories) —
-        # kept separate from system_prompt so message 0 stays byte-identical
-        # across turns (provider prefix-caching friendly). The date line
-        # lives here, never in the stable persona prompt, precisely because
-        # it changes daily and would otherwise bust the prefix cache.
+        # Volatile block (today's date/pinned memories/emotion/arc/relationship/
+        # retrieved memories) — kept separate from system_prompt so message 0
+        # stays byte-identical across turns (provider prefix-caching friendly).
+        # The date line lives here, never in the stable persona prompt, precisely
+        # because it changes daily and would otherwise bust the prefix cache.
         volatile = ""
-        from .config import get_config
 
         if get_config().context.include_date:
             today = clock.now()
             volatile = f"Today is {today.strftime('%A')}, {today.date().isoformat()}."
+
+        # Pinned memories are always in the prompt — never sheddable, so they're
+        # folded into `volatile` (and thus `base_size`) before any shedding logic
+        # runs. Excluded from the sheddable `memories` list below so they never
+        # appear twice.
+        pinned_text, pinned_ids = self._format_pinned_block()
+        if pinned_text:
+            volatile += ("\n\n" if volatile else "") + pinned_text
+        if pinned_ids:
+            memories = [m for m in memories if m["id"] not in pinned_ids]
+
+        memory_text = self._format_memories(memories)
 
         # Add optional components, tracking size
         optional_parts = []
@@ -1086,9 +1101,9 @@ class Character:
         if memory_text:
             optional_parts.append(("memories", f"\n\nYour relevant memories:\n{memory_text}"))
 
-        # Calculate base size (system prompt + user message + date line —
-        # the date line is always kept, so it counts toward the base budget
-        # rather than the sheddable optional parts).
+        # Calculate base size (system prompt + user message + date line +
+        # pinned-memory block — these are always kept, so they count toward
+        # the base budget rather than the sheddable optional parts).
         base_size = len(system_prompt) + len(user_message) + len(volatile)
 
         # Add conversation history size
@@ -1115,8 +1130,11 @@ class Character:
                 for _, part in optional_parts:
                     volatile += part
             else:
-                # Still too large — add optional parts by priority until budget
-                remaining = budget_chars - base_size - history_size
+                # Still too large — add optional parts by priority until budget.
+                # `base_size` alone (persona + pinned block + user message) can
+                # already exceed a very small budget; clamp so `remaining` never
+                # goes negative and silently permits a "fits" part.
+                remaining = max(0, budget_chars - base_size - history_size)
                 for name, part in optional_parts:
                     if len(part) <= remaining:
                         volatile += part
@@ -1475,6 +1493,29 @@ class Character:
             # swallow site here must never crash bookkeeping.
             logger.debug("Relationship update failed: %s", e)
             self._note_failure("relationship", e)
+
+    def _format_pinned_block(self) -> tuple[str, set[str]]:
+        """Render the "Things you always remember" block: pinned memories,
+        which are never sheddable under context pressure (see `MemoryStore.pin`).
+
+        Returns the rendered text (empty string when there's nothing to show or
+        `context.pinned_block` is disabled) and the set of pinned memory ids, so
+        the caller can exclude them from the ordinary sheddable memories list —
+        a pinned memory must never appear twice in the prompt.
+        """
+        from .config import get_config
+
+        ctx = get_config().context
+        if not ctx.pinned_block:
+            return "", set()
+        rows = self.memory.pinned()[: ctx.pinned_limit]
+        if not rows:
+            return "", set()
+        lines = ["Things you always remember:"]
+        for m in rows:
+            when = (m.get("created_at") or "")[:10]
+            lines.append(f"- ({when}) {m['content'][:300]}" if when else f"- {m['content'][:300]}")
+        return "\n".join(lines), {m["id"] for m in rows}
 
     def _format_facts_block(self, user_id: str | None) -> str:
         """Render the 'What I know' block: current structured facts about the

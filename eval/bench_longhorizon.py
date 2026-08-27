@@ -389,6 +389,14 @@ def _simulate(days: int):
                 char.chat(msg, user_id="toni")
                 calls_per_turn.append(len(llm.json_calls) - before)
             char.end_session()
+            if day == 3:
+                # Pin a memory early and prove it survives all 60 simulated
+                # days — and 57 days of consolidation/decay/eviction — always
+                # rendered in the prompt (benchmark 12, `pinned_always_present`).
+                pinned_id = char.memory.add(
+                    "The visitor asked to be reminded about the lighthouse key.", tier="core"
+                )
+                char.memory.pin(pinned_id["id"])
             rel = char.relationships.get("toni")
             trust_at[day] = rel["dimensions"]["trust"]
             type_at[day] = rel["type"]
@@ -600,6 +608,21 @@ def _score(
             ok11,
             1.0 if ok11 else 0.0,
             {"top": ranked[0]["content"][:80] if ranked else None},
+        )
+    )
+    # 12 pinned memory always present: pinned on day 3, still in the volatile
+    # prompt block on day `days` (60) — surviving retrieval ranking,
+    # consolidation, and 57 days of context-budget shedding pressure — and
+    # rendered exactly once (not duplicated with the ordinary memories block).
+    char.chat("hello again", user_id="toni")
+    pinned_volatile = char.last_chat_messages[1]["content"]
+    ok12 = pinned_volatile.count("lighthouse key") == 1
+    out.append(
+        BenchmarkResult(
+            "pinned_always_present",
+            ok12,
+            1.0 if ok12 else 0.0,
+            {"count": pinned_volatile.count("lighthouse key"), "sample": pinned_volatile[:200]},
         )
     )
     return out

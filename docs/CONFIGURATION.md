@@ -159,6 +159,8 @@ context:
   include_date: true
   facts_block: true
   facts_block_limit: 12
+  pinned_block: true       # always include pinned memories in the prompt (see MemoryStore.pin)
+  pinned_limit: 10         # max pinned memories rendered in the "Things you always remember" block
 ```
 
 | Setting | Default | Description |

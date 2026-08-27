@@ -118,3 +118,77 @@ def test_import_seeds_lorebook_and_persona(tmp_path):
         "You made it through the storm, then.",
         "Shut the door behind you.",
     ]
+
+
+EDGE_CASE_CARD = {
+    "spec": "chara_card_v2",
+    "spec_version": "2.0",
+    "data": {
+        "name": "Vesper",
+        "description": "A lighthouse keeper on a cold coast.",
+        "personality": "gruff, loyal",
+        "first_mes": "You made it through the storm, then.",
+        "character_book": {
+            "name": "Coast lore",
+            "entries": [
+                {
+                    # No "enabled" key at all — SillyTavern convention: default enabled.
+                    "keys": ["default-enabled"],
+                    "content": "Import me anyway.",
+                    "constant": False,
+                    "insertion_order": 0,
+                },
+                {
+                    # Hand-edited card: keys as a comma-separated string.
+                    "keys": "lamp, lantern",
+                    "content": "Two keys as a string.",
+                    "enabled": True,
+                    "constant": False,
+                    "insertion_order": 1,
+                },
+                {
+                    # No keys at all — should render without an empty bracket.
+                    "keys": [],
+                    "content": "No specific keyword.",
+                    "enabled": True,
+                    "constant": False,
+                    "insertion_order": 2,
+                },
+            ],
+        },
+    },
+}
+
+
+def test_import_lorebook_entry_without_enabled_key_defaults_to_enabled(tmp_path):
+    p = tmp_path / "edge.json"
+    p.write_text(json.dumps(EDGE_CASE_CARD))
+    engine = make_test_engine()
+    char = CharacterImporter(engine).from_file(p)
+    mems = char.memory.get_all(limit=None)
+    lore = [m for m in mems if m["metadata"].get("source") == "lorebook"]
+    assert any("Import me anyway." in m["content"] for m in lore)
+
+
+def test_import_lorebook_entry_with_string_keys_is_split_on_comma(tmp_path):
+    p = tmp_path / "edge.json"
+    p.write_text(json.dumps(EDGE_CASE_CARD))
+    engine = make_test_engine()
+    char = CharacterImporter(engine).from_file(p)
+    mems = char.memory.get_all(limit=None)
+    lore = [m for m in mems if m["metadata"].get("source") == "lorebook"]
+    entry = next(m for m in lore if "Two keys as a string." in m["content"])
+    assert entry["metadata"]["lorebook_keys"] == ["lamp", "lantern"]
+    assert entry["content"].startswith("[Lore: lamp, lantern]")
+
+
+def test_import_lorebook_entry_with_no_keys_renders_without_empty_brackets(tmp_path):
+    p = tmp_path / "edge.json"
+    p.write_text(json.dumps(EDGE_CASE_CARD))
+    engine = make_test_engine()
+    char = CharacterImporter(engine).from_file(p)
+    mems = char.memory.get_all(limit=None)
+    lore = [m for m in mems if m["metadata"].get("source") == "lorebook"]
+    entry = next(m for m in lore if "No specific keyword." in m["content"])
+    assert entry["content"] == "[Lore] No specific keyword."
+    assert entry["metadata"]["lorebook_keys"] == []

@@ -14,6 +14,21 @@ from ..character import Character
 from .parsers import auto_detect, parse_custom_gpt, parse_chatgpt_export
 
 
+def _norm_keys(v: object) -> list[str]:
+    """Coerce a lorebook entry's ``keys`` field to a clean list[str].
+
+    Hand-edited cards sometimes store ``keys`` as a comma-separated string,
+    a single bare string, or a list with stray non-string/blank entries.
+    """
+    if isinstance(v, str):
+        if "," in v:
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return [v.strip()] if v.strip() else []
+    if isinstance(v, list):
+        return [str(k).strip() for k in v if str(k).strip()]
+    return []
+
+
 class CharacterImporter:
     """Import characters from other AI systems.
 
@@ -235,8 +250,9 @@ class CharacterImporter:
             keys = entry.get("keys", [])
             content = entry.get("content", "")
             constant = bool(entry.get("constant"))
+            lore_label = f"[Lore: {', '.join(keys)}]" if keys else "[Lore]"
             char.memory.add(
-                content=f"[Lore: {', '.join(keys)}] {content}",
+                content=f"{lore_label} {content}",
                 tier="bedrock" if constant else "core",
                 importance=0.8,
                 metadata={
@@ -338,11 +354,11 @@ class CharacterImporter:
         # Lorebook entries: enabled only, sorted by insertion order.
         book = card.get("character_book")
         if book and book.get("entries"):
-            enabled = [e for e in book["entries"] if e.get("enabled")]
+            enabled = [e for e in book["entries"] if e.get("enabled", True)]
             enabled.sort(key=lambda e: e.get("insertion_order", 0))
             result["lorebook_entries"] = [
                 {
-                    "keys": e.get("keys", []),
+                    "keys": _norm_keys(e.get("keys", [])),
                     "content": e.get("content", ""),
                     "constant": bool(e.get("constant")),
                     "insertion_order": e.get("insertion_order", 0),

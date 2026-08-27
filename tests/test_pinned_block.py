@@ -29,11 +29,10 @@ def test_pinned_block_survives_tiny_budget():
     char.memory.pin(m["id"])
     for i in range(30):
         char.memory.add(f"Filler memory number {i} about the weather and errands.", tier="core")
-    get_config().context.total_tokens = 400
-    try:
-        char.chat("hello", user_id="toni")
-    finally:
-        get_config().context.total_tokens = 6000
+    # Budgets are frozen per Character by design (not live config) — shrink
+    # this character's own budget directly to force real shedding.
+    char._context.budget.total = 400
+    char.chat("hello", user_id="toni")
     assert "Always call the visitor Captain." in char.last_chat_messages[1]["content"]
 
 

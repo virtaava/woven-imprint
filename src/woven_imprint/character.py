@@ -1054,10 +1054,13 @@ class Character:
         """
         from .config import get_config
 
-        # Read the token budget live (not `self._context.budget.total`, which is
-        # frozen at Character construction) so a runtime config change — e.g. the
-        # tiny-budget shedding test — actually takes effect on the next turn.
-        budget_chars = get_config().context.total_tokens * 4  # tokens → chars
+        # Budget is frozen per Character at construction time (see `__init__`'s
+        # `context_budget` default) by design — every other budget field
+        # (system_prompt/memories/conversation/reserve/max_turns) is likewise
+        # frozen, so `total` alone reading live config would be a partial,
+        # unintended hot-reload. Tests that need a tiny budget mutate the
+        # Character's own `_context.budget.total` instead of global config.
+        budget_chars = self._context.budget.total * 4  # tokens → chars
 
         # Components with their priority (lower = keep longer)
         system_prompt = self.persona.build_system_prompt()

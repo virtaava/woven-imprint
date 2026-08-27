@@ -11,10 +11,25 @@ export interface CharacterState {
 }
 
 export interface Memory {
+  id: string
   content: string
   tier: string
   importance: number
+  certainty?: number
   created_at?: string
+  metadata?: { pinned?: boolean; fact_id?: string; historical?: boolean; [k: string]: unknown }
+}
+
+export interface Fact {
+  id: string
+  subject: string
+  predicate: string
+  object: string
+  statement: string
+  valid_from: string
+  valid_to: string | null
+  certainty: number
+  memory_id?: string | null
 }
 
 export interface Relationship {

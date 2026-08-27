@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts'
-import { Brain, Search, Activity, Zap, Clock, Play, Pencil, Check } from 'lucide-react'
+import { Brain, Search, Activity, Zap, Clock, Play, Pencil, Check, Pin, FileText } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import type { CharacterState, Memory, Relationship, Session } from '@/lib/types'
+import { MemoryItem } from '@/components/MemoryItem'
+import { FactsSection } from '@/components/FactsSection'
+import type { CharacterState, Memory, Relationship, Session, Fact } from '@/lib/types'
 
 const TIER_COLORS: Record<string, string> = {
   bedrock: 'text-amber-400 border-amber-400/30 bg-amber-400/10',
@@ -26,9 +28,17 @@ interface XRayPanelProps {
   activeSessionId?: string | null
   onResumeSession?: (sessionId: string) => void
   onRenameSession?: (sessionId: string, alias: string) => void
+  pinned: Memory[]
+  facts: Fact[]
+  onPin: (id: string, pinned: boolean) => void
+  onEditMemory: (id: string, content: string) => Promise<void>
+  onDeleteMemory: (id: string) => void
+  onEditFact: (id: string, object: string) => Promise<void>
+  onRetractFact: (id: string) => void
+  error?: string | null
 }
 
-export function XRayPanel({ character, memories, relationship, onSearchMemory, searchResults, searchLoading, sessions = [], activeSessionId, onResumeSession, onRenameSession }: XRayPanelProps) {
+export function XRayPanel({ character, memories, relationship, onSearchMemory, searchResults, searchLoading, sessions = [], activeSessionId, onResumeSession, onRenameSession, pinned, facts, onPin, onEditMemory, onDeleteMemory, onEditFact, onRetractFact, error }: XRayPanelProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editAlias, setEditAlias] = useState('')
@@ -57,6 +67,12 @@ export function XRayPanel({ character, memories, relationship, onSearchMemory, s
           <Zap className="size-4 text-amber-400" />
           <span>X-Ray</span>
         </div>
+
+        {error && (
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+            {error}
+          </p>
+        )}
 
         {/* Emotion */}
         {character && (
@@ -124,7 +140,41 @@ export function XRayPanel({ character, memories, relationship, onSearchMemory, s
           </Card>
         )}
 
+        {/* Facts */}
+        {facts.length > 0 && (
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-xs">
+                <FileText className="size-3.5 text-amber-400" />
+                Facts
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <FactsSection facts={facts} onEditObject={onEditFact} onRetract={onRetractFact} />
+            </CardContent>
+          </Card>
+        )}
+
         <Separator />
+
+        {/* Pinned */}
+        {pinned.length > 0 && (
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-xs">
+                <Pin className="size-3.5 text-amber-400" />
+                Things the character always remembers
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-2">
+                {pinned.map((mem) => (
+                  <MemoryItem key={mem.id} memory={mem} onPin={onPin} onEdit={onEditMemory} onDelete={onDeleteMemory} />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Memory Feed */}
         <Card size="sm">
@@ -135,28 +185,19 @@ export function XRayPanel({ character, memories, relationship, onSearchMemory, s
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {memories.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No memories yet. Start chatting!</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {memories.map((mem, i) => (
-                  <div key={i} className="flex flex-col gap-1 rounded-md border border-border/50 bg-background/50 p-2">
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] px-1.5 py-0 h-4 ${TIER_COLORS[mem.tier] || ''}`}
-                      >
-                        {mem.tier}
-                      </Badge>
-                      <span className="text-[10px] text-muted-foreground">
-                        {Math.round(mem.importance * 100)}% imp.
-                      </span>
-                    </div>
-                    <p className="text-xs leading-relaxed text-foreground/80">{mem.content}</p>
-                  </div>
-                ))}
-              </div>
-            )}
+            {(() => {
+              const pinnedIds = new Set(pinned.map((p) => p.id))
+              const feed = memories.filter((mem) => !pinnedIds.has(mem.id))
+              return feed.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No memories yet. Start chatting!</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {feed.map((mem) => (
+                    <MemoryItem key={mem.id} memory={mem} onPin={onPin} onEdit={onEditMemory} onDelete={onDeleteMemory} />
+                  ))}
+                </div>
+              )
+            })()}
           </CardContent>
         </Card>
 

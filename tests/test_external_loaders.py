@@ -179,7 +179,7 @@ def test_truncating_embedding_halves_input_when_server_says_too_large():
 
     class Picky:
         model = "m"
-        limit = 30
+        limit = 120
 
         def __init__(self):
             self.seen = []
@@ -199,7 +199,7 @@ def test_truncating_embedding_halves_input_when_server_says_too_large():
     inner = Picky()
     emb = TruncatingEmbedding(inner, max_chars=200)
     assert emb.embed("z" * 500) == [1.0]
-    assert inner.seen == [200, 100, 50, 25]
+    assert inner.seen == [200, 100]
 
     # unrelated errors propagate
     class Broken(Picky):

@@ -287,9 +287,8 @@ anymore. The spec only requires a LoCoMo full-context baseline; LongMemEval-S is
 
 ## Hardware & runtime
 
-<!-- RUNTIME:MEASURED --> The call-rate/latency/wall-clock figures below are estimates from
-pre-publication smoke runs, to be replaced with measured wall-clock once the real LoCoMo/
-LoCoMo-Plus/LongMemEval-S publication runs referenced in [Reproduce](#reproduce) complete.
+<!-- RUNTIME:MEASURED --> The figures below are measured wall-clock from the publication runs
+(`locomo-mem-v1`, `plus-mem-v1`, `locomo-full-v1`, `plus-full-v1`), 2026-08-27/28.
 
 - **Host**: DGX Spark (GB10, 128 GB unified memory, ARM64).
 - **Answering + judge model**: Qwen3.5-35B-A3B-FP8 via `vllm-brain` (vLLM Docker), thinking
@@ -297,11 +296,21 @@ LoCoMo-Plus/LongMemEval-S publication runs referenced in [Reproduce](#reproduce)
   vLLM's chat template otherwise streams Qwen3.5's chain-of-thought straight into the response).
   The production `vllm-brain` service runs with `--max_num_seqs 2`, which was **not** changed for
   this benchmark run (never stop/reconfigure the production brain unasked) — so parallel shard
-  workers queue behind that concurrency cap rather than getting full throughput. Practical effect:
-  10 parallel `--shard i/10` workers yield roughly **24 LLM calls/minute aggregate**, with ~25s
-  observed latency per call under that contention — closer to ~2× serial throughput than 10×.
-  LoCoMo's full ingest (10 conversations, ~6,150 bookkeeping calls at `fact_extraction_interval=1`)
-  took **≈3 hours** wall-clock sharded 10 ways under this constraint.
+  workers queue behind that concurrency cap rather than getting full throughput. Measured effect:
+  10 parallel `--shard i/10` workers on `locomo-mem-v1` produced an observed aggregate of
+  **≈24 LLM calls/minute** and **≈25s** average latency per call under that contention — a single
+  uncontended call runs ≈4.4s, so 10 workers bought roughly ~2× serial throughput, not 10×.
+  **LoCoMo memory-mode ingest** (10 conversations, 272 sessions, 5,882 turns) issued **6,441**
+  bookkeeping+summary calls and took **18:50 → 00:45 (2026-08-27 → 2026-08-28), ≈5 h 55 min**
+  wall-clock sharded 10 ways, including two shard restarts after client-side timeouts (shard 4 and
+  shard 8, both `openai.APITimeoutError` under queue contention, relaunched from their last
+  checkpoint). The sum of per-conversation ingest seconds logged by the shards is **140,944 s**
+  (~39.1 h) — this is parallel work summed across the 10 concurrent shards, **not** wall-clock; the
+  ≈5 h 55 min figure above is the actual wall-clock.
+  **Rejudge** (re-scoring all 1,540 category 1–4 answers with the reference-date judge fix, a
+  single unsharded process) took **45 min**. **LoCoMo-Plus memory mode** (401 probes, 5 shards,
+  ~5.9 LLM calls/probe) took **1 h 42 min**. **LoCoMo full-context** (5 shards, 1 call/question)
+  took **39 min**. **LoCoMo-Plus full-context** (5 shards) took **40 min**.
 - **Embeddings**: nomic-embed-text (768-d) via `llama-embed` (llama.cpp), used for memory
   retrieval in memory-mode runs.
 - **Per-request timeout**: 900s (`--timeout`, see [Reproduce](#reproduce)) — long enough to
@@ -312,10 +321,76 @@ LoCoMo-Plus/LongMemEval-S publication runs referenced in [Reproduce](#reproduce)
 ## Results
 
 <!-- RESULTS:BEGIN -->
-Pending — populated from `eval/results/external_latest.json` once the LoCoMo, LoCoMo-Plus, and
-LongMemEval-S runs complete. See [docs/RESULTS.md](RESULTS.md#external-benchmarks-real-llm-local-judge)
-for the generated tables (rendered by `eval/render_results.py` — do not hand-edit either file's
-results content).
+Measured 2026-08-27/28 on the local judge (see [Hardware & runtime](#hardware--runtime)). Full
+per-`bench:mode` tables (rendered by `eval/render_results.py` from
+`eval/results/external_latest.json`) are in
+[docs/RESULTS.md](RESULTS.md#external-benchmarks-real-llm-local-judge); the tables below add the
+memory-vs-full-context comparison view the spec asked for.
+
+### LoCoMo — memory vs. full-context
+
+Run ids: `locomo-mem-v1` (2026-08-28T02:08:54Z) vs. `locomo-full-v1` (2026-08-28T04:30:21Z).
+
+| metric | memory | full-context | Δ (memory − full-context) |
+|---|---|---|---|
+| **Overall J** (cat 1–4, n=1,986) | 0.444 | 0.696 | −0.252 |
+| — cat 1 multi-hop (n=282) | 0.291 | 0.504 | −0.213 |
+| — cat 2 temporal (n=321) | 0.439 | 0.511 | −0.072 |
+| — cat 3 open-domain/commonsense (n=96) | 0.167 | 0.302 | −0.135 |
+| — cat 4 single-hop (n=841) | 0.528 | 0.875 | −0.347 |
+| Token-F1 (overall) | 0.234 | 0.388 | −0.154 |
+| Adversarial abstention accuracy (cat 5, n=446) | 0.883 | 0.832 | +0.052 |
+| Mean prompt tokens/question | 1,000 | 24,917 | ~25× fewer |
+| n_unparsed | 0 | 0 | — |
+
+### LoCoMo-Plus Cognitive — memory (chat) vs. full-context
+
+Run ids: `plus-mem-v1` (2026-08-28T03:49:49Z) vs. `plus-full-v1` (2026-08-28T05:10:32Z).
+
+| metric | memory | full-context | Δ |
+|---|---|---|---|
+| **Overall cognitive accuracy** (n=401) | 0.332 | 0.135 | +0.197 (2.46×) |
+| — causal (n=101) | 0.356 | 0.188 | +0.168 |
+| — state (n=100) | 0.440 | 0.170 | +0.270 |
+| — goal (n=100) | 0.260 | 0.080 | +0.180 |
+| — value (n=100) | 0.270 | 0.100 | +0.170 |
+| Mean prompt tokens/probe | 1,035 | 22,883 | ~22× fewer |
+| Mean LLM calls/probe | 5.89 (memory: retrieval + chat + judge) | 2.00 (answer + judge) | — |
+
+Largest time-gap buckets (n ≥ 20), cognitive accuracy by mode:
+
+| time gap | n | memory | full-context |
+|---|---|---|---|
+| one month later | 44 | 0.432 | 0.068 |
+| six weeks later | 25 | 0.360 | 0.120 |
+| two months later | 59 | 0.186 | 0.085 |
+| three months later | 56 | 0.357 | 0.125 |
+| four months later | 26 | 0.192 | 0.154 |
+| six months later | 33 | 0.273 | 0.152 |
+
+### LongMemEval-S
+
+**Pending — 50-question run in progress (run id `lme-s-50-v1`)**, started 2026-08-28T08:14:09Z
+(`eval/external/runs/driver/chain2.sh`, ~10 h projected). Not in `external_latest.json` yet — this
+row will be filled in once that run completes; see [Reproduce](#reproduce) for the command that
+produced it.
+
+### Interpretation
+
+Memory mode trails full-context by ~25 J points on LoCoMo (0.444 vs. 0.696) while using ~25×
+fewer prompt tokens per question (1,000 vs. 24,917) — retrieval is far cheaper but not yet as
+accurate as putting the whole transcript in context. The gap is worst on single-hop questions
+(cat 4: Δ −0.347) and it traces mostly to retrieval, not generation: in the 60-item
+judge-calibration sample, 14 of the 30 WRONG verdicts were the model answering "not mentioned" —
+the fact was in the conversation but never retrieved into context. Memory mode is the one place
+it beats full-context outright: adversarial abstention accuracy is higher (88.3% vs. 83.2%). On
+the LoCoMo-Plus cognitive-cue test the pattern reverses — the memory-based character beats the
+full-transcript continuation 2.5× overall (0.332 vs. 0.135) and on every relation type — but both
+modes decay as the cue-to-trigger gap widens (memory: ~0.43 at one month down to ~0.19–0.27 by
+two to six months), so memory's advantage there is a head start, not immunity to the same
+retrieval-difficulty trend. These are local-35B-judge numbers scoring a local-35B answering
+model, not comparable to published GPT-4o-judged results; the full-context baseline under the
+identical judge is the fair comparison this harness supports.
 <!-- RESULTS:END -->
 
 ## Caveats
@@ -383,6 +458,34 @@ results content).
   witnesses/says this turn", the real product path), but it means later `chat()` answers (notably
   LoCoMo-Plus's trigger response) can be colored by mood churn accumulated across the whole
   ingested conversation, not just by retrieved facts.
+- **Judge calibration (60-item skim, `locomo:memory`).** A controller skim of the stratified
+  60-item judge-calibration sample (`eval/results/external_judge_sample.json`) found the CORRECT
+  verdicts sound in 29 of 30 cases (one lenient false positive: gold "May 2022" vs. the model's
+  "2022-06-19", accepted by the judge as matching a month-only gold answer) and the WRONG
+  verdicts sound in 27–28 of 30 cases (the judge is harsh on partial lists and paraphrases, e.g.
+  penalizing a partial "recipes" answer or a "health & stress" paraphrase of the gold wording).
+  Observed judge disagreement is ≈4/60 (~7%) on this sample. This is a controller skim, not an
+  independent human-labeled audit — a second human pass over the sample is recommended before
+  treating the J-scores as more precise than ±a few points. Separately, of the 30 WRONG verdicts,
+  14 were the model answering "not mentioned" — i.e. most of memory mode's errors on this sample
+  are retrieval misses, not generation or judging errors.
+- **`generate_json` ran without `max_tokens` during LoCoMo ingestion.** The `max_tokens` cap
+  (default 2048, added in 8d34cf1) was not yet in place while `locomo-mem-v1`'s ingestion ran, so
+  every ingestion-time `generate_json` call could in principle generate up to the model's full
+  context window; in practice only one request across the entire ingest run ever finished by
+  hitting a length limit, so this had negligible effect on the ingested facts/summaries. It did
+  cause a real incident later: the first `rejudge` pass (run after the cap was added to the judge
+  path, but before ingestion was re-run) hung for 3.5 hours on a single uncapped judge request that
+  looped toward the 64K-token limit at temperature 0; the cap was then applied everywhere
+  (including `rejudge`) before the rejudge, `plus-mem-v1`, `locomo-full-v1`, and `plus-full-v1`
+  stages ran, so all of those are capped. This is a latency/availability incident, not a data
+  quality issue in the published numbers.
+- **Heavy queue contention during memory-mode answering affects latency, not content.**
+  Memory-mode answers were produced with 5–10 concurrent shard workers queued behind the
+  production `vllm-brain`'s `--max_num_seqs 2` (see [Hardware & runtime](#hardware--runtime)) —
+  this inflates per-call latency (≈25s observed vs. ≈4.4s uncontended) but does not change what
+  each call generates; sampling parameters (temperature, prompts) are identical to an uncontended
+  run of the same code.
 
 ## Reproduce
 

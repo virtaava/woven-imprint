@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from woven_imprint.embedding.base import EmbeddingProvider
+
 if TYPE_CHECKING:
     from woven_imprint.llm.openai_llm import OpenAILLM
 
@@ -116,7 +118,7 @@ def brain_llm(timeout: int = 300) -> OpenAILLM:
 EMBED_MAX_CHARS = 1200  # llama-embed rejects inputs over its 512-token physical batch
 
 
-class TruncatingEmbedding:
+class TruncatingEmbedding(EmbeddingProvider):
     """EmbeddingProvider wrapper that embeds at most ``max_chars`` of each text.
 
     The local llama.cpp embedding server refuses inputs longer than its physical batch
@@ -126,7 +128,7 @@ class TruncatingEmbedding:
     the stored memory text is untouched.
     """
 
-    def __init__(self, inner, max_chars: int = EMBED_MAX_CHARS) -> None:
+    def __init__(self, inner: EmbeddingProvider, max_chars: int = EMBED_MAX_CHARS) -> None:
         self._inner = inner
         self.max_chars = max_chars
         self.model = getattr(inner, "model", None)

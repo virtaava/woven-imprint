@@ -172,3 +172,39 @@ def test_truncating_embedding_bounds_input_and_keeps_interface():
     emb.embed_batch(["short", "y" * 30])
     assert inner.seen[-2:] == ["short", "y" * 10]
     assert emb.dimensions() == 2 and emb.model == "nomic-embed-text"
+
+
+def test_truncating_embedding_halves_input_when_server_says_too_large():
+    from eval.external.common import TruncatingEmbedding
+
+    class Picky:
+        model = "m"
+        limit = 30
+
+        def __init__(self):
+            self.seen = []
+
+        def embed(self, text):
+            self.seen.append(len(text))
+            if len(text) > self.limit:
+                raise RuntimeError("input (600 tokens) is too large to process")
+            return [1.0]
+
+        def embed_batch(self, texts):
+            return [self.embed(t) for t in texts]
+
+        def dimensions(self):
+            return 1
+
+    inner = Picky()
+    emb = TruncatingEmbedding(inner, max_chars=200)
+    assert emb.embed("z" * 500) == [1.0]
+    assert inner.seen == [200, 100, 50, 25]
+
+    # unrelated errors propagate
+    class Broken(Picky):
+        def embed(self, text):
+            raise RuntimeError("connection refused")
+
+    with pytest.raises(RuntimeError, match="connection refused"):
+        TruncatingEmbedding(Broken(), max_chars=200).embed("abc")

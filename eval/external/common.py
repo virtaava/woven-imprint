@@ -115,7 +115,8 @@ def brain_llm(timeout: int = 300) -> OpenAILLM:
     )
 
 
-EMBED_MAX_CHARS = 1200  # llama-embed rejects inputs over its 512-token physical batch
+EMBED_MAX_CHARS = 800  # llama-embed rejects inputs over its 512-token physical batch (~2 chars/token worst case seen)
+EMBED_MIN_CHARS = 100
 
 
 class TruncatingEmbedding(EmbeddingProvider):
@@ -136,11 +137,27 @@ class TruncatingEmbedding(EmbeddingProvider):
     def _cut(self, text: str) -> str:
         return text if len(text) <= self.max_chars else text[: self.max_chars]
 
+    @staticmethod
+    def _too_large(exc: BaseException) -> bool:
+        return "too large" in str(exc).lower()
+
     def embed(self, text: str) -> list[float]:
-        return self._inner.embed(self._cut(text))
+        cut = self._cut(text)
+        while True:
+            try:
+                return self._inner.embed(cut)
+            except Exception as exc:  # llama-server 500 "input (N tokens) is too large"
+                if not self._too_large(exc) or len(cut) <= EMBED_MIN_CHARS:
+                    raise
+                cut = cut[: max(EMBED_MIN_CHARS, len(cut) // 2)]
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        return self._inner.embed_batch([self._cut(t) for t in texts])
+        try:
+            return self._inner.embed_batch([self._cut(t) for t in texts])
+        except Exception as exc:
+            if not self._too_large(exc):
+                raise
+            return [self.embed(t) for t in texts]  # per-item adaptive fallback
 
     def dimensions(self) -> int:
         return self._inner.dimensions()

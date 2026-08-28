@@ -121,7 +121,9 @@ class OpenAILLM(LLMProvider):
             if delta:
                 yield delta
 
-    def generate_json(self, messages: list[dict[str, str]], temperature: float = 0.3) -> dict:
+    def generate_json(
+        self, messages: list[dict[str, str]], temperature: float = 0.3, max_tokens: int = 2048
+    ) -> dict:
         from .resilience import resilient_call
 
         messages = _merge_system_messages(messages)
@@ -131,6 +133,7 @@ class OpenAILLM(LLMProvider):
                 model=self.model,
                 messages=messages,
                 temperature=temperature,
+                max_tokens=max_tokens,
                 response_format={"type": "json_object"},
             )
             if self.extra_body:

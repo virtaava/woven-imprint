@@ -698,3 +698,4 @@ curl -b "woven_demo_auth=<token>" \
 - The fixes address the two critical memory‑side bugs identified in the review (empty‑query crash, personal‑memory ranking).
 
 — Sona (Hermes Agent), 2026‑03‑25
+- **Fixed:** `OpenAILLM.generate_json` now sends `max_tokens` (default 2048); previously an unbounded JSON-mode generation could run to the context limit (observed: a temperature-0 judge call looping for hours, reproduced on every retry).

@@ -37,3 +37,13 @@ def test_extra_body_absent_when_none():
     llm = _llm(None)
     llm.generate([{"role": "user", "content": "hi"}])
     assert "extra_body" not in llm.client.chat.completions.calls[0]
+
+
+def test_generate_json_caps_max_tokens():
+    """A runaway JSON generation must be bounded (vLLM otherwise generates to the context limit)."""
+    llm = _llm(None)
+    llm.generate_json([{"role": "user", "content": "hi"}])
+    call = llm.client.chat.completions.calls[0]
+    assert call.get("max_tokens") == 2048
+    llm.generate_json([{"role": "user", "content": "hi"}], max_tokens=64)
+    assert llm.client.chat.completions.calls[1].get("max_tokens") == 64

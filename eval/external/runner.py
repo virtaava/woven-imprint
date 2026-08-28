@@ -1118,6 +1118,10 @@ def rejudge(
             rec["judge_version"] = 2
 
         _save_json(answers_path, records)
+        print(
+            f"[rejudge] {conv.conv_id}: {len(records)} records rewritten (judge_version 2)",
+            flush=True,
+        )
         all_records.extend(records)
 
     summary = metrics.summarize(all_records)

@@ -42,8 +42,33 @@ def write_results(results: dict, results_dir: Path | str | None = None) -> None:
     latest_path = rdir / "external_latest.json"
     latest = _load(latest_path)
     key = f"{results['bench']}:{results['mode']}"
-    latest[key] = results
+    latest[key] = summary_only(results, run_path.name)
     _write(latest_path, latest)
+
+
+RECORD_KEYS = ("conversations", "probes")
+
+
+def summary_only(results: dict, records_file: str) -> dict:
+    """``results`` without per-question/per-probe records (they stay in ``external_<run_id>.json``).
+
+    ``external_latest.json`` is read only for summaries (README/RESULTS rendering), so keeping
+    the records there doubled the committed size (5 MB) for no consumer.
+    """
+    slim = {k: v for k, v in results.items() if k not in RECORD_KEYS}
+    slim["records_file"] = records_file
+    for k in RECORD_KEYS:
+        if k in results:
+            slim[f"n_{k}"] = len(results[k])
+    versions = {
+        str(rec.get("judge_version", 1))
+        for k in RECORD_KEYS
+        for rec in results.get(k) or []
+        if isinstance(rec, dict)
+    }
+    if versions:
+        slim["judge_versions"] = ",".join(sorted(versions))
+    return slim
 
 
 def _stratified_sample(items: list[dict], n: int, seed: int) -> list[dict]:

@@ -48,3 +48,26 @@ def test_write_results_leaves_no_tmp_files(tmp_path):
     assert not list(tmp_path.glob("*.tmp"))
     assert (tmp_path / "external_r1.json").exists()
     assert (tmp_path / "external_latest.json").exists()
+
+
+def test_latest_is_summary_only_and_run_file_keeps_records(tmp_path):
+    import json
+
+    from eval.external.report import write_results
+
+    results = {
+        "run_id": "r1",
+        "bench": "locomo",
+        "mode": "memory",
+        "summary": {"overall_j": 0.5},
+        "conversations": [{"qid": "a"}, {"qid": "b"}],
+    }
+    write_results(results, results_dir=tmp_path)
+    run = json.loads((tmp_path / "external_r1.json").read_text())
+    latest = json.loads((tmp_path / "external_latest.json").read_text())
+    assert len(run["conversations"]) == 2
+    entry = latest["locomo:memory"]
+    assert "conversations" not in entry
+    assert entry["summary"] == {"overall_j": 0.5}
+    assert entry["records_file"] == "external_r1.json" and entry["n_conversations"] == 2
+    assert entry["judge_versions"] == "1"  # records without the field normalize to 1

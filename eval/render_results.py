@@ -99,7 +99,8 @@ def _judge_versions(result: dict) -> str | None:
         if isinstance(rec, dict):
             versions.add(str(rec.get("judge_version", 1)))
     if not versions:
-        return None
+        stored = result.get("judge_versions")  # summary-only entries carry it precomputed
+        return str(stored) if stored else None
     return ",".join(sorted(versions))
 
 

@@ -144,3 +144,31 @@ def test_stratified_sample_prefix_stable_on_real_longmemeval_s():
     counts_100 = Counter(it["question_type"] for it in sample_100)
     print(f"\nlongmemeval_s per-type counts, sample=50: {dict(counts_50)}")
     print(f"longmemeval_s per-type counts, sample=100: {dict(counts_100)}")
+
+
+def test_truncating_embedding_bounds_input_and_keeps_interface():
+    from eval.external.common import TruncatingEmbedding
+
+    class Inner:
+        model = "nomic-embed-text"
+
+        def __init__(self):
+            self.seen = []
+
+        def embed(self, text):
+            self.seen.append(text)
+            return [1.0, 0.0]
+
+        def embed_batch(self, texts):
+            self.seen.extend(texts)
+            return [[1.0, 0.0] for _ in texts]
+
+        def dimensions(self):
+            return 2
+
+    inner = Inner()
+    emb = TruncatingEmbedding(inner, max_chars=10)
+    assert emb.embed("x" * 50) == [1.0, 0.0] and inner.seen[-1] == "x" * 10
+    emb.embed_batch(["short", "y" * 30])
+    assert inner.seen[-2:] == ["short", "y" * 10]
+    assert emb.dimensions() == 2 and emb.model == "nomic-embed-text"

@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from woven_imprint.embedding.openai_embedding import OpenAIEmbedding
     from woven_imprint.llm.openai_llm import OpenAILLM
 
 # eval/external/common.py -> eval/external -> eval -> repo root
@@ -114,11 +113,44 @@ def brain_llm(timeout: int = 300) -> OpenAILLM:
     )
 
 
-def embedder() -> OpenAIEmbedding:
-    """OpenAIEmbedding pointed at llama-embed (nomic-embed-text, 768d)."""
+EMBED_MAX_CHARS = 1200  # llama-embed rejects inputs over its 512-token physical batch
+
+
+class TruncatingEmbedding:
+    """EmbeddingProvider wrapper that embeds at most ``max_chars`` of each text.
+
+    The local llama.cpp embedding server refuses inputs longer than its physical batch
+    (512 tokens: "input (648 tokens) is too large to process"). LoCoMo turns never hit
+    that, but LongMemEval-S turns can be multi-paragraph, so the harness embeds a bounded
+    prefix (~300–400 tokens of English). Retrieval over such rows keys on the prefix only;
+    the stored memory text is untouched.
+    """
+
+    def __init__(self, inner, max_chars: int = EMBED_MAX_CHARS) -> None:
+        self._inner = inner
+        self.max_chars = max_chars
+        self.model = getattr(inner, "model", None)
+
+    def _cut(self, text: str) -> str:
+        return text if len(text) <= self.max_chars else text[: self.max_chars]
+
+    def embed(self, text: str) -> list[float]:
+        return self._inner.embed(self._cut(text))
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return self._inner.embed_batch([self._cut(t) for t in texts])
+
+    def dimensions(self) -> int:
+        return self._inner.dimensions()
+
+
+def embedder() -> TruncatingEmbedding:
+    """llama-embed (nomic-embed-text, 768d) behind a prefix-truncating wrapper."""
     from woven_imprint.embedding.openai_embedding import OpenAIEmbedding
 
-    return OpenAIEmbedding(model=EMBED_MODEL, api_key="local", base_url=EMBED_URL)
+    return TruncatingEmbedding(
+        OpenAIEmbedding(model=EMBED_MODEL, api_key="local", base_url=EMBED_URL)
+    )
 
 
 def parse_locomo_datetime(s: str) -> datetime:

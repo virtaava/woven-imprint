@@ -370,10 +370,32 @@ Largest time-gap buckets (n ≥ 20), cognitive accuracy by mode:
 
 ### LongMemEval-S
 
-**Pending — 50-question run in progress (run id `lme-s-50-v1`)**, started 2026-08-28T08:14:09Z
-(`eval/external/runs/driver/chain2.sh`, ~10 h projected). Not in `external_latest.json` yet — this
-row will be filled in once that run completes; see [Reproduce](#reproduce) for the command that
-produced it.
+Memory mode only (full-context does not fit the 64K window). Run id `lme-s-50-v1`, 50-question
+stratified sample (seed 7), pair-turn ingestion, `--interval 1`, K = 20. Ingested 24,639 turns /
+2,380 sessions with 19,506 bookkeeping + summary calls.
+
+| metric | memory |
+|---|---|
+| Overall J (48 judged questions) | **0.396** |
+| single-session-user (n=7) | 0.857 |
+| knowledge-update (n=8) | 0.750 |
+| single-session-assistant (n=8) | 0.375 |
+| temporal-reasoning (n=8) | 0.375 |
+| multi-session (n=9) | 0.111 |
+| single-session-preference (n=8) | 0.000 |
+| abstention (`_abs`, n=2, rule-scored) | 2/2 — anecdotal |
+| token-F1 | 0.242 |
+| mean prompt tokens / question | 1,211 |
+| n_unparsed | 0 |
+
+Per-type cells rest on 7–9 questions each; treat them as directional. 20 of the 48 judged answers
+were "Not mentioned" (retrieval misses), the same failure mode as LoCoMo. `single-session-preference`
+scored 0/8: these questions ask the assistant to *apply* a stated preference in a new reply, and the
+≤15-word factual-answer prompt is the wrong instrument for them — a follow-up, not a memory finding.
+
+Runtime: the 10-shard run started 2026-08-28 08:20 and the last shard finished 2026-08-29 ≈11:50
+(≈27.5 h wall, including four shards restarted at 18:45 after the embedding-length fix); sum of
+per-conversation ingest seconds 517,361 (parallel, not wall-clock).
 
 ### Interpretation
 
@@ -391,7 +413,7 @@ two to six months), so memory's advantage there is a head start, not immunity to
 retrieval-difficulty trend. These are local-35B-judge numbers scoring a local-35B answering
 model, not comparable to published GPT-4o-judged results; the full-context baseline under the
 identical judge is the fair comparison this harness supports.
-<!-- RESULTS:END -->
+<!-- RESULTS:END --> On LongMemEval-S (50-question sample) memory mode reaches J 0.396, strong on single-session user facts and knowledge updates (0.86 / 0.75) and weak on multi-session aggregation (0.11).
 
 ## Caveats
 

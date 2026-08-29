@@ -642,5 +642,92 @@
     "records_file": "external_plus-mem-v1.json",
     "n_probes": 401,
     "judge_versions": "2"
+  },
+  "longmemeval_s:memory": {
+    "run_id": "lme-s-50-v1",
+    "bench": "longmemeval_s",
+    "mode": "memory",
+    "model": "Qwen/Qwen3.5-35B-A3B-FP8",
+    "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
+    "embedding": "nomic-embed-text",
+    "timestamp": "2026-08-29T08:55:04.083758+00:00",
+    "config": {
+      "k": 20,
+      "fact_extraction_interval": 1,
+      "pair_turns": true,
+      "max_tokens": {
+        "qa": 60
+      },
+      "temperature": {
+        "qa": 0.0,
+        "judge": 0.0
+      },
+      "limit_conversations": null,
+      "sample": 50,
+      "seed": 7,
+      "max_sessions": null,
+      "max_questions": null,
+      "shard": null
+    },
+    "summary": {
+      "n_questions": 50,
+      "overall_j": 0.3958333333333333,
+      "overall_f1": 0.24223470889522233,
+      "per_category": {
+        "multi-session": {
+          "n": 9,
+          "j": 0.1111111111111111,
+          "f1": 0.044444444444444446
+        },
+        "single-session-assistant": {
+          "n": 8,
+          "j": 0.375,
+          "f1": 0.1842948717948718
+        },
+        "single-session-preference": {
+          "n": 8,
+          "j": 0.0,
+          "f1": 0.09635905257213309
+        },
+        "single-session-user": {
+          "n": 7,
+          "j": 0.8571428571428571,
+          "f1": 0.6904761904761905
+        },
+        "temporal-reasoning": {
+          "n": 8,
+          "j": 0.375,
+          "f1": 0.21590909090909088
+        },
+        "knowledge-update": {
+          "n": 8,
+          "j": 0.75,
+          "f1": 0.3026785714285714
+        }
+      },
+      "rule_scored": {
+        "knowledge-update": {
+          "n": 1,
+          "accuracy": 1.0
+        },
+        "single-session-user": {
+          "n": 1,
+          "accuracy": 1.0
+        }
+      },
+      "adversarial_accuracy": null,
+      "abstain_accuracy": 1.0,
+      "mean_prompt_tokens_est": 1211.34,
+      "n_unparsed": 0
+    },
+    "ingest_totals": {
+      "turns": 24639,
+      "sessions": 2380,
+      "llm_calls": 19506,
+      "seconds": 517360.7949899682
+    },
+    "records_file": "external_lme-s-50-v1.json",
+    "n_conversations": 50,
+    "judge_versions": "2"
   }
 }

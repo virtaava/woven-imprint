@@ -56,8 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   table per `bench:mode`: overall/per-category J-score, token-F1, adversarial/abstain accuracy,
   mean prompt tokens, run id, timestamp). Purely additive — the deterministic headline score line
   is unaffected, and the section is simply absent until the harness has published a run.
-- **Results: first published external-benchmark numbers** (LoCoMo, LoCoMo-Plus; LongMemEval-S
-  pending).
+- **Results: first published external-benchmark numbers** (LoCoMo J 0.444 memory vs 0.696
+  full-context; LoCoMo-Plus cognitive 0.332 vs 0.135; LongMemEval-S 50-question sample J 0.396).
 
 ### Added (Tier 3a — editable memory · interchange)
 - **Memory & fact mutation** — every memory and fact is now viewable and editable, from the

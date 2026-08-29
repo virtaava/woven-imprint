@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (Tier 3b — external benchmarks · library enablers)
+- **`OpenAILLM(extra_body=...)`** — an optional dict forwarded verbatim into every
+  `chat.completions.create` call (`generate`, `generate_stream`, `generate_json`) when set, e.g.
+  `{"chat_template_kwargs": {"enable_thinking": False}}` to disable Qwen3.5's reasoning mode on
+  vLLM. Omitted from the request entirely when not set.
+- **`providers.create_llm()` now passes `timeout=cfg.llm.timeout`** to `OpenAILLM` — previously
+  silently dropped, so the configured LLM timeout never reached the OpenAI-compatible provider.
+- **`resilience.resilient_call()` now retries `openai.APITimeoutError`/`openai.APIConnectionError`**
+  (guarded import — a no-op if `openai` isn't installed), so a vLLM/OpenAI-compatible call that
+  times out or drops its connection gets the same retry/backoff/circuit-breaker treatment as a
+  `requests` timeout instead of failing the whole run immediately.
+
+### Changed (behavior)
+- **`Character.ingest()` now uses unified bookkeeping and creates structured facts** when
+  `unified_assessment` is on (the default): it routes through `_run_bookkeeping` — the same
+  single-call emotion/relationship/beat/facts path `chat()` uses — instead of the legacy
+  `_extract_memories`. This means ingested turns can now produce structured
+  (subject, predicate, object) facts, not just free-text ones (and, under unified assessment,
+  the same call also updates mood and narrative arc, not just facts). The legacy path is
+  unchanged and still used when `unified_assessment` is off. Both `ingest()` and
+  `ingest_exchange()` are fully synchronous — bookkeeping always runs inline on the calling
+  thread, even with `background=True` — and flush any background worker still draining bookkeeping
+  from earlier `chat()` calls before running their own, so the two never interleave out of order.
+- **`Character.ingest_exchange(user_message, response, user_id=None)`** — like `ingest()` but
+  records one user turn + one character reply as a single unit (one `_turn_count` increment, one
+  unified bookkeeping call instead of two). For importing transcripts of paired user/assistant
+  dialogue, e.g. benchmark haystacks or SillyTavern logs, where the two sides are already known
+  together.
+
+### Added (Tier 3b — external benchmarks · harness + docs)
+- **`eval/external/` harness** (`python -m eval.external fetch|run|rejudge`): publishes
+  reproducible LoCoMo, LoCoMo-Plus (Cognitive category), and LongMemEval-S numbers measured with
+  the local brain (Qwen3.5-35B-A3B-FP8, thinking off) as both the answering model and the judge,
+  alongside a full-context baseline under the identical judge. Message-by-message ingestion via
+  `Character.ingest()` under clock control, product-path answering (pinned + facts + top-K
+  retrieved memories), the LoCoMo/Mem0-lenient judge and the upstream LoCoMo-Plus Cognitive judge,
+  a fixed abstention rule for category-5/`_abs` questions, per-conversation SQLite checkpointing
+  (atomic writes, resumable, shardable via `--shard i/n`), a `rejudge` subcommand, and a
+  stratified judge-calibration sample (`eval/results/external_judge_sample.json`). See
+  `docs/BENCHMARKS.md`.
+- **`docs/BENCHMARKS.md`** — method, exact prompts (quoted verbatim), protocol, metrics
+  definitions, hardware/runtime, judge-calibration instructions, caveats (local judge ≠ GPT-4o,
+  LoCoMo label noise, category-5 convention, subset sizes, and more), and reproduce commands for
+  the external benchmark harness.
+- **`docs/RESULTS.md`** gains an "External benchmarks (real LLM, local judge)" section, rendered
+  by `eval/render_results.py` from `eval/results/external_latest.json` when that file exists (one
+  table per `bench:mode`: overall/per-category J-score, token-F1, adversarial/abstain accuracy,
+  mean prompt tokens, run id, timestamp). Purely additive — the deterministic headline score line
+  is unaffected, and the section is simply absent until the harness has published a run.
+- **Results: first published external-benchmark numbers** (LoCoMo J 0.444 memory vs 0.696
+  full-context; LoCoMo-Plus cognitive 0.332 vs 0.135; LongMemEval-S 50-question sample J 0.396).
+
 ### Added (Tier 3a — editable memory · interchange)
 - **Memory & fact mutation** — every memory and fact is now viewable and editable, from the
   library, HTTP, and MCP:
@@ -648,3 +700,4 @@ curl -b "woven_demo_auth=<token>" \
 - The fixes address the two critical memory‑side bugs identified in the review (empty‑query crash, personal‑memory ranking).
 
 — Sona (Hermes Agent), 2026‑03‑25
+- **Fixed:** `OpenAILLM.generate_json` now sends `max_tokens` (default 2048); previously an unbounded JSON-mode generation could run to the context limit (observed: a temperature-0 judge call looping for hours, reproduced on every retry).

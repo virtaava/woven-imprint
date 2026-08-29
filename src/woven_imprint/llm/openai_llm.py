@@ -53,6 +53,7 @@ class OpenAILLM(LLMProvider):
         api_key: str | None = None,
         base_url: str | None = None,
         timeout: int = 120,
+        extra_body: dict | None = None,
     ):
         try:
             from openai import OpenAI
@@ -69,6 +70,10 @@ class OpenAILLM(LLMProvider):
 
         self.client = OpenAI(**kwargs)
         self.model = model
+        # Forwarded verbatim into every chat.completions.create call, e.g.
+        # {"chat_template_kwargs": {"enable_thinking": False}} for vLLM's
+        # Qwen3.5 reasoning toggle. None/empty means "omit the kwarg".
+        self.extra_body = extra_body
 
     def generate(
         self, messages: list[dict[str, str]], temperature: float = 0.7, max_tokens: int = 2048
@@ -76,12 +81,17 @@ class OpenAILLM(LLMProvider):
         from .resilience import resilient_call
 
         messages = _merge_system_messages(messages)
-        response = resilient_call(
-            self.client.chat.completions.create,
+        kwargs: dict = dict(
             model=self.model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+        )
+        if self.extra_body:
+            kwargs["extra_body"] = self.extra_body
+        response = resilient_call(
+            self.client.chat.completions.create,
+            **kwargs,
             provider_name="openai",
         )
         return response.choices[0].message.content or ""
@@ -92,13 +102,18 @@ class OpenAILLM(LLMProvider):
         from .resilience import resilient_call
 
         messages = _merge_system_messages(messages)
-        stream = resilient_call(
-            self.client.chat.completions.create,
+        kwargs: dict = dict(
             model=self.model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
             stream=True,
+        )
+        if self.extra_body:
+            kwargs["extra_body"] = self.extra_body
+        stream = resilient_call(
+            self.client.chat.completions.create,
+            **kwargs,
             provider_name="openai",
         )
         for event in stream:
@@ -106,18 +121,26 @@ class OpenAILLM(LLMProvider):
             if delta:
                 yield delta
 
-    def generate_json(self, messages: list[dict[str, str]], temperature: float = 0.3) -> dict:
+    def generate_json(
+        self, messages: list[dict[str, str]], temperature: float = 0.3, max_tokens: int = 2048
+    ) -> dict:
         from .resilience import resilient_call
 
         messages = _merge_system_messages(messages)
         # Use JSON mode if model supports it
         try:
-            response = resilient_call(
-                self.client.chat.completions.create,
+            kwargs: dict = dict(
                 model=self.model,
                 messages=messages,
                 temperature=temperature,
+                max_tokens=max_tokens,
                 response_format={"type": "json_object"},
+            )
+            if self.extra_body:
+                kwargs["extra_body"] = self.extra_body
+            response = resilient_call(
+                self.client.chat.completions.create,
+                **kwargs,
                 provider_name="openai",
             )
             raw = response.choices[0].message.content or "{}"

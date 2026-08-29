@@ -16,3 +16,5 @@ article_draft.md
 demo/node_modules/
 dist/
 experiments/parametric_spike/out/
+eval/external/data/
+eval/external/runs/

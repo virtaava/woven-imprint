@@ -32,12 +32,12 @@ jobs:
       - name: Lint with ruff
         run: |
           source .venv/bin/activate
-          ruff check src/ tests/
+          ruff check src/ tests/ eval/
 
       - name: Check formatting
         run: |
           source .venv/bin/activate
-          ruff format --check src/ tests/
+          ruff format --check src/ tests/ eval/
 
   typecheck:
     runs-on: ubuntu-latest

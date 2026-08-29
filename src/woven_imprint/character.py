@@ -569,6 +569,20 @@ class Character:
         (fact extraction, relationship assessment) as :meth:`chat`, but no
         LLM generation call is made.
 
+        This call is synchronous: bookkeeping always runs inline on the calling thread, even
+        when ``self.background`` is on for :meth:`chat`. If a background worker is already
+        running from an earlier :meth:`chat` call, it is flushed first (see :meth:`flush`) so
+        this ingested turn's bookkeeping never runs out of order with turns `chat()` already
+        queued ahead of it.
+
+        When ``self.unified_assessment`` is on (the default), bookkeeping
+        routes through the single unified turn-assessment call — the same
+        path :meth:`chat` uses — so structured (subject, predicate, object)
+        facts are now created on ingest, not just free-text ones; that same call also updates
+        mood (emotional state), the narrative arc beat, and the relationship model, not just
+        facts. When off, the legacy per-subsystem path (:meth:`_extract_memories`) runs
+        unchanged.
+
         Args:
             role: ``"user"`` or ``"assistant"`` — who said it.
             content: The message text.
@@ -602,25 +616,121 @@ class Character:
             importance=0.5,
         )
 
-        # Subsystem updates — fact extraction + relationship assessment
-        # We need a user_msg / response pair for _extract_memories.
-        # Accumulate and run extraction when we have both sides.
-        # For simplicity, run extraction on every ingest using the content
-        # as the relevant side and an empty string for the other.
+        # Subsystem updates — fact extraction + relationship assessment.
+        # We need a user_msg / response pair for bookkeeping; the side that
+        # didn't speak this turn is an empty string.
         if role == "user":
             user_msg, response = content, ""
         else:
             user_msg, response = "", content
 
-        # Run extraction (non-fatal, same as chat)
+        # This call is synchronous — if a background worker is already draining bookkeeping
+        # from earlier chat() calls, flush it first so this ingest's bookkeeping (below) can't
+        # run out of order with turns already queued ahead of it.
+        if self._worker is not None:
+            self.flush()
+
+        # Run bookkeeping (non-fatal, same as chat)
         try:
-            self._extract_memories(user_msg, response, user_id, session_id=self._session_id)
+            if self.unified_assessment:
+                self._run_bookkeeping(user_msg, response, user_id, self._session_id)
+            else:
+                self._extract_memories(user_msg, response, user_id, session_id=self._session_id)
         except Exception as e:
             logger.debug("Ingest extraction failed: %s", e)
 
         self._turn_count += 1
 
         # Periodic maintenance (same as chat)
+        if self._turn_count % _cfg.memory.state_save_interval == 0:
+            try:
+                self._save_state()
+            except Exception as e:
+                logger.debug("Periodic state save failed: %s", e)
+
+    def ingest_exchange(self, user_message: str, response: str, user_id: str | None = None) -> None:
+        """Record one user turn + one character reply as a single unit, without calling the LLM.
+
+        Use this to import a transcript of user/assistant dialogue (e.g. a benchmark
+        conversation or a SillyTavern log) turn by turn while keeping bookkeeping cost down:
+        unlike two back-to-back :meth:`ingest` calls (one per side, each triggering its own
+        bookkeeping pass), this makes exactly one unified assessment call per exchange — the
+        same call :meth:`chat` makes for a live turn — because the user message and the
+        character's reply are already paired, the way they are in a real conversation.
+
+        Both sides are stored in the conversation buffer and context exactly as :meth:`ingest`
+        would store them (``"[User] ..."`` / ``"[{name}] ..."``), and ``_turn_count`` advances
+        by one for the whole exchange, not two.
+
+        This call is synchronous: bookkeeping always runs inline on the calling thread, even
+        when ``self.background`` is on for :meth:`chat`. If a background worker is already
+        running from an earlier :meth:`chat` call, it is flushed first (see :meth:`flush`) so
+        this exchange's bookkeeping never runs out of order with turns `chat()` already queued
+        ahead of it.
+
+        When ``self.unified_assessment`` is on (the default), bookkeeping routes through the
+        single unified turn-assessment call (:meth:`_run_bookkeeping`) — the same path
+        :meth:`chat` uses — so structured (subject, predicate, object) facts are created; that
+        same call also updates mood (emotional state), the narrative arc beat, and the
+        relationship model, not just facts. When off, the legacy per-subsystem path
+        (:meth:`_extract_memories`) runs unchanged.
+
+        Args:
+            user_message: What the user said.
+            response: What the character said in reply.
+            user_id: Optional user identifier for relationship tracking.
+        """
+        if not self._session_id:
+            self.start_session()
+
+        # Input size limit (same as chat/ingest)
+        from .config import get_config
+
+        _cfg = get_config()
+        if len(user_message) > _cfg.memory.max_message_length:
+            user_message = user_message[: _cfg.memory.max_message_length]
+        if len(response) > _cfg.memory.max_message_length:
+            response = response[: _cfg.memory.max_message_length]
+
+        # Store both turns in the conversation buffer
+        self._context.add_turn("user", user_message)
+        self._context.add_turn("assistant", response)
+        self._persist_turn("user", user_message)
+        self._persist_turn("assistant", response)
+
+        # Store both sides as buffer memory
+        self.memory.add(
+            content=f"[User] {user_message}",
+            tier="buffer",
+            role="user",
+            session_id=self._session_id,
+            importance=0.5,
+        )
+        self.memory.add(
+            content=f"[{self.name}] {response}",
+            tier="buffer",
+            role="character",
+            session_id=self._session_id,
+            importance=0.5,
+        )
+
+        # This call is synchronous — if a background worker is already draining bookkeeping
+        # from earlier chat() calls, flush it first (see ingest()'s identical guard above).
+        if self._worker is not None:
+            self.flush()
+
+        # Run bookkeeping once for the whole exchange (non-fatal, same as ingest/chat)
+        try:
+            if self.unified_assessment:
+                self._run_bookkeeping(user_message, response, user_id, self._session_id)
+            else:
+                self._extract_memories(user_message, response, user_id, session_id=self._session_id)
+        except Exception as e:
+            logger.debug("Ingest exchange bookkeeping failed: %s", e)
+
+        self._turn_count += 1
+
+        # Periodic maintenance (same as chat/ingest)
         if self._turn_count % _cfg.memory.state_save_interval == 0:
             try:
                 self._save_state()

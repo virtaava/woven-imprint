@@ -1,0 +1,61 @@
+[
+  {
+    "sample_id": "conv-mini-1",
+    "conversation": {
+      "speaker_a": "Alice",
+      "speaker_b": "Bob",
+      "session_1": [
+        {"speaker": "Alice", "dia_id": "D1:1", "text": "Hey Bob! I finally adopted a cat named Whiskers."},
+        {"speaker": "Bob", "dia_id": "D1:2", "text": "That's great! What color is Whiskers?"},
+        {"speaker": "Alice", "dia_id": "D1:3", "text": "She's orange and white. I got her from the shelter on 1st January.", "img_url": ["x.jpg"], "blip_caption": "a cat sitting on a windowsill"},
+        {"speaker": "Bob", "dia_id": "D1:4", "text": "Nice, shelters need more adopters like you."}
+      ],
+      "session_1_date_time": "1:00 pm on 1 January, 2023",
+      "session_2": [
+        {"speaker": "Bob", "dia_id": "D2:1", "text": "How's Whiskers settling in?"},
+        {"speaker": "Alice", "dia_id": "D2:2", "text": "Really well! I started a new job as a baker this week too."},
+        {"speaker": "Bob", "dia_id": "D2:3", "text": "A baker, wow. What do you bake?"},
+        {"speaker": "Alice", "dia_id": "D2:4", "text": "Mostly sourdough bread, it's my favorite thing to make."}
+      ],
+      "session_2_date_time": "3:00 pm on 3 January, 2023"
+    },
+    "qa": [
+      {
+        "question": "What kind of pet did Alice adopt?",
+        "answer": "a cat",
+        "evidence": ["D1:1"],
+        "category": 1
+      },
+      {
+        "question": "When did Alice adopt Whiskers?",
+        "answer": "1 January 2023",
+        "evidence": ["D1:3"],
+        "category": 2
+      },
+      {
+        "question": "Is adopting from a shelter a good thing to do?",
+        "answer": "Yes, it helps animals in need",
+        "evidence": ["D1:4"],
+        "category": 3
+      },
+      {
+        "question": "What new job did Alice start?",
+        "answer": "baker",
+        "evidence": ["D2:2"],
+        "category": 4
+      },
+      {
+        "question": "Did Alice mention owning a dog?",
+        "evidence": ["D1:1"],
+        "category": 5,
+        "adversarial_answer": "Yes, a dog named Rex"
+      },
+      {
+        "question": "What flavor of cake does Alice bake most?",
+        "evidence": ["D2:4"],
+        "category": 5,
+        "adversarial_answer": "chocolate cake"
+      }
+    ]
+  }
+]

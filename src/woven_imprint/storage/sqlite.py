@@ -340,6 +340,7 @@ class SQLiteStorage:
         status: str = "active",
         limit: int | None = 1000,
         oldest_first: bool = False,
+        unconsolidated: bool = False,
     ) -> list[dict]:
         """Retrieve memories for a character, optionally filtered by tier.
 
@@ -348,12 +349,24 @@ class SQLiteStorage:
 
         `limit=None` returns all matching rows (no LIMIT clause) — the
         `ORDER BY` is still applied for deterministic ordering.
+
+        `unconsolidated=True` additionally excludes rows already claimed by
+        consolidation (`metadata.consolidated_into` or `metadata.consolidation_seen`
+        set) — used by the consolidation threshold/chunk queries so re-consolidated
+        rows aren't recounted. `json_extract` returns NULL for a missing key
+        whether `metadata` is SQL NULL, `'{}'`, or any JSON lacking the key, so
+        this is robust to all three storage shapes.
         """
         q = "SELECT *, rowid FROM memories WHERE character_id = ? AND status = ?"
         params: list[Any] = [character_id, status]
         if tier:
             q += " AND tier = ?"
             params.append(tier)
+        if unconsolidated:
+            q += (
+                " AND json_extract(metadata, '$.consolidated_into') IS NULL"
+                " AND json_extract(metadata, '$.consolidation_seen') IS NULL"
+            )
         if oldest_first:
             q += " ORDER BY created_at ASC, rowid ASC"
         else:
@@ -444,6 +457,33 @@ class SQLiteStorage:
             self._conn.execute(f"UPDATE memories SET {', '.join(sets)} WHERE id = ?", params)
             self._commit()
 
+    def update_memory_metadata(self, memory_id: str, patch: dict) -> dict:
+        """Shallow-merge `patch` into a memory's metadata JSON and persist it.
+
+        A `patch` value of `None` removes that key. Reads and writes under the
+        storage lock so a concurrent metadata update can't clobber this merge.
+        Returns the merged metadata dict. Raises `KeyError` if the memory
+        doesn't exist.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT metadata FROM memories WHERE id = ?", (memory_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(memory_id)
+            current = json.loads(row["metadata"] or "{}")
+            for key, value in patch.items():
+                if value is None:
+                    current.pop(key, None)
+                else:
+                    current[key] = value
+            self._conn.execute(
+                "UPDATE memories SET metadata = ? WHERE id = ?",
+                (json.dumps(current), memory_id),
+            )
+            self._commit()
+            return current
+
     def delete_memory(self, memory_id: str) -> bool:
         """Hard delete (the FTS trigger keeps the index in sync). Returns whether a row was removed."""
         with self._lock:
@@ -481,12 +521,24 @@ class SQLiteStorage:
             )
             self._commit()
 
-    def count_memories(self, character_id: str, tier: str | None = None) -> int:
+    def count_memories(
+        self, character_id: str, tier: str | None = None, unconsolidated: bool = False
+    ) -> int:
+        """Count active memories, optionally filtered by tier.
+
+        `unconsolidated=True` mirrors `get_memories(..., unconsolidated=True)` —
+        see its docstring for the NULL/'{}'/missing-key handling.
+        """
         q = "SELECT COUNT(*) as c FROM memories WHERE character_id = ? AND status = 'active'"
         params: list[Any] = [character_id]
         if tier:
             q += " AND tier = ?"
             params.append(tier)
+        if unconsolidated:
+            q += (
+                " AND json_extract(metadata, '$.consolidated_into') IS NULL"
+                " AND json_extract(metadata, '$.consolidation_seen') IS NULL"
+            )
         with self._lock:
             return self._conn.execute(q, params).fetchone()["c"]
 

@@ -45,6 +45,9 @@ class LLMConfig:
 @dataclass
 class MemoryConfig:
     consolidation_threshold: int = 100
+    # consolidation keeps source memories active (metadata.consolidated_into)
+    # instead of archiving them
+    consolidation_keep_sources: bool = True
     consolidation_interval: int = 20  # turns between auto-consolidation checks
     state_save_interval: int = 10  # turns between state saves
     fact_extraction_interval: int = 3  # extract facts every N turns
@@ -373,6 +376,7 @@ llm:
 
 memory:
   consolidation_threshold: 100
+  consolidation_keep_sources: true    # keep source memories active (metadata.consolidated_into) instead of archiving them
   consolidation_interval: 20
   state_save_interval: 10
   fact_extraction_interval: 3

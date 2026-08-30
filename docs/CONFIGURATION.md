@@ -78,6 +78,7 @@ Controls how characters store, consolidate, and retrieve memories.
 ```yaml
 memory:
   consolidation_threshold: 100
+  consolidation_keep_sources: true
   consolidation_interval: 20
   state_save_interval: 10
   fact_extraction_interval: 3
@@ -108,7 +109,8 @@ memory:
 
 | Setting | Default | Env Var | Description |
 |---------|---------|---------|-------------|
-| `consolidation_threshold` | `100` | — | Number of buffer memories that triggers consolidation. When buffer exceeds this count, similar memories are clustered and summarized into core memories. Checked at session end (`end_session()`) and via explicit `Character.consolidate()` — no longer polled mid-chat. |
+| `consolidation_threshold` | `100` | — | Number of buffer memories that triggers consolidation. When buffer exceeds this count, similar memories are clustered and summarized into core memories. Checked at session end (`end_session()`) and via explicit `Character.consolidate()` — no longer polled mid-chat. Counts only *unconsolidated* buffer rows (see `consolidation_keep_sources`). |
+| `consolidation_keep_sources` | `true` | — | When on, consolidation keeps source memories `active`/`buffer` (tagged `metadata.consolidated_into`) instead of archiving them, so verbatim sources stay retrievable after being summarized. When off, sources are archived as before (excluded from retrieval). |
 | `consolidation_interval` | `20` | — | **Unused as of Phase A.** Previously: check for consolidation every N chat turns. Consolidation checks moved to session end (`end_session()`) / explicit `Character.consolidate()` only — see Changelog "Auto-consolidation no longer runs mid-chat." Kept in config for backward-compatible file parsing; has no effect. |
 | `state_save_interval` | `10` | — | Save emotion and narrative arc state to database every N turns. Protects against mid-session data loss. Lower = safer but more DB writes. |
 | `fact_extraction_interval` | `3` | — | Extract notable facts from conversation every N turns. Every turn = comprehensive but expensive (1 LLM call per extraction). |

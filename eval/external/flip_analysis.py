@@ -460,13 +460,17 @@ def compute_items(
         raw_rows = _load_all_memory_rows(db_path, conv_id)
         storage = SQLiteStorage(str(db_path))
 
-        engine = Engine(db_path=str(db_path), llm=cast(LLMProvider, FakeLLM()), embedding=embedder())
+        engine = Engine(
+            db_path=str(db_path), llm=cast(LLMProvider, FakeLLM()), embedding=embedder()
+        )
         char = engine.get_character(conv_id)
         char.background = False
         char.parallel = False
         char.enforce_consistency = False
         emb = MemoEmbedder(char.retriever.embedder)
-        char.retriever.embedder = emb  # so real retrieve() calls (validate_new) hit the same cache
+        setattr(
+            char.retriever, "embedder", emb
+        )  # real retrieve() calls (validate_new) hit the same cache
 
         dia_to_turn = {
             t.dia_id: t for s in dataset_conv.sessions for t in s.turns if t.dia_id is not None
@@ -634,9 +638,7 @@ def build_flip_sample(items: list[dict], n: int, worked_n: int, seed: int) -> di
         old_set, new_set = set(it["old_top20"]), set(it["new_top20"])
         gained = new_set - old_set
         lost = old_set - new_set
-        gained_kinds = Counter(
-            it["new_kinds"][it["new_top20"].index(mid)] for mid in gained
-        )
+        gained_kinds = Counter(it["new_kinds"][it["new_top20"].index(mid)] for mid in gained)
         lost_kinds = Counter(it["old_kinds"][it["old_top20"].index(mid)] for mid in lost)
         rows.append(
             {
@@ -824,8 +826,12 @@ def build_abstention_despite_evidence(items: list[dict]) -> dict:
             ),
         }
 
-    overall_abstain_old = sum(1 for it in items if it["old_abstained"]) / len(items) if items else 0.0
-    overall_abstain_new = sum(1 for it in items if it["new_abstained"]) / len(items) if items else 0.0
+    overall_abstain_old = (
+        sum(1 for it in items if it["old_abstained"]) / len(items) if items else 0.0
+    )
+    overall_abstain_new = (
+        sum(1 for it in items if it["new_abstained"]) / len(items) if items else 0.0
+    )
     return {
         "overall_abstain_rate_old": overall_abstain_old,
         "overall_abstain_rate_new": overall_abstain_new,
@@ -873,7 +879,9 @@ def render_flip_matrix_md(fm: dict) -> str:
 
 def render_top20_aggregate_md(agg: dict) -> str:
     lines = ["# Top-20 composition and evidence-conditional correctness (all common qa items)", ""]
-    lines.append(f"n qa total: {agg['n_qa_total']}, n with evidence resolved: {agg['n_with_evidence_resolved']}")
+    lines.append(
+        f"n qa total: {agg['n_qa_total']}, n with evidence resolved: {agg['n_with_evidence_resolved']}"
+    )
     lines.append("")
     lines.append("## Mean top-20 composition")
     lines.append("")
@@ -886,7 +894,9 @@ def render_top20_aggregate_md(agg: dict) -> str:
     lines.append("")
     lines.append("## Evidence-in-top20 rate")
     lines.append("")
-    lines.append(f"OLD: {_pct(agg['evidence_in_top20_rate_old'])}  NEW: {_pct(agg['evidence_in_top20_rate_new'])}")
+    lines.append(
+        f"OLD: {_pct(agg['evidence_in_top20_rate_old'])}  NEW: {_pct(agg['evidence_in_top20_rate_new'])}"
+    )
     lines.append("")
     lines.append("## Correct-rate conditional on evidence-in-top20 (KEY NUMBER)")
     lines.append("")
@@ -953,7 +963,9 @@ def main(argv: list[str] | None = None) -> None:
         qids_by_conv: dict[str, list[str]] = defaultdict(list)
         for it in items:
             qids_by_conv[it["conv_id"]].append(it["qid"])
-        print(f"validating NEW mode against real MemoryRetriever.retrieve() on {args.validate_n} items...")
+        print(
+            f"validating NEW mode against real MemoryRetriever.retrieve() on {args.validate_n} items..."
+        )
         validation = validate_new(conv_data, qids_by_conv, args.validate_n)
         print(
             f"  exact order match: {validation['exact_order_matches']}/{validation['n']}, "
@@ -978,14 +990,21 @@ def main(argv: list[str] | None = None) -> None:
     items_by_qid = {it["qid"]: it for it in items}
     worked_md = render_worked_examples(items_by_qid, flip_sample["worked_qids"])
     (out_dir / "flip_sample_worked_examples.md").write_text(worked_md)
-    sample_table_lines = ["# 40-sample A-flip table", "", "| qid | cat | ev_old | ev_new | +gained | -lost | gold_in_facts |", "|---|---|---|---|---|---|---|"]
+    sample_table_lines = [
+        "# 40-sample A-flip table",
+        "",
+        "| qid | cat | ev_old | ev_new | +gained | -lost | gold_in_facts |",
+        "|---|---|---|---|---|---|---|",
+    ]
     for r in flip_sample["rows"]:
         sample_table_lines.append(
             f"| {r['qid']} | {r['category']} | {r['evidence_in_old_top20']} | {r['evidence_in_new_top20']} | "
             f"{r['n_gained']} ({r['gained_kinds']}) | {r['n_lost']} ({r['lost_kinds']}) | {r['gold_in_facts']} |"
         )
     (out_dir / "flip_sample.md").write_text("\n".join(sample_table_lines))
-    print(f"sampled {flip_sample['n_sampled']} A flips; {len(flip_sample['worked_qids'])} worked in full")
+    print(
+        f"sampled {flip_sample['n_sampled']} A flips; {len(flip_sample['worked_qids'])} worked in full"
+    )
 
     # Item 3
     top20_agg = build_top20_aggregate(items)

@@ -111,7 +111,13 @@ class TestConsolidationEngine:
                 }
             )
 
-        engine = ConsolidationEngine(storage, FakeLLM(), FakeEmbedder(), "c1", threshold=10)
+        # Tier 3c: default consolidation_keep_sources=True keeps cluster
+        # sources active instead of archiving them — force the legacy
+        # archive-everything path to preserve this test's original intent
+        # (see tests/test_consolidation_keep_sources.py for the new default).
+        engine = ConsolidationEngine(
+            storage, FakeLLM(), FakeEmbedder(), "c1", threshold=10, keep_sources=False
+        )
         stats = engine.consolidate()
 
         assert stats["created"] >= 1

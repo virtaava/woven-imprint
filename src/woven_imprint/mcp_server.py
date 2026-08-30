@@ -431,7 +431,11 @@ def get_stats(character_id: str) -> str:
             "arc_phase": char.arc.current_phase.value,
             "arc_tension": char.arc.tension,
             "memory": {
+                # "buffer" includes sources kept active by consolidation
+                # (Tier 3c, metadata.consolidated_into) — "buffer_unconsolidated"
+                # is the subset not yet claimed by any consolidation pass.
                 "buffer": char.memory.count("buffer"),
+                "buffer_unconsolidated": char.memory.count("buffer", unconsolidated=True),
                 "core": char.memory.count("core"),
                 "bedrock": char.memory.count("bedrock"),
             },

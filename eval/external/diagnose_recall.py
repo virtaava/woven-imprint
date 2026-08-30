@@ -26,26 +26,30 @@ No LLM is called (a ``FakeLLM`` stands in for ``Engine``'s required LLM
 provider — retrieval never calls it). The embedding server at
 ``127.0.0.1:11801`` *is* called, same as the original run.
 
-Outputs:
-    eval/external/runs/diagnostics/recall_diagnostic.json  (rows + aggregates)
-    eval/external/runs/diagnostics/recall_diagnostic.md    (tables, human-readable)
+Outputs (under ``--out-dir``, default ``eval/external/runs/diagnostics/<run-id>/``):
+    recall_diagnostic.json  (rows + aggregates)
+    recall_diagnostic.md    (tables, human-readable)
 
 Run: ``python -m eval.external.diagnose_recall`` (repo root, with the venv
-that has ``woven_imprint`` installed).
+that has ``woven_imprint`` installed). Pass ``--run-id`` to diagnose a
+different run (e.g. ``locomo-mem-v2``); ``--results`` and ``--out-dir``
+override the derived results-file/output-directory paths independently.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import shutil
 import sqlite3
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from woven_imprint import clock
 from woven_imprint.engine import Engine
+from woven_imprint.llm.base import LLMProvider
 
 from tests.helpers import FakeLLM
 
@@ -56,7 +60,7 @@ from .locomo import load_locomo
 RUN_ID = "locomo-mem-v1"
 RESULTS_FILE = RESULTS_DIR / f"external_{RUN_ID}.json"
 RUN_DIR = RUNS_DIR / RUN_ID
-DIAG_DIR = RUNS_DIR / "diagnostics"
+DIAG_DIR = RUNS_DIR / "diagnostics" / RUN_ID
 LOCOMO_PATH = DATA_DIR / "locomo.json"
 
 RETRIEVE_LIMIT = 200  # `retrieve()`'s fused ranking doesn't depend on `limit` (see module docs
@@ -80,19 +84,19 @@ def _fuzzy_hit(evidence_words: list[str], content_words: set[str]) -> bool:
     return (hits / len(evidence_words)) >= FUZZY_THRESHOLD
 
 
-def _copy_db(conv_id: str) -> Path:
-    """Copy ``<conv_id>.db`` (+ -wal/-shm if present) from the run dir into DIAG_DIR.
+def _copy_db(conv_id: str, run_dir: Path = RUN_DIR, diag_dir: Path = DIAG_DIR) -> Path:
+    """Copy ``<conv_id>.db`` (+ -wal/-shm if present) from ``run_dir`` into ``diag_dir``.
 
     Always re-copies from the source run dir so the script is safely re-runnable and never
     drifts from the original run's data; the original is never opened directly.
     """
-    DIAG_DIR.mkdir(parents=True, exist_ok=True)
-    src = RUN_DIR / f"{conv_id}.db"
-    dst = DIAG_DIR / f"{conv_id}.db"
+    diag_dir.mkdir(parents=True, exist_ok=True)
+    src = run_dir / f"{conv_id}.db"
+    dst = diag_dir / f"{conv_id}.db"
     shutil.copy2(src, dst)
     for suffix in ("-wal", "-shm"):
-        s = RUN_DIR / f"{conv_id}.db{suffix}"
-        d = DIAG_DIR / f"{conv_id}.db{suffix}"
+        s = run_dir / f"{conv_id}.db{suffix}"
+        d = diag_dir / f"{conv_id}.db{suffix}"
         if s.exists():
             shutil.copy2(s, d)
         elif d.exists():
@@ -200,7 +204,9 @@ def _process_conversation(
         t.dia_id: t for s in dataset_conv.sessions for t in s.turns if t.dia_id is not None
     }
 
-    engine = Engine(db_path=str(db_path), llm=FakeLLM(), embedding=embedder())
+    # FakeLLM (tests/helpers) is a structural stand-in, not a nominal LLMProvider
+    # subclass — retrieval never calls it, so the cast is safe.
+    engine = Engine(db_path=str(db_path), llm=cast(LLMProvider, FakeLLM()), embedding=embedder())
     char = engine.get_character(conv_id)
     char.background = False
     char.parallel = False
@@ -342,8 +348,10 @@ def _not_stored_examples(rows: list[dict], n: int = 10) -> list[dict]:
     return out
 
 
-def build_diagnostics() -> dict:
-    results = json.loads(RESULTS_FILE.read_text())
+def build_diagnostics(
+    results_file: Path = RESULTS_FILE, run_dir: Path = RUN_DIR, diag_dir: Path = DIAG_DIR
+) -> dict:
+    results = json.loads(results_file.read_text())
     all_conversations = results["conversations"]
     qa_records = [r for r in all_conversations if r.get("kind") == "qa"]
 
@@ -364,7 +372,7 @@ def build_diagnostics() -> dict:
         dataset_conv = dataset_by_id.get(conv_id)
         if dataset_conv is None:
             continue
-        db_path = _copy_db(conv_id)
+        db_path = _copy_db(conv_id, run_dir=run_dir, diag_dir=diag_dir)
         raw_rows = _load_all_memory_rows(db_path, conv_id)
         all_raw_memory_rows.extend(raw_rows)
         for r in raw_rows:
@@ -534,13 +542,41 @@ def render_markdown(data: dict) -> str:
     return "\n".join(lines)
 
 
-def main() -> None:
-    data = build_diagnostics()
-    DIAG_DIR.mkdir(parents=True, exist_ok=True)
-    (DIAG_DIR / "recall_diagnostic.json").write_text(json.dumps(data, indent=2, default=str))
-    (DIAG_DIR / "recall_diagnostic.md").write_text(render_markdown(data))
-    print(f"wrote {DIAG_DIR / 'recall_diagnostic.json'}")
-    print(f"wrote {DIAG_DIR / 'recall_diagnostic.md'}")
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0] if __doc__ else None)
+    parser.add_argument(
+        "--run-id",
+        default=RUN_ID,
+        help=f"Run id to diagnose (default: {RUN_ID!r}).",
+    )
+    parser.add_argument(
+        "--results",
+        default=None,
+        help="Path to the run's judged results JSON "
+        "(default: eval/results/external_<run-id>.json).",
+    )
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help="Directory to write recall_diagnostic.{json,md} into "
+        "(default: eval/external/runs/diagnostics/<run-id>/).",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
+    run_id = args.run_id
+    results_file = Path(args.results) if args.results else RESULTS_DIR / f"external_{run_id}.json"
+    run_dir = RUNS_DIR / run_id
+    out_dir = Path(args.out_dir) if args.out_dir else RUNS_DIR / "diagnostics" / run_id
+
+    data = build_diagnostics(results_file=results_file, run_dir=run_dir, diag_dir=out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "recall_diagnostic.json").write_text(json.dumps(data, indent=2, default=str))
+    (out_dir / "recall_diagnostic.md").write_text(render_markdown(data))
+    print(f"wrote {out_dir / 'recall_diagnostic.json'}")
+    print(f"wrote {out_dir / 'recall_diagnostic.md'}")
 
 
 if __name__ == "__main__":

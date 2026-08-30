@@ -121,6 +121,10 @@ def test_job_consolidate_happy_path(monkeypatch):
     engine = make_test_engine()
     char = engine.create_character("Piper")
     char.consolidator.threshold = 10
+    # Tier 3c: default consolidation_keep_sources=True keeps cluster sources
+    # active instead of archiving them — force the legacy archive-everything
+    # path to preserve this test's original intent.
+    char.consolidator.keep_sources = False
     for i in range(20):
         char.memory.add(f"the lake was calm on day {i}", tier="buffer")
 

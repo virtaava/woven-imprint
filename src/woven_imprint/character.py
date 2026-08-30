@@ -920,10 +920,13 @@ class Character:
         """Compress buffer memories into core memories.
 
         Clusters semantically similar buffer entries and summarizes them.
-        Original entries are archived, not deleted.
+        Sources stay active and retrievable (metadata.consolidated_into)
+        unless `consolidation_keep_sources` is False, in which case original
+        entries are archived, not deleted (the pre-Tier-3c behavior).
 
         Returns:
-            Stats dict: {clusters, summarized, created, archived}.
+            Stats dict: {clusters, summarized, created, archived, kept,
+            promoted, seen}.
         """
         return self.consolidator.consolidate()
 

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (behavior) — Tier 3c (recall: keep consolidated sources)
+- **Consolidation keeps source memories active and retrievable** (config
+  `memory.consolidation_keep_sources`, default `true`): a multi-member buffer
+  cluster still gets a summarized `[Consolidated]` core row, but its sources
+  stay `active`/`buffer` and gain `metadata.consolidated_into`/
+  `consolidated_at` instead of being archived. A singleton with importance
+  `>= 0.6` is now **promoted in place** (tier flipped to `core` on the same
+  row, `metadata.promoted_from_buffer = true`) instead of being copied and
+  archived, so its text never appears twice in retrieval; a singleton below
+  the bar gets `metadata.consolidation_seen = true` so it stops recounting
+  toward the consolidation threshold. `needs_consolidation()` and the
+  consolidation chunk query now count/pull only *unconsolidated* buffer rows.
+  `ConsolidationEngine.consolidate()`'s stats dict gains `kept`, `promoted`,
+  `seen` alongside `archived` (always present, `0` when the flag is off).
+  Setting `memory.consolidation_keep_sources: false` restores the prior
+  archive-everything behavior byte-for-byte.
+- **`eval/external/diagnose_recall.py`** gains `--run-id`, `--results`, and
+  `--out-dir` CLI arguments (defaults unchanged in spirit: `locomo-mem-v1`,
+  `eval/results/external_<run-id>.json`,
+  `eval/external/runs/diagnostics/<run-id>/`) so it can diagnose a different
+  run without editing the script.
+
 ### Added (Tier 3b — external benchmarks · library enablers)
 - **`OpenAILLM(extra_body=...)`** — an optional dict forwarded verbatim into every
   `chat.completions.create` call (`generate`, `generate_stream`, `generate_json`) when set, e.g.

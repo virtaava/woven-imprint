@@ -488,6 +488,12 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--skip-validation", action="store_true")
     parser.add_argument("--limit-convs", type=int, default=None, help="debug: only process N conversations")
+    parser.add_argument(
+        "--followup",
+        action="store_true",
+        help="run the coordinator follow-up sweep (a/b/c/d) instead of the main 12-variant pass; "
+        "reuses cached embeddings, appends to the existing report instead of overwriting it",
+    )
     args = parser.parse_args(argv)
 
     t_start = time.time()
@@ -584,6 +590,39 @@ def main(argv: list[str] | None = None) -> None:
             f"[{time.time()-t_start:.1f}s] {conv_id}: search_document +{n_new} new "
             f"({len(sd_cache)} total), contextualized +{n_new_ctx} new ({len(ctx_cache)} total, buffer-only)"
         )
+
+    if args.followup:
+        dated_cache_path = CACHE_DIR / "query_search_query_dated.pkl"
+        query_dated_cache = _load_cache(dated_cache_path)
+        n_new = _embed_missing(
+            query_dated_cache,
+            [
+                (i.qid, f"{SEARCH_QUERY_PREFIX}[{i.asked_at.date().isoformat()}] {i.question}")
+                for i in all_items
+            ],
+            emb.embed_batch,
+        )
+        _save_cache(dated_cache_path, query_dated_cache)
+        print(
+            f"[{time.time()-t_start:.1f}s] dated query embeddings: +{n_new} new, "
+            f"{len(query_dated_cache)} total"
+        )
+        followup_out = run_followup(
+            conv_data=conv_data,
+            qa_by_conv=qa_by_conv,
+            plain_cache=plain_cache,
+            sq_cache=sq_cache,
+            sq_dated_cache=query_dated_cache,
+            sd_caches=sd_caches,
+            ctx_caches=ctx_caches,
+        )
+        (OUT_DIR / "ranking_followup_results.json").write_text(
+            json.dumps(followup_out, indent=2, default=str)
+        )
+        _append_followup_report(followup_out)
+        print(f"[{time.time()-t_start:.1f}s] wrote {OUT_DIR / 'ranking_followup_results.json'}")
+        print(f"[{time.time()-t_start:.1f}s] appended follow-up section to ranking_experiments_report.md")
+        return
 
     # ── Validation (V0 reimplementation vs real product retrieve()) ──
     validation: dict = {}
@@ -727,6 +766,297 @@ def _write_report(out: dict) -> None:
     lines.append(out["retrieved_but_wrong_note"])
     lines.append("")
     (OUT_DIR / "ranking_experiments_report.md").write_text("\n".join(lines))
+
+
+
+# ── Follow-up sweep (coordinator request 2026-08-30) ──────────────────────
+#
+# (a) V0-style fusion (raw/stored content embeddings, no prefixes) swept over
+#     weight_recency == weight_importance in {0, 0.1, 0.25, 0.5} x
+#     weight_relationship in {0, 1} -- 8 cells. Purpose: find a product
+#     default that keeps a *little* recency/importance signal if it's free.
+# (b) V6b-style fusion (contextualized buffer docs, "search_query: " prefixed
+#     queries) swept over the same recency/importance grid (0, 0.1, 0.25) x
+#     rrf_k in {20, 60, 120} -- 9 cells; then weight_keyword in
+#     {0.5, 1.0, 2.0} at the best (recency/importance, rrf_k) cell.
+# (d) V6b but the query is ALSO contextualized with the question's asked_at
+#     date ("search_query: [YYYY-MM-DD] question") -- does a date anchor on
+#     the query side help category 2 (temporal)?
+#
+# No new embedding calls for (a)/(b): both reuse the exact caches the main
+# run already built (the stored embedding blob for (a), doc_search_document_*
+# + doc_contextualized_* for (b)). (d) needs one new query-embedding variant
+# (date-prefixed text), cached to query_search_query_dated.pkl so a rerun
+# costs nothing either.
+
+
+def _eval_variant(
+    variant,
+    conv_data,
+    qa_by_conv,
+    query_cache,
+    doc_vecs_by_conv,
+):
+    """Rank of the best evidence memory for every non-excluded qa item, under `variant`,
+    using caller-supplied query/doc embeddings (bypasses _query_vec_for/_doc_vecs_for's
+    variant.query_prefix/doc_variant dispatch so sweep cells don't need placeholder Variant
+    fields)."""
+    ranks = []
+    for conv_id, conv in conv_data.items():
+        doc_vecs = doc_vecs_by_conv[conv_id]
+        rel_target = conv.dataset_conv.user_name
+        for item in qa_by_conv[conv_id]:
+            if item.excluded:
+                continue
+            clock.override(item.asked_at)
+            qv = query_cache[item.qid]
+            ranked = fuse_rank(
+                conv=conv, variant=variant, query=item.question, query_vec=qv,
+                doc_vecs=doc_vecs, relationship_target=rel_target,
+            )
+            ranks.append(rank_of_best_evidence(ranked, item.evidence_active_ids))
+    clock.override(None)
+    return ranks
+
+
+def run_followup(
+    *,
+    conv_data,
+    qa_by_conv,
+    plain_cache,
+    sq_cache,
+    sq_dated_cache,
+    sd_caches,
+    ctx_caches,
+):
+    doc_vecs_stored = {
+        conv_id: {m["id"]: np.asarray(m["embedding"], dtype=np.float32) for m in conv.active}
+        for conv_id, conv in conv_data.items()
+    }
+    doc_vecs_ctx = {
+        conv_id: {
+            m["id"]: ctx_caches[conv_id].get(m["id"], sd_caches[conv_id][m["id"]])
+            for m in conv.active
+        }
+        for conv_id, conv in conv_data.items()
+    }
+
+    # ── (a) V0 fusion, recency=importance grid x relationship grid ──
+    a_rows = []
+    for wr in (0.0, 0.1, 0.25, 0.5):
+        for wrel in (0.0, 1.0):
+            v = Variant(
+                "a_wr{}_wrel{}".format(wr, wrel), fusion="rrf", weight_semantic=1.0,
+                weight_keyword=1.0, weight_recency=wr, weight_importance=wr,
+                weight_relationship=wrel, rrf_k=60,
+            )
+            ranks = _eval_variant(v, conv_data, qa_by_conv, plain_cache, doc_vecs_stored)
+            row = {"weight_recency_importance": wr, "weight_relationship": wrel,
+                   "recall": recall_at_k(ranks, K_LIST)}
+            a_rows.append(row)
+            print("  (a) wr=wi={} wrel={}: {}".format(
+                wr, wrel, ", ".join("@{}={:.1f}%".format(k, row["recall"][k] * 100) for k in K_LIST)
+            ))
+
+    # ── (b) V6b fusion, recency=importance x rrf_k grid ──
+    b_rows = []
+    for wr in (0.0, 0.1, 0.25):
+        for k in (20, 60, 120):
+            v = Variant(
+                "b_wr{}_k{}".format(wr, k), fusion="rrf", weight_semantic=1.0, weight_keyword=1.0,
+                weight_recency=wr, weight_importance=wr, weight_relationship=1.0, rrf_k=k,
+            )
+            ranks = _eval_variant(v, conv_data, qa_by_conv, sq_cache, doc_vecs_ctx)
+            row = {"weight_recency_importance": wr, "rrf_k": k, "recall": recall_at_k(ranks, K_LIST)}
+            b_rows.append(row)
+            print("  (b) wr=wi={} rrf_k={}: {}".format(
+                wr, k, ", ".join("@{}={:.1f}%".format(kk, row["recall"][kk] * 100) for kk in K_LIST)
+            ))
+
+    best_b = max(b_rows, key=lambda row: row["recall"][20])
+
+    # ── (b) keyword-weight sweep at the best (recency/importance, rrf_k) cell ──
+    b_kw_rows = []
+    for wk in (0.5, 1.0, 2.0):
+        v = Variant(
+            "b_kw{}".format(wk), fusion="rrf", weight_semantic=1.0, weight_keyword=wk,
+            weight_recency=best_b["weight_recency_importance"],
+            weight_importance=best_b["weight_recency_importance"],
+            weight_relationship=1.0, rrf_k=best_b["rrf_k"],
+        )
+        ranks = _eval_variant(v, conv_data, qa_by_conv, sq_cache, doc_vecs_ctx)
+        row = {"weight_keyword": wk, "recall": recall_at_k(ranks, K_LIST)}
+        b_kw_rows.append(row)
+        print("  (b) keyword sweep @best cell wk={}: {}".format(
+            wk, ", ".join("@{}={:.1f}%".format(kk, row["recall"][kk] * 100) for kk in K_LIST)
+        ))
+
+    # ── (d) V6b (best-b weights) but the query is ALSO date-contextualized ──
+    v_d = Variant(
+        "d_dated_query", fusion="rrf", weight_semantic=1.0, weight_keyword=1.0,
+        weight_recency=best_b["weight_recency_importance"],
+        weight_importance=best_b["weight_recency_importance"],
+        weight_relationship=1.0, rrf_k=best_b["rrf_k"],
+    )
+    items_by_id = {i.qid: i for items in qa_by_conv.values() for i in items}
+    ranks_d = []
+    id_order = []
+    for conv_id, conv in conv_data.items():
+        rel_target = conv.dataset_conv.user_name
+        for item in qa_by_conv[conv_id]:
+            if item.excluded:
+                continue
+            clock.override(item.asked_at)
+            qv = sq_dated_cache[item.qid]
+            ranked = fuse_rank(
+                conv=conv, variant=v_d, query=item.question, query_vec=qv,
+                doc_vecs=doc_vecs_ctx[conv_id], relationship_target=rel_target,
+            )
+            ranks_d.append(rank_of_best_evidence(ranked, item.evidence_active_ids))
+            id_order.append(item.qid)
+    clock.override(None)
+    d_overall = recall_at_k(ranks_d, K_LIST)
+    d_per_cat = {}
+    for cat in sorted(set(items_by_id[qid].category for qid in id_order)):
+        cat_ranks = [r for qid, r in zip(id_order, ranks_d) if items_by_id[qid].category == cat]
+        d_per_cat[cat] = recall_at_k(cat_ranks, (20,))[20]
+    print("  (d) dated query: " + ", ".join("@{}={:.1f}%".format(k, d_overall[k] * 100) for k in K_LIST))
+    print("  (d) dated query per-category @20: {}".format(d_per_cat))
+
+    # Same v_d weights/rrf_k but WITHOUT the date-in-query change, as the direct baseline
+    # for isolating (d)'s effect (equivalent to "b" at its own best cell).
+    ranks_b_best = _eval_variant(v_d, conv_data, qa_by_conv, sq_cache, doc_vecs_ctx)
+    b_best_overall = recall_at_k(ranks_b_best, K_LIST)
+    b_best_per_cat = {}
+    for cat in sorted(set(items_by_id[qid].category for qid in id_order)):
+        cat_ranks = [r for qid, r in zip(id_order, ranks_b_best) if items_by_id[qid].category == cat]
+        b_best_per_cat[cat] = recall_at_k(cat_ranks, (20,))[20]
+
+    doc_template_lines = [
+        "Buffer-tier memories only: `f\"search_document: [{date}] {speaker}: {content}\"`",
+        "where date = `(m['created_at'] or '')[:10]` (SQLite TEXT timestamp's YYYY-MM-DD",
+        "prefix, i.e. the memory's created_at, not the conversation/session date) and speaker",
+        "is derived purely from the memories.role column (NOT metadata.user_id):",
+        "role=='user' -> conv.user_name (LoCoMo speaker_a), role=='character' ->",
+        "conv.character_name (speaker_b) -- buffer rows only ever carry role in",
+        "{'user','character'} in this dataset. `content` is the stored memory content",
+        "UNCHANGED, which for buffer rows already carries an ingestion-time speaker bracket",
+        "tag (e.g. '[User] Hey Mel!...' or '[Melanie] Hey Caroline!...'), so the speaker name",
+        "appears TWICE in the final embedded string -- once from the injected 'speaker:'",
+        "prefix and once from that pre-existing bracket tag. This redundancy wasn't",
+        "deliberate and is worth resolving (e.g. strip the bracket tag before injecting the",
+        "context prefix) when implementing in production.",
+        "",
+        "Core 'extraction' fact rows (e.g. \"Caroline attended an LGBTQ support group",
+        "yesterday.\", metadata.source='extraction'), core '[Consolidated] <summary>' rows",
+        "(metadata.type='consolidation', role='observation', content literally prefixed",
+        "'[Consolidated] ' by ConsolidationEngine._consolidate_cluster) and the 2 bedrock",
+        "persona/self-description rows were NOT given date/speaker context in this",
+        "experiment -- the buffer-only filter (tier == 'buffer') skips all of them, so they",
+        "fall back to the plain V5-style `f\"search_document: {content}\"` embedding (no",
+        "context at all). If this ships, core/bedrock rows need their own template decision",
+        "(they have no natural single 'speaker'; role is always 'observation') rather than",
+        "silently inheriting the no-context fallback.",
+    ]
+    doc_template_note = "\n".join(doc_template_lines)
+
+    return {
+        "a": a_rows,
+        "b_grid": b_rows,
+        "b_best_cell": {
+            "weight_recency_importance": best_b["weight_recency_importance"],
+            "rrf_k": best_b["rrf_k"],
+        },
+        "b_keyword_sweep": b_kw_rows,
+        "b_best_no_date_query": {"overall": b_best_overall, "per_category_at_20": b_best_per_cat},
+        "d_dated_query": {"overall": d_overall, "per_category_at_20": d_per_cat},
+        "doc_template_note": doc_template_note,
+    }
+
+
+def _append_followup_report(out):
+    path = OUT_DIR / "ranking_experiments_report.md"
+    existing = path.read_text() if path.exists() else ""
+
+    lines = ["", "---", "", "# Follow-up sweep (coordinator request, 2026-08-30)", ""]
+    lines.append(
+        "No new embedding calls for (a)/(b) -- both reuse the main run's cached stored / "
+        "search_document / contextualized embeddings. (d) adds one new query-embedding "
+        "variant (date-prefixed queries), cached to `query_search_query_dated.pkl`."
+    )
+    lines.append("")
+
+    lines.append("## (a) V0 fusion (raw/stored content embeddings) -- recency=importance x relationship weight")
+    lines.append("")
+    lines.append("| w_recency=w_importance | w_relationship | @10 | @20 | @50 |")
+    lines.append("|---:|---:|---:|---:|---:|")
+    for row in out["a"]:
+        r = row["recall"]
+        lines.append("| {} | {} | {:.1f}% | {:.1f}% | {:.1f}% |".format(
+            row["weight_recency_importance"], row["weight_relationship"],
+            r[10] * 100, r[20] * 100, r[50] * 100,
+        ))
+    lines.append("")
+
+    lines.append("## (b) V6b fusion (contextualized docs) -- recency=importance x rrf_k")
+    lines.append("")
+    lines.append("| w_recency=w_importance | rrf_k | @10 | @20 | @50 |")
+    lines.append("|---:|---:|---:|---:|---:|")
+    for row in out["b_grid"]:
+        r = row["recall"]
+        lines.append("| {} | {} | {:.1f}% | {:.1f}% | {:.1f}% |".format(
+            row["weight_recency_importance"], row["rrf_k"], r[10] * 100, r[20] * 100, r[50] * 100,
+        ))
+    lines.append("")
+    bc = out["b_best_cell"]
+    lines.append(
+        "Best (b) cell by recall@20: weight_recency=weight_importance={}, rrf_k={}.".format(
+            bc["weight_recency_importance"], bc["rrf_k"]
+        )
+    )
+    lines.append("")
+    lines.append("### (b) keyword-weight sweep at the best cell")
+    lines.append("")
+    lines.append("| weight_keyword | @10 | @20 | @50 |")
+    lines.append("|---:|---:|---:|---:|")
+    for row in out["b_keyword_sweep"]:
+        r = row["recall"]
+        lines.append("| {} | {:.1f}% | {:.1f}% | {:.1f}% |".format(
+            row["weight_keyword"], r[10] * 100, r[20] * 100, r[50] * 100,
+        ))
+    lines.append("")
+
+    lines.append("## (c) V6 document embedding template (for ingestion-path parity)")
+    lines.append("")
+    lines.append(out["doc_template_note"])
+    lines.append("")
+
+    lines.append("## (d) V6b with the query ALSO date-contextualized")
+    lines.append("")
+    lines.append("| | @10 | @20 | @50 | cat1@20 | cat2@20 | cat3@20 | cat4@20 |")
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|")
+    base = out["b_best_no_date_query"]
+    dd = out["d_dated_query"]
+    bo, do = base["overall"], dd["overall"]
+    bp, dp = base["per_category_at_20"], dd["per_category_at_20"]
+    lines.append("| b best cell, plain query | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% |".format(
+        bo[10] * 100, bo[20] * 100, bo[50] * 100,
+        bp.get("1", 0) * 100, bp.get("2", 0) * 100, bp.get("3", 0) * 100, bp.get("4", 0) * 100,
+    ))
+    lines.append("| + dated query ('[date] question') | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% |".format(
+        do[10] * 100, do[20] * 100, do[50] * 100,
+        dp.get("1", 0) * 100, dp.get("2", 0) * 100, dp.get("3", 0) * 100, dp.get("4", 0) * 100,
+    ))
+    lines.append("")
+    lines.append(
+        "Note: LoCoMo's `asked_at` is computed once per conversation (last session's time + 1 "
+        "day), not per question -- every question in a conversation shares the same date, so "
+        "this variant tests whether a constant per-conversation date anchor on the query "
+        "shifts the embedding geometry, not whether per-question dates help."
+    )
+    lines.append("")
+
+    path.write_text(existing + "\n".join(lines))
 
 
 if __name__ == "__main__":

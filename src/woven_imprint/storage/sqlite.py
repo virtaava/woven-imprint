@@ -6,6 +6,7 @@ import json
 import sqlite3
 import struct
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -388,6 +389,43 @@ class SQLiteStorage:
         with self._lock:
             rows = self._conn.execute(q, params).fetchall()
             return [self._row_to_memory(r) for r in rows]
+
+    def iter_memory_rows_for_reembed(
+        self, character_id: str, page: int = 500
+    ) -> Iterator[list[dict]]:
+        """Yield pages of up to `page` active memory rows for `character_id`,
+        each row a plain dict with only `id`/`content`/`role`/`created_at`/
+        `metadata` — the `embedding` column is never selected, so no vector
+        is ever materialized by this path.
+
+        Used by `MemoryStore.reembed()` to stream a full history without
+        loading every row (embeddings included) into memory at once, the way
+        `get_memories(..., limit=None)` does. Paged by rowid — keyset
+        pagination (`WHERE rowid > <last id seen>`), not `OFFSET` — so a
+        page's cost doesn't grow with how far into the table it is.
+        """
+        last_rowid = 0
+        while True:
+            with self._lock:
+                rows = self._conn.execute(
+                    """SELECT rowid, id, content, role, created_at, metadata FROM memories
+                       WHERE character_id = ? AND status = 'active' AND rowid > ?
+                       ORDER BY rowid ASC LIMIT ?""",
+                    (character_id, last_rowid, page),
+                ).fetchall()
+            if not rows:
+                return
+            last_rowid = rows[-1]["rowid"]
+            yield [
+                {
+                    "id": r["id"],
+                    "content": r["content"],
+                    "role": r["role"],
+                    "created_at": r["created_at"],
+                    "metadata": json.loads(r["metadata"] or "{}"),
+                }
+                for r in rows
+            ]
 
     def get_memory(self, memory_id: str) -> dict | None:
         with self._lock:
@@ -789,7 +827,12 @@ class SQLiteStorage:
         certainty: float | None = None,
         importance: float | None = None,
         metadata: dict | None = None,
+        memory_id: str | None = None,
     ) -> None:
+        """`memory_id` re-links the fact to a different memory row — used by
+        `FactStore.edit()`'s shared-row guard, which relinks an edited fact to a
+        freshly created memory instead of rewriting a row still referenced by
+        another active fact."""
         sets: list[str] = []
         params: list[Any] = []
         if object is not None:
@@ -807,6 +850,9 @@ class SQLiteStorage:
         if metadata is not None:
             sets.append("metadata = ?")
             params.append(json.dumps(metadata))
+        if memory_id is not None:
+            sets.append("memory_id = ?")
+            params.append(memory_id)
         if not sets:
             return
         params.append(fact_id)

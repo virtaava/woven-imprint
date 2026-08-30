@@ -63,7 +63,7 @@ class MemoryConfig:
     tier_boost_bedrock: float = 0.35
     tier_boost_core: float = 0.2
     tier_boost_buffer: float = 0.0
-    # Buffer memories are embedded with date+speaker context (see
+    # All memories (not just buffer-tier) are embedded with date+speaker context (see
     # memory/store.py::build_embed_text) instead of raw content —
     # e.g. "[2023-05-08] User: caroline: I adopted a cat" instead of
     # "[User] I adopted a cat". `false` restores the pre-Tier-3d exact-content

@@ -314,7 +314,9 @@ def build_cases(run_id: str, out_dir: Path, k_override: int | None) -> dict:
         for conv_id in sorted(by_conv):
             dataset_conv = dataset_by_id[conv_id]
             db_path = out_dir / f"{conv_id}.db"  # already copied by build_diagnostics above
-            engine = Engine(db_path=str(db_path), llm=cast(LLMProvider, FakeLLM()), embedding=embedder())
+            engine = Engine(
+                db_path=str(db_path), llm=cast(LLMProvider, FakeLLM()), embedding=embedder()
+            )
             char = engine.get_character(conv_id)
             char.background = False
             char.parallel = False
@@ -333,9 +335,7 @@ def build_cases(run_id: str, out_dir: Path, k_override: int | None) -> dict:
 
     # Cross-check reconstructed memory count against the run's own recorded `memories_used`,
     # for every case (cheap once already computed) -- not just a sample, since it's free here.
-    qa_records = {
-        r["qid"]: r for r in results["conversations"] if r.get("kind") == "qa"
-    }
+    qa_records = {r["qid"]: r for r in results["conversations"] if r.get("kind") == "qa"}
     for c in cases:
         rec = qa_records.get(c["qid"], {})
         c["memories_used_recorded"] = rec.get("memories_used")
@@ -343,7 +343,11 @@ def build_cases(run_id: str, out_dir: Path, k_override: int | None) -> dict:
         c["memories_used_match"] = c["memories_used_recorded"] == c["memories_used_reconstructed"]
         if not c["memories_used_match"]:
             verify_mismatches.append(
-                {"qid": c["qid"], "recorded": c["memories_used_recorded"], "reconstructed": c["memories_used_reconstructed"]}
+                {
+                    "qid": c["qid"],
+                    "recorded": c["memories_used_recorded"],
+                    "reconstructed": c["memories_used_reconstructed"],
+                }
             )
 
     for c in cases:
@@ -494,7 +498,9 @@ def render_category_report(data: dict) -> str:
         lines.append("")
         lines.append("Mismatches:")
         for m in mism[:20]:
-            lines.append(f"- {m['qid']}: recorded={m['recorded']}, reconstructed={m['reconstructed']}")
+            lines.append(
+                f"- {m['qid']}: recorded={m['recorded']}, reconstructed={m['reconstructed']}"
+            )
     lines.append("")
 
     return "\n".join(lines)
@@ -525,16 +531,22 @@ def _first_example_of_shape(out_dir: Path, cases: list[dict]) -> dict[str, str]:
         for r in rows:
             content = r["content"] or ""
             if "user_turn" not in quotes and r["tier"] == "buffer" and content.startswith("[User]"):
-                quotes["user_turn"] = f"({conv_id}, {r['created_at'][:10] if r['created_at'] else ''}) {content[:220]}"
+                quotes["user_turn"] = (
+                    f"({conv_id}, {r['created_at'][:10] if r['created_at'] else ''}) {content[:220]}"
+                )
             elif (
                 "character_turn" not in quotes
                 and r["tier"] == "buffer"
                 and content.startswith("[")
                 and not content.startswith("[User]")
             ):
-                quotes["character_turn"] = f"({conv_id}, {r['created_at'][:10] if r['created_at'] else ''}) {content[:220]}"
+                quotes["character_turn"] = (
+                    f"({conv_id}, {r['created_at'][:10] if r['created_at'] else ''}) {content[:220]}"
+                )
             elif "consolidated" not in quotes and content.startswith("[Consolidated]"):
-                quotes["consolidated"] = f"({conv_id}, {r['created_at'][:10] if r['created_at'] else ''}) {content[:400]}"
+                quotes["consolidated"] = (
+                    f"({conv_id}, {r['created_at'][:10] if r['created_at'] else ''}) {content[:400]}"
+                )
         if len(quotes) >= 3:
             break
     return quotes
@@ -590,9 +602,9 @@ def render_format_quotes(out_dir: Path, cases: list[dict]) -> str:
         "- **Absolute vs. relative date**: the row's real `created_at` timestamp (full "
         "date+time) is reduced to a `(YYYY-MM-DD, N days/months ago)` prefix — the *time of day* "
         "is dropped, and the relative phrase is computed against the *question's* asked_at, not "
-        "against any relative-time phrase embedded in the turn's own text (e.g. \"next month\") "
+        'against any relative-time phrase embedded in the turn\'s own text (e.g. "next month") '
         "— the model has to combine the two itself.",
-        "- **`certainty`**: only shown when < 0.5 (`\" (uncertain)\"` tag); a certainty of "
+        '- **`certainty`**: only shown when < 0.5 (`" (uncertain)"` tag); a certainty of '
         "e.g. 0.6 renders identically to 1.0.",
         "- **`metadata.consolidated_into` / provenance links**: a consolidated summary's source "
         "turns (kept retrievable per `memory.consolidation_keep_sources`) carry no visible link "
@@ -630,8 +642,10 @@ def render_worked_examples(cases: list[dict], n: int, seed: int) -> str:
 
     lines = [f"# {n} worked examples", ""]
     for i, c in enumerate(chosen, 1):
-        lines.append(f"## {i}. {c['qid']} (loco-cat {c['category_locomo']}, {c['response_class']}, "
-                     f"primary={c['primary_category']})")
+        lines.append(
+            f"## {i}. {c['qid']} (loco-cat {c['category_locomo']}, {c['response_class']}, "
+            f"primary={c['primary_category']})"
+        )
         lines.append("")
         lines.append(f"- **Question**: {c['question']!r}")
         lines.append(f"- **Gold**: {c['gold']!r}")
@@ -725,11 +739,11 @@ def render_recommendation(data: dict) -> str:
         "## Is the abstention instruction the main cause?",
         "",
         f"{abstain_total}/{n} ({abstain_total / n:.0%}) of these cases abstained outright "
-        '(\"Not mentioned\") despite evidence sitting in the block. Of those, '
+        '("Not mentioned") despite evidence sitting in the block. Of those, '
         f"{e_count} are classified `e_explicit_evidence_abstained` — single-hop, the RENDERED "
         "(post-truncation) evidence line verbatim contains the gold answer, model still "
-        "declined. That is real signal that the QA_SYSTEM rule (\"If the memories do not contain "
-        "the answer, reply exactly: Not mentioned\") over-fires — but at "
+        'declined. That is real signal that the QA_SYSTEM rule ("If the memories do not contain '
+        'the answer, reply exactly: Not mentioned") over-fires — but at '
         f"{e_count}/{n} ({e_count / n:.0%}) it is smaller than the truncation exposure above. "
         "**Flag: the abstention instruction is a real, secondary lever, not the main cause** — "
         f"it plausibly compounds every other category (a model handed a cut-off fragment, an "
@@ -790,14 +804,20 @@ def render_recommendation(data: dict) -> str:
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0] if __doc__ else None)
-    parser.add_argument("--run-id", default=RUN_ID, help=f"Run id to analyze (default: {RUN_ID!r}).")
+    parser.add_argument(
+        "--run-id", default=RUN_ID, help=f"Run id to analyze (default: {RUN_ID!r})."
+    )
     parser.add_argument(
         "--out-dir",
         default=None,
         help="Directory to write outputs into (default: eval/external/runs/diagnostics/abstain/<run-id>/).",
     )
-    parser.add_argument("--k", type=int, default=None, help="Override top-K (default: run's own config.k).")
-    parser.add_argument("--n-examples", type=int, default=12, help="Number of worked examples (default 12).")
+    parser.add_argument(
+        "--k", type=int, default=None, help="Override top-K (default: run's own config.k)."
+    )
+    parser.add_argument(
+        "--n-examples", type=int, default=12, help="Number of worked examples (default 12)."
+    )
     parser.add_argument("--seed", type=int, default=7, help="RNG seed for worked-example sampling.")
     return parser.parse_args(argv)
 

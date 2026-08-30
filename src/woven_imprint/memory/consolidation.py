@@ -67,6 +67,7 @@ class ConsolidationEngine:
         threshold: int = 100,
         similarity: float = 0.75,
         keep_sources: bool | None = None,
+        embed_fn=None,
     ):
         self.storage = storage
         self.llm = llm
@@ -78,6 +79,20 @@ class ConsolidationEngine:
         # at call time"; an explicit True/False overrides the config (used by tests
         # that want deterministic behavior regardless of the ambient config).
         self.keep_sources = keep_sources
+        # Optional `(content, role, created_at, metadata) -> list[float]`
+        # callable — typically `MemoryStore.embed_for`, injected by Character —
+        # so a consolidated summary's vector is the same contextualized text
+        # every other write path embeds instead of raw `summary`. Falls back
+        # to `embedder.embed(content)` (still dimension-guarded) when absent,
+        # for direct/test construction that never wires it up.
+        self.embed_fn = embed_fn
+
+    def _embed(self, content: str, *, created_at: str | None) -> list[float]:
+        if self.embed_fn is not None:
+            return self.embed_fn(content, role="observation", created_at=created_at, metadata=None)
+        embedding = self.embedder.embed(content)
+        guard_embedding_dimension(self.storage, embedding)
+        return embedding
 
     def _resolve_keep_sources(self) -> bool:
         if self.keep_sources is not None:
@@ -213,24 +228,23 @@ class ConsolidationEngine:
             if not summary:
                 continue
 
-            # Compute embedding for the summary
-            embedding = self.embedder.embed(summary)
-            # Apply the same dimension guard save_memory's sibling path
-            # (MemoryStore.add) enforces — consolidation writes summary
-            # memories directly via storage.save_memory, bypassing that
-            # guard, so a swapped embedder could otherwise write a
-            # mixed-dimension vector on this nightly path silently.
-            guard_embedding_dimension(self.storage, embedding)
-
             # Compute importance as max of cluster
             max_importance = max(m.get("importance", 0.5) for m in cluster)
 
-            # Create consolidated core memory. created_at is stamped as the
-            # *latest* source memory's created_at (not "now") so a
-            # consolidation pass doesn't make old memories look freshly
-            # formed; date_range preserves the full span for the prompt/UI.
+            # created_at is stamped as the *latest* source memory's created_at
+            # (not "now") so a consolidation pass doesn't make old memories
+            # look freshly formed; date_range preserves the full span for the
+            # prompt/UI. The summary's embedding is computed against that same
+            # created_at (via `_embed_fn`/`embed_for`, role "observation") —
+            # embedding the raw `summary` text, not the stored `"[Consolidated]
+            # ..."` content, matching what every other row's embed text does
+            # for its own body (the tag itself is never part of the embedded
+            # text — see `build_embed_text`'s user/character tag-stripping).
             source_ids = [m["id"] for m in cluster]
             dates = sorted(m["created_at"] for m in cluster if m.get("created_at"))
+            created_at = dates[-1] if dates else None
+            embedding = self._embed(summary, created_at=created_at)
+
             memory_dict = {
                 "id": generate_id("mem-"),
                 "character_id": self.character_id,

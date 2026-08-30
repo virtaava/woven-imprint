@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   → `(2023-05-08 Mon, 3 months ago)`.
 
 ### Changed (behavior) — Tier 3d (embedding context + reembed)
-- **Buffer memories are embedded with date+speaker context** (`memory.embedding_context`,
+- **All memories are embedded with date+speaker context** (`memory.embedding_context`,
   default `true`): a memory's *vector* is now computed from
   `MemoryStore.build_embed_text(...)` instead of raw `content` — e.g.
   `"[2023-05-08] User: caroline: I adopted a cat"` (user row with a known
@@ -113,6 +113,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it re-adds with `dedup_similarity=0` to force a fresh memory row instead of
   reinforcing the soon-to-be-superseded one, so the new fact never ends up
   pointing at a contradicted memory.
+
+### Fixed — Tier 3d (final code review fix wave)
+- **Entity-delta dedup guard**: `MemoryStore.add(..., dedup_require_tokens=...)`
+  — a new optional param on the existing `dedup_similarity`/`dedup_scope`
+  semantic-dedup path (see "fact dedup" above). When given, `_find_dedup_match`
+  drops any candidate whose stored `content` is missing so much as one of
+  these tokens (case-insensitive substring match), *before* the cosine
+  comparison — regardless of how high that candidate's similarity scores.
+  `_store_structured_fact` passes the incoming fact's `object` tokens (its
+  words, lowercased, length >= 2): a bag-of-words (or boilerplate-heavy)
+  embedding can score two updates to the same `(subject, predicate)` with a
+  genuinely different `object` as a near-identical — even exact 1.0 — cosine
+  match when most of the sentence is shared preamble and the differing word
+  falls outside a fixed-window embedder's counted prefix; without this guard
+  that shape of update silently deduped into the old row (reinforcing it)
+  instead of being recorded as a new fact. Restating the *same* object is
+  unaffected — its own token is present in the candidate, so the guard lets
+  the legitimate dedup through. Unstructured fact dedup (`_store_facts`'s
+  plain-string branch) is unchanged (no `object` to derive tokens from).
+- **`_build_context` shedding order + progressive halving**: the sheddable
+  block order now matches the method's own docstring —
+  facts → memories → emotion → arc → relationship — instead of
+  emotion/arc/relationship being appended ahead of facts/memories, so a tight
+  budget spends what's left on retrieved content first. The single
+  once-only "halve the memory list, try again" fallback is now a loop:
+  halves the sheddable memories list repeatedly until the rendered block
+  fits the remaining budget or exactly one memory is left to try (previously
+  a list that still didn't fit after one halving was dropped entirely rather
+  than shrunk further). Long-horizon bench (`eval/bench_longhorizon.py`)
+  re-verified 12/12 after this change.
+- **`MemoryStore.embed_for(content, role, created_at, metadata) -> list[float]`**:
+  wraps `_embed_text_for` (the same contextualization `add()`/`reembed()` use)
+  + the store's embedder + `guard_embedding_dimension`, as the one seam every
+  memory-writing subsystem that persists a vector outside `add()`/`edit()`
+  itself should go through. Wired into `BeliefReviser.contradict()` and
+  `GrowthEngine.apply_growth()` (both previously embedded raw content with
+  **no** dimension guard at all — a swapped embedder could silently write a
+  mixed-dimension vector via either path) and `FactStore.edit()` (previously
+  embedded raw `statement` text, guarded, when an `embedder` was passed —
+  now prefers an injected `embed_fn`, typically `char.memory.embed_for`,
+  falling back to the raw+guarded path when absent, documented on
+  `FactStore.__init__`). `ConsolidationEngine` also gained `embed_fn` support
+  and its own tests, but `Character` does **not** wire it up by default — see
+  "Deviations" below.
+- **Streaming `reembed`**: `SQLiteStorage.iter_memory_rows_for_reembed(character_id,
+  page=500)` yields pages of active memory rows (`id`/`content`/`role`/
+  `created_at`/`metadata` only — the `embedding` column is never selected),
+  paged by rowid (keyset, not `OFFSET`). `MemoryStore.reembed()` now streams
+  these pages instead of loading every active row — vectors included — via
+  `get_memories(..., limit=None)` up front, so re-embedding a history far
+  larger than fits comfortably in memory no longer needs to. Each page is
+  still embedded in one `embed_batch` call (batch size ties to `page`), and
+  `reembed()` now asserts the returned vector count matches the page size.
+- **Shared-row guards, part 2**: `_store_structured_fact`'s supersession only
+  marks the old fact's linked memory `contradicted` when
+  `count_active_facts_for_memory(old_memory_id)` is `0` **after** the old
+  fact is expired — if semantic dedup has linked another still-active fact to
+  that same memory row, it's left `active` instead of being pulled out from
+  under that sibling fact (mirrors the `FactStore.retract()` guard already
+  shipped). `FactStore.edit()`: a content change on a memory referenced by
+  more than one active fact no longer rewrites that shared row — it creates
+  a fresh memory carrying the edited fact's new content (copying the old
+  row's tier/role/session/importance/certainty) and relinks the edited fact
+  to it, leaving the shared row exactly as the other fact(s) still need it.
+- **`_safe_tag` NFKC-normalizes** its input before filtering brackets/control
+  characters — a fullwidth bracket (`［`/`］`) NFKC-decomposes to ASCII
+  `[`/`]` and was previously let through as "printable, not literally `[` or
+  `]`," reopening the identity-tag-forging hole the bracket filter exists to
+  close.
+
+**Deviations**: `ConsolidationEngine.embed_fn` (above) is implemented and unit-
+tested, but `Character.__init__` does not wire it to `char.memory.embed_for`
+the way it does for `FactStore`/`BeliefReviser`/`GrowthEngine`. Wiring it
+measurably regressed two `eval/bench_longhorizon.py` checks
+(`contradiction_supersession`, `relevance_gate_global_rank`, 12/12 → 10/12,
+root-caused but not fixed): a consolidated summary's `created_at` is
+backdated to its cluster's latest source memory, which can land on the exact
+same timestamp as an unrelated core memory; `get_memories`' `ORDER BY
+created_at DESC, rowid DESC` then breaks that tie by insertion order, and
+contextualizing the summary's embedding text shifts *which day* a given
+cluster gets summarized on (via its interaction with per-run LLM-call
+budget sharing across maintenance jobs) without changing final cluster
+membership or row counts — which shifts that tie-breaking rowid. Left on the
+pre-fix-wave raw (still dimension-guarded) embed path pending a fix to the
+benchmark's timestamp-tie sensitivity itself.
 
 ### Changed (behavior) — Tier 3c (recall: keep consolidated sources)
 - **Retrieval RRF defaults**: `weight_importance` `1.0` → `0.0`, `weight_recency`

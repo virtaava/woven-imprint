@@ -194,6 +194,57 @@ class TestAddUsesEmbedContext:
 # --- reembed ---------------------------------------------------------------
 
 
+class TestReembedStreaming:
+    """Tier 3d final-review fix wave, item 4: `reembed()` streams pages via
+    `storage.iter_memory_rows_for_reembed` instead of materializing every
+    active row (embeddings included) up front via `get_memories(limit=None)`.
+    """
+
+    def test_reembeds_1200_rows_streamed(self):
+        _, char, _embedder = _char_with_spy()
+        for i in range(1200):
+            char.memory.add(content=f"filler memory number {i}", tier="core")
+
+        count = char.memory.reembed(batch_size=500)
+
+        assert count == 1200
+
+    def test_never_calls_get_memories_with_limit_none(self, monkeypatch):
+        """Monkeypatch `get_memories` to fail on the old (materialize-everything)
+        call shape — `reembed()` must never take that path any more."""
+        _, char, _embedder = _char_with_spy()
+        for i in range(5):
+            char.memory.add(content=f"filler memory number {i}", tier="core")
+
+        orig = char.memory.storage.get_memories
+
+        def guarded(*args, **kwargs):
+            limit = kwargs.get("limit", args[3] if len(args) > 3 else 1000)
+            if limit is None:
+                raise AssertionError("reembed() must not call get_memories(limit=None)")
+            return orig(*args, **kwargs)
+
+        monkeypatch.setattr(char.memory.storage, "get_memories", guarded)
+
+        count = char.memory.reembed()
+
+        assert count == 5
+
+    def test_page_rows_carry_no_embedding_key(self):
+        """`iter_memory_rows_for_reembed`'s rows are plain id/content/role/
+        created_at/metadata dicts — no `embedding` key at all, not even
+        `None` — so a vector is never even briefly held for a row it's about
+        to recompute."""
+        _, char, _embedder = _char_with_spy()
+        char.memory.add(content="a memory", tier="core")
+
+        pages = list(char.memory.storage.iter_memory_rows_for_reembed(char.id, page=500))
+
+        assert len(pages) == 1 and len(pages[0]) == 1
+        assert "embedding" not in pages[0][0]
+        assert set(pages[0][0]) == {"id", "content", "role", "created_at", "metadata"}
+
+
 class TestReembed:
     def test_recomputes_every_active_row(self):
         _, char, embedder = _char_with_spy()

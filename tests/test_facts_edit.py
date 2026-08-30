@@ -143,6 +143,50 @@ def test_retract_leaves_memory_active_while_another_fact_still_references_it():
     assert engine.storage.get_memory(m["id"])["status"] == "archived"
 
 
+def test_edit_content_change_on_shared_memory_relinks_instead_of_rewriting():
+    """Two facts share one memory row (semantic dedup — see MemoryStore.add's
+    dedup_similarity path). Editing ONE fact's statement must not rewrite the
+    shared row out from under the other still-active fact: it creates a fresh
+    memory for the edited fact's new statement and relinks that fact to it."""
+    engine, char = _char()
+    m = char.memory.add("The visitor plays chess and also enjoys go.", tier="core")
+    f1 = char.facts.add(
+        subject="user", predicate="plays", object="chess", statement=m["content"], memory_id=m["id"]
+    )
+    f2 = char.facts.add(
+        subject="user", predicate="enjoys", object="go", statement=m["content"], memory_id=m["id"]
+    )
+
+    out1 = char.facts.edit(f1["id"], object="shogi", statement="The visitor plays shogi.")
+
+    assert out1["object"] == "shogi"
+    assert out1["memory_id"] != m["id"]  # relinked to a fresh row
+    new_mem = engine.storage.get_memory(out1["memory_id"])
+    assert new_mem is not None and new_mem["content"] == "The visitor plays shogi."
+
+    # The shared row itself is untouched — f2's link and the memory's own
+    # content still read exactly as they did before f1's edit.
+    shared_mem = engine.storage.get_memory(m["id"])
+    assert shared_mem["content"] == "The visitor plays chess and also enjoys go."
+    assert char.facts.get(f2["id"])["memory_id"] == m["id"]
+
+
+def test_edit_content_change_on_unshared_memory_still_rewrites_in_place():
+    """Control: when the linked memory is referenced by only the fact being
+    edited (the common case), `edit()` keeps rewriting the row in place —
+    the shared-row guard must not change behavior for the non-shared case."""
+    engine, char = _char()
+    m = char.memory.add("The visitor plays chess.", tier="core")
+    f = char.facts.add(
+        subject="user", predicate="plays", object="chess", statement=m["content"], memory_id=m["id"]
+    )
+
+    out = char.facts.edit(f["id"], object="shogi", statement="The visitor plays shogi.")
+
+    assert out["memory_id"] == m["id"]  # same row, rewritten in place
+    assert engine.storage.get_memory(m["id"])["content"] == "The visitor plays shogi."
+
+
 def test_memory_delete_cascade_retracts_all_shared_facts():
     """MemoryStore.delete() hard-deletes a memory and retracts every fact still
     pointing at it — including when more than one fact shares the row."""

@@ -90,6 +90,17 @@ def build_embed_text(
     return f"[{date}] {content}"
 
 
+def _content_has_all_tokens(content: str, tokens: list[str]) -> bool:
+    """Case-insensitive substring check: does `content` contain every one of `tokens`?
+
+    Used by the entity-delta dedup guard (`MemoryStore._find_dedup_match`'s
+    `require_tokens`) — a plain substring match, not a whole-word boundary
+    match, so a token like "red" still matches inside "reddish".
+    """
+    lowered = content.lower()
+    return all(tok.lower() in lowered for tok in tokens)
+
+
 class MemoryStore:
     """Manages buffer/core/bedrock memory tiers for a character."""
 
@@ -128,6 +139,32 @@ class MemoryStore:
             return content
         return build_embed_text(content, role, created_at, metadata, self.character_name)
 
+    def embed_for(
+        self,
+        content: str,
+        role: str | None = None,
+        created_at: str | None = None,
+        metadata: dict | None = None,
+    ) -> list[float]:
+        """Compute the vector a memory of this shape would get from `add()`:
+        `_embed_text_for(content, role, created_at, metadata)` (contextualized
+        by default — see `build_embed_text`) through this store's own embedder,
+        with the same dimension guard `add()`/`edit()`/`reembed()` apply.
+
+        The single seam every memory-writing subsystem that persists an
+        embedding *outside* `add()`/`edit()` itself should go through —
+        consolidation summaries, belief contradictions, growth events, and
+        `FactStore.edit`'s linked-memory re-embed (injected there as
+        `embed_fn`) — so all of them agree on what "the vector for this
+        content" means instead of each embedding raw content independently
+        (and, in a couple of those call sites, skipping the dimension guard
+        entirely).
+        """
+        embed_text = self._embed_text_for(content, role, created_at, metadata)
+        embedding = self.embedder.embed(embed_text)
+        guard_embedding_dimension(self.storage, embedding)
+        return embedding
+
     def add(
         self,
         content: str,
@@ -138,6 +175,7 @@ class MemoryStore:
         metadata: dict | None = None,
         dedup_similarity: float | None = None,
         dedup_scope: str = "core",
+        dedup_require_tokens: list[str] | None = None,
     ) -> dict:
         """Add a new memory entry.
 
@@ -158,6 +196,17 @@ class MemoryStore:
         *existing* memory's id, which matters to callers that link a
         secondary record (e.g. `FactStore.add(memory_id=...)`) to whichever
         memory ends up representing this content.
+
+        `dedup_require_tokens` — the entity-delta guard: when given, a
+        candidate is rejected as a dedup match — even at/above
+        `dedup_similarity` — unless its stored content contains every one of
+        these tokens (case-insensitive). `_store_structured_fact` passes the
+        new fact's `object` tokens: a bag-of-words embedder (or a real one on
+        boilerplate-heavy statements) can score two updates to the same
+        (subject, predicate) with a different object as near-identical
+        cosine similarity when most of the sentence is shared preamble — this
+        guard stops that from silently merging a value change into the old
+        row instead of recording it.
         """
         created_at = sqlite_ts()
         embed_text = self._embed_text_for(content, role, created_at, metadata)
@@ -165,7 +214,9 @@ class MemoryStore:
         guard_embedding_dimension(self.storage, embedding)
 
         if dedup_similarity and tier == dedup_scope:
-            match = self._find_dedup_match(content, embedding, dedup_scope, dedup_similarity)
+            match = self._find_dedup_match(
+                content, embedding, dedup_scope, dedup_similarity, dedup_require_tokens
+            )
             if match is not None:
                 return self._reinforce_duplicate(match)
 
@@ -190,7 +241,12 @@ class MemoryStore:
         return memory
 
     def _find_dedup_match(
-        self, content: str, embedding: list[float], scope: str, threshold: float
+        self,
+        content: str,
+        embedding: list[float],
+        scope: str,
+        threshold: float,
+        require_tokens: list[str] | None = None,
     ) -> dict | None:
         """Find the best-matching active `scope`-tier memory for `content`/`embedding`,
         if any scores >= `threshold` cosine similarity.
@@ -199,6 +255,11 @@ class MemoryStore:
         active `scope` rows — cheap enough (one extra O(500) numpy cosine pass)
         to run per fact insert without a second embedding call (the candidate
         vector is already in hand from `add()`).
+
+        `require_tokens` (entity-delta guard, see `add()`): candidates missing
+        any one of these tokens (case-insensitive substring match against the
+        candidate's stored `content`) are dropped from the pool before the
+        cosine comparison runs, regardless of embedding similarity.
         """
         try:
             fts_candidates = self.storage.fts_search(self.character_id, content, limit=50)
@@ -214,6 +275,12 @@ class MemoryStore:
             return None
 
         rows = list(candidates.values())
+        if require_tokens:
+            rows = [
+                r for r in rows if _content_has_all_tokens(r.get("content") or "", require_tokens)
+            ]
+            if not rows:
+                return None
         sims = cosine_matrix(embedding, [r.get("embedding") or [] for r in rows])
         best_idx, best_sim = -1, -1.0
         for i, sim in enumerate(sims):
@@ -246,23 +313,30 @@ class MemoryStore:
         to date. Idempotent: re-running recomputes the same vectors from the
         same stored content/config, byte-for-byte.
 
-        Embeds in chunks of `batch_size` via `embed_batch` on the store's own
-        `self.embedder` — so a `CachedEmbedder` wrapper (if configured) still
-        dedupes identical embed texts across the run. Only touches the
-        `embedding` column; `content`/`metadata`/tier/etc. are untouched.
-        Returns the number of memories re-embedded.
+        Streams pages of `batch_size` rows via
+        `storage.iter_memory_rows_for_reembed` — each page carries only
+        id/content/role/created_at/metadata, never an `embedding` column — so
+        a history far larger than fits comfortably in memory never has every
+        row's *vector* materialized at once the way a plain
+        `get_memories(..., limit=None)` would. Each page is embedded in one
+        `embed_batch` call via the store's own `self.embedder` (so a
+        `CachedEmbedder` wrapper, if configured, still dedupes identical embed
+        texts across the run). Only the `embedding` column changes;
+        `content`/`metadata`/tier/etc. are untouched. Returns the number of
+        memories re-embedded.
         """
-        rows = self.storage.get_memories(self.character_id, tier=None, limit=None)
         count = 0
-        for i in range(0, len(rows), max(1, batch_size)):
-            chunk = rows[i : i + max(1, batch_size)]
+        for chunk in self.storage.iter_memory_rows_for_reembed(
+            self.character_id, page=max(1, batch_size)
+        ):
             texts = [
                 self._embed_text_for(
-                    m["content"], m.get("role"), m.get("created_at"), m.get("metadata")
+                    m["content"], m.get("role"), m.get("created_at"), m["metadata"]
                 )
                 for m in chunk
             ]
             vectors = self.embedder.embed_batch(texts)
+            assert len(vectors) == len(chunk)
             for vec in vectors:
                 guard_embedding_dimension(self.storage, vec)
             self.storage.update_memory_embeddings_batch(

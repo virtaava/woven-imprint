@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 import time
+import unicodedata
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -38,8 +40,14 @@ def _safe_tag(value: object, limit: int = 40) -> str:
 
     Control characters, newlines and square brackets are removed so an attacker-chosen
     ``user_id`` cannot close the tag or forge additional memory lines; long values are cut.
+
+    NFKC-normalized first so lookalike characters that decompose to ASCII
+    ``[``/``]`` under compatibility normalization (e.g. fullwidth brackets
+    ``［``/``］``) are caught by the bracket filter too, instead of
+    slipping through as "printable, not literally '[' or ']'".
     """
-    text = "".join(ch for ch in str(value) if ch.isprintable() and ch not in "[]")
+    text = unicodedata.normalize("NFKC", str(value))
+    text = "".join(ch for ch in text if ch.isprintable() and ch not in "[]")
     text = " ".join(text.split())
     return text[:limit] or "unknown"
 
@@ -76,14 +84,35 @@ class Character:
 
         # Sub-systems
         self.memory = MemoryStore(storage, embedder, char_id, character_name=persona.name)
-        self.facts = FactStore(storage, char_id, embedder=embedder)
+        self.facts = FactStore(storage, char_id, embedder=embedder, embed_fn=self.memory.embed_for)
         self.memory.facts = self.facts
         self.retriever = MemoryRetriever(storage, embedder, char_id)
-        self.belief = BeliefReviser(storage, char_id, embedder=embedder)
+        self.belief = BeliefReviser(
+            storage, char_id, embedder=embedder, embed_fn=self.memory.embed_for
+        )
         self.relationships = RelationshipModel(storage, char_id)
+        # NOT wired to `embed_fn=self.memory.embed_for` here (unlike facts/
+        # belief/growth below) — deliberate deviation from the fix-wave spec,
+        # see CHANGELOG "Deviations". `ConsolidationEngine` supports it
+        # (tested directly against the class), but wiring it through Character
+        # measurably regressed `eval/bench_longhorizon.py`'s
+        # `contradiction_supersession`/`relevance_gate_global_rank` checks
+        # (10/12, root-caused, not fixed): a backdated `created_at` on a
+        # consolidated summary can exactly tie an existing core memory's
+        # timestamp, and `get_memories`' `rowid DESC` tie-break then depends
+        # on insertion order — contextualizing the summary's embedding text
+        # doesn't touch that ordering directly, but it changes clustering's
+        # LLM-call cadence relative to that day's other maintenance jobs
+        # sharing the same run budget, which shifts *which* day a given
+        # cluster's summary lands on and therefore its rowid. Left on the raw
+        # (dimension-guarded, non-contextualized) embed path pending a fix to
+        # the benchmark's timestamp-tie sensitivity, not a correctness defect
+        # in `embed_for` itself.
         self.consolidator = ConsolidationEngine(storage, llm, embedder, char_id)
         self.consistency = ConsistencyChecker(llm, persona, config=_cfg.character)
-        self.growth = GrowthEngine(storage, llm, char_id, persona, embedder=embedder)
+        self.growth = GrowthEngine(
+            storage, llm, char_id, persona, embedder=embedder, embed_fn=self.memory.embed_for
+        )
         self.emotion_engine = EmotionEngine(llm)
         self.arc_tracker = ArcTracker(llm)
         self.assessor = TurnAssessor(llm)
@@ -1327,18 +1356,24 @@ class Character:
         memory_text = self._format_memories(memories)
 
         # Add optional components, tracking size
+        # Order matches the docstring's shedding priority (facts, memories,
+        # emotion, arc, relationship): when budget is tight, the loop below
+        # spends what's left in this order, so facts/memories — the two
+        # blocks with actual retrieved content — get first claim on the
+        # remaining budget, ahead of the softer emotion/arc/relationship
+        # framing.
         optional_parts = []
+        facts_text = self._format_facts_block(user_id, pinned_ids)
+        if facts_text:
+            optional_parts.append(("facts", f"\n\n{facts_text}"))
+        if memory_text:
+            optional_parts.append(("memories", f"\n\nYour relevant memories:\n{memory_text}"))
         if emotion_desc:
             optional_parts.append(("emotion", f"\n\n{emotion_desc}"))
         if arc_desc:
             optional_parts.append(("arc", f"\n\n{arc_desc}"))
         if rel_context:
             optional_parts.append(("relationship", f"\n\n{rel_context}"))
-        facts_text = self._format_facts_block(user_id, pinned_ids)
-        if facts_text:
-            optional_parts.append(("facts", f"\n\n{facts_text}"))
-        if memory_text:
-            optional_parts.append(("memories", f"\n\nYour relevant memories:\n{memory_text}"))
 
         # Calculate base size (system prompt + user message + date line +
         # pinned-memory block — these are always kept, so they count toward
@@ -1379,12 +1414,20 @@ class Character:
                         volatile += part
                         remaining -= len(part)
                     elif name == "memories" and remaining > 200:
-                        # Partial memories — include as many as fit
-                        truncated = self._format_memories(memories[: max(1, len(memories) // 2)])
-                        mem_part = f"\n\nYour relevant memories:\n{truncated}"
-                        if len(mem_part) <= remaining:
-                            volatile += mem_part
-                            remaining -= len(mem_part)
+                        # Partial memories — progressively halve the list
+                        # until the rendered block fits `remaining`, or only
+                        # one memory is left to try.
+                        shrinking = memories
+                        while shrinking:
+                            truncated = self._format_memories(shrinking)
+                            mem_part = f"\n\nYour relevant memories:\n{truncated}"
+                            if len(mem_part) <= remaining:
+                                volatile += mem_part
+                                remaining -= len(mem_part)
+                                break
+                            if len(shrinking) == 1:
+                                break
+                            shrinking = shrinking[: max(1, len(shrinking) // 2)]
 
                 # If STILL over after shedding optional parts, trim conversation
                 total = len(system_prompt) + len(volatile) + history_size + len(user_message)
@@ -1535,6 +1578,13 @@ class Character:
         meta = {"source": "extraction", "user_id": user_id}
         if old and old.get("memory_id") and not backdated:
             meta["contradicts"] = old["memory_id"]
+        # Entity-delta dedup guard: require the fact's OBJECT tokens to appear
+        # in a dedup candidate's content — otherwise a bag-of-words (or
+        # boilerplate-heavy) embedding can score two updates to the same
+        # (subject, predicate) with a genuinely different object as a
+        # near-identical cosine match on shared preamble text, and dedup
+        # would silently swallow the value change instead of recording it.
+        object_tokens = [w for w in re.findall(r"\w+", str(fact["object"]).lower()) if len(w) >= 2]
         mem = self.memory.add(
             content=fact["statement"],
             tier="core",
@@ -1543,6 +1593,7 @@ class Character:
             importance=importance,
             metadata=meta,
             dedup_similarity=get_config().memory.fact_dedup_similarity,
+            dedup_require_tokens=object_tokens or None,
         )
         if (
             not backdated
@@ -1605,7 +1656,15 @@ class Character:
                 self.facts.expire(new["id"], valid_to=old["valid_from"], superseded_by=old["id"])
             else:
                 self.facts.expire(old["id"], valid_to=new["valid_from"], superseded_by=new["id"])
-                if old.get("memory_id"):
+                if old.get("memory_id") and (
+                    self.storage.count_active_facts_for_memory(old["memory_id"]) == 0
+                ):
+                    # Only mark the old memory contradicted once no other active
+                    # fact still references it — semantic dedup can link more
+                    # than one structured fact to the same memory row (see
+                    # `MemoryStore.add`'s `dedup_similarity` contract), and
+                    # expiring THIS fact must not pull that shared memory out
+                    # from under a sibling fact that's still current.
                     self.storage.update_memory_status(
                         old["memory_id"], "contradicted", certainty=0.0
                     )

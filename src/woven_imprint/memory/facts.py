@@ -54,11 +54,23 @@ def _derive_statement(old_statement: str, old_object: str, new_object: str) -> s
 
 
 class FactStore:
-    def __init__(self, storage: SQLiteStorage, character_id: str, embedder=None):
+    def __init__(self, storage: SQLiteStorage, character_id: str, embedder=None, embed_fn=None):
         self.storage = storage
         self.character_id = character_id
-        # Used by `edit()` to re-embed a linked memory when its content changes.
+        # Used by `edit()` as a fallback to re-embed a linked memory when its
+        # content changes, if `embed_fn` (below) isn't wired up.
         self.embedder = embedder
+        # Optional `(content, role, created_at, metadata) -> list[float]`
+        # callable — typically `MemoryStore.embed_for`, injected by Character
+        # (`FactStore(..., embed_fn=char.memory.embed_for)`) — so `edit()`
+        # re-embeds with the same contextualized text every other write path
+        # uses. FactStore has no `MemoryStore` reference of its own (facts and
+        # memories are independent tables), hence this seam rather than
+        # calling `MemoryStore.embed_for` directly. Falls back to a raw
+        # `embedder.embed(content)` (no date/speaker context, no dimension
+        # guard) when absent, matching the pre-Tier-3d-fix-wave behavior for
+        # direct/test construction that never wires it up.
+        self.embed_fn = embed_fn
 
     def add(
         self,
@@ -147,13 +159,21 @@ class FactStore:
         self, fact_id: str, *, object: str | None = None, statement: str | None = None
     ) -> dict:
         """Edit a fact in place; if linked to a memory and `statement` changes (or is
-        derived from an `object`-only edit), updates the memory's content too
-        (re-embedding through `self.embedder` when present) so text and record stay
-        consistent.
+        derived from an `object`-only edit), updates the memory's content too so text
+        and record stay consistent — re-embedding through `embed_fn` (contextualized,
+        dimension-guarded — see `MemoryStore.embed_for`) when wired up, else falling
+        back to a raw `embedder.embed(statement)` (also dimension-guarded).
 
         When `object` is given without `statement`, the new statement is derived from
         the old one: a case-insensitive replace of the old object text if it appears
         in the old statement, else an appended "— now: <object>." clause.
+
+        Shared-row guard: semantic dedup (`MemoryStore.add`'s `dedup_similarity`
+        path) can link more than one fact to the same memory row. When the linked
+        memory is still referenced by another active fact, a content change does
+        NOT rewrite that shared row — a fresh memory is created for the edited
+        statement and this fact is relinked to it instead, so the sibling fact's
+        still-current text is left untouched.
         """
         f = self.get(fact_id)
         if f is None or f.get("character_id") != self.character_id:
@@ -161,15 +181,60 @@ class FactStore:
         if object is not None and statement is None:
             statement = _derive_statement(f.get("statement") or "", f.get("object") or "", object)
         self.storage.update_fact_fields(fact_id, object=object, statement=statement)
-        if statement is not None and f.get("memory_id") and self.embedder is not None:
-            embedding = self.embedder.embed(statement)
-            guard_embedding_dimension(self.storage, embedding)
-            self.storage.update_memory_fields(
-                f["memory_id"], content=statement, embedding=embedding
-            )
+
+        if statement is not None and f.get("memory_id"):
+            memory_id = f["memory_id"]
+            old_mem = self.storage.get_memory(memory_id)
+            shared = self.storage.count_active_facts_for_memory(memory_id) > 1
+            if shared and old_mem is not None:
+                new_memory_id = self._relink_to_fresh_memory(statement, old_mem)
+                self.storage.update_fact_fields(fact_id, memory_id=new_memory_id)
+            elif self.embed_fn is not None or self.embedder is not None:
+                embedding = self._embed(statement, old_mem)
+                self.storage.update_memory_fields(memory_id, content=statement, embedding=embedding)
         updated = self.get(fact_id)
         assert updated is not None
         return updated
+
+    def _embed(self, content: str, old_mem: dict | None) -> list[float]:
+        """Embed `content` for a memory linked to a fact — contextualized via
+        `embed_fn` (using `old_mem`'s role/created_at/metadata) when wired up,
+        else a raw, dimension-guarded `embedder.embed(content)`."""
+        if self.embed_fn is not None:
+            role = old_mem.get("role") if old_mem else None
+            created_at = old_mem.get("created_at") if old_mem else None
+            metadata = old_mem.get("metadata") if old_mem else None
+            return self.embed_fn(content, role, created_at, metadata)
+        embedding = self.embedder.embed(content)
+        guard_embedding_dimension(self.storage, embedding)
+        return embedding
+
+    def _relink_to_fresh_memory(self, statement: str, old_mem: dict) -> str:
+        """Create a fresh memory row carrying the edited `statement` — copying
+        `old_mem`'s tier/role/session/importance/certainty — and return its id.
+        Used by `edit()`'s shared-row guard: the old row stays exactly as it
+        was for whichever other active fact still references it."""
+        embedding = self._embed(statement, old_mem)
+        new_id = generate_id("mem-")
+        meta = dict(old_mem.get("metadata") or {})
+        meta.pop("fact_id", None)
+        meta["relinked_from"] = old_mem["id"]
+        new_memory = {
+            "id": new_id,
+            "character_id": self.character_id,
+            "tier": old_mem.get("tier", "core"),
+            "content": statement,
+            "embedding": embedding,
+            "importance": old_mem.get("importance", 0.75),
+            "certainty": old_mem.get("certainty", 1.0),
+            "status": "active",
+            "source_refs": [],
+            "session_id": old_mem.get("session_id"),
+            "role": old_mem.get("role"),
+            "metadata": meta,
+        }
+        self.storage.save_memory(new_memory)
+        return new_id
 
     def retract(self, fact_id: str) -> dict:
         """Expire a fact now with no successor and mark it retracted; archives the

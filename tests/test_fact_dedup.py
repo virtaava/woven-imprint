@@ -197,6 +197,77 @@ class TestMemoryStoreDedup:
         assert second["deduped"] is False
         assert len(mem.get_all(tier="buffer")) == 2
 
+    def test_require_tokens_guard_rejects_match_missing_object_token(self, store):
+        """`dedup_require_tokens` (entity-delta guard): a shared 10-word preamble
+        makes the FakeEmbedder's bag-of-words vector identical (the differing
+        word lands past the embedder's first-10-word window, so it never
+        enters the vector at all — cosine is exactly 1.0, comfortably >= the
+        0.92 threshold) even though the two statements describe a different
+        color. Without the token guard this would wrongly dedupe."""
+        mem, _s = store
+        prefix = "caroline told me a long story yesterday about her all time favorite color which turns out to be"
+        mem.add(
+            content=f"{prefix} blue",
+            tier="core",
+            role="observation",
+            dedup_similarity=0.92,
+            dedup_require_tokens=["blue"],
+        )
+        result = mem.add(
+            content=f"{prefix} red",
+            tier="core",
+            role="observation",
+            dedup_similarity=0.92,
+            dedup_require_tokens=["red"],
+        )
+
+        assert result["deduped"] is False
+        assert len(mem.get_all(tier="core")) == 2
+
+    def test_require_tokens_guard_allows_match_when_object_restated(self, store):
+        """Same setup as above, but the object word restated identically —
+        the required token IS present in the candidate's content, so the
+        guard doesn't block the (otherwise legitimate) dedup."""
+        mem, _s = store
+        prefix = "caroline told me a long story yesterday about her all time favorite color which turns out to be"
+        mem.add(
+            content=f"{prefix} blue",
+            tier="core",
+            role="observation",
+            dedup_similarity=0.92,
+            dedup_require_tokens=["blue"],
+        )
+        result = mem.add(
+            content=f"{prefix} blue",
+            tier="core",
+            role="observation",
+            dedup_similarity=0.92,
+            dedup_require_tokens=["blue"],
+        )
+
+        assert result["deduped"] is True
+        assert len(mem.get_all(tier="core")) == 1
+
+    def test_require_tokens_none_does_not_change_behavior(self, store):
+        """Omitting `dedup_require_tokens` (the default) leaves plain
+        cosine-threshold dedup behavior byte-for-byte unchanged."""
+        mem, _s = store
+        first = mem.add(
+            content="identical wording every time",
+            tier="core",
+            role="observation",
+            dedup_similarity=0.92,
+        )
+        second = mem.add(
+            content="identical wording every time",
+            tier="core",
+            role="observation",
+            dedup_similarity=0.92,
+        )
+
+        assert second["deduped"] is True
+        assert second["id"] == first["id"]
+
     def test_dedup_never_touches_bedrock_tier(self, store):
         mem, _s = store
         mem.add(
@@ -401,6 +472,114 @@ class TestFactPipelineDedupStructured:
 
         new_mem = _engine.storage.get_memory(new["memory_id"])
         assert new_mem is not None and new_mem["status"] == "active"
+
+    def test_unrelated_facts_with_shared_preamble_dont_cross_link(self):
+        """Two entirely unrelated structured facts (different subject/predicate,
+        so `old` is None both times — no contradiction bookkeeping involved)
+        share a 10-word statement preamble, differing only in the object word
+        placed past the FakeEmbedder's window — bag-of-words cosine is exactly
+        1.0. Without the entity-delta guard the second fact's dedup lookup
+        would wrongly match the first fact's memory and link to it instead of
+        getting its own row."""
+        _engine, char = _char()
+        prefix = "alpha bravo charlie delta echo foxtrot golf hotel india juliet"
+
+        with clock.override(T0):
+            char._store_structured_fact(
+                {
+                    "statement": f"{prefix} blue",
+                    "subject": "user",
+                    "predicate": "favorite_color",
+                    "object": "blue",
+                    "event_time": None,
+                },
+                "toni",
+                None,
+                0.75,
+            )
+            char._store_structured_fact(
+                {
+                    "statement": f"{prefix} pizza",
+                    "subject": "user",
+                    "predicate": "favorite_food",
+                    "object": "pizza",
+                    "event_time": None,
+                },
+                "toni",
+                None,
+                0.75,
+            )
+
+        color = char.facts.find_active("user", "favorite_color")
+        food = char.facts.find_active("user", "favorite_food")
+        assert color is not None and food is not None
+        assert color["memory_id"] != food["memory_id"]
+        assert len(_fact_rows(char)) == 2
+
+    def test_supersession_leaves_shared_memory_active_when_other_fact_still_references_it(self):
+        """When the OLD fact's memory is shared with another still-active fact
+        (semantic dedup — same identical statement — links a second, unrelated
+        (subject, predicate) fact to the same core memory row), superseding the
+        old fact must NOT mark that shared memory contradicted: the other fact
+        still depends on it reading as active."""
+        _engine, char = _char()
+
+        with clock.override(T0):
+            char._store_structured_fact(
+                {
+                    "statement": "The visitor enjoys board games.",
+                    "subject": "user",
+                    "predicate": "plays",
+                    "object": "chess",
+                    "event_time": None,
+                },
+                "toni",
+                None,
+                0.75,
+            )
+            plays = char.facts.find_active("user", "plays")
+            shared_memory_id = plays["memory_id"]
+
+            char._store_structured_fact(
+                {
+                    "statement": "The visitor enjoys board games.",
+                    "subject": "user",
+                    "predicate": "enjoys",
+                    "object": "board games",
+                    "event_time": None,
+                },
+                "toni",
+                None,
+                0.75,
+            )
+            enjoys = char.facts.find_active("user", "enjoys")
+            assert enjoys is not None and enjoys["memory_id"] == shared_memory_id  # dedup confirmed
+
+            char._store_structured_fact(
+                {
+                    "statement": "The visitor now plays shogi instead.",
+                    "subject": "user",
+                    "predicate": "plays",
+                    "object": "shogi",
+                    "event_time": None,
+                },
+                "toni",
+                None,
+                0.75,
+            )
+
+        old_plays = char.facts.get(plays["id"])
+        assert old_plays is not None and old_plays["valid_to"] is not None  # expired
+
+        shared_mem = _engine.storage.get_memory(shared_memory_id)
+        assert shared_mem["status"] == "active"  # NOT contradicted — `enjoys` still needs it
+        assert char.facts.get(enjoys["id"])["memory_id"] == shared_memory_id  # untouched
+
+        # Control: once the sharing fact is retracted too, a THIRD supersession
+        # of the same (subject, predicate) key is free to mark it contradicted
+        # (nothing else references it any more). Not exercised here — covered
+        # by test_facts_edit.py's shared-row tests and FactStore.retract's own
+        # existing guard.
 
 
 # --- Harness ingest stat -----------------------------------------------------------------------

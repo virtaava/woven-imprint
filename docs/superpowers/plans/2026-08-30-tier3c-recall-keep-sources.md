@@ -31,3 +31,7 @@
 ### Task 4: Docs
 - [ ] `docs/BENCHMARKS.md`: results tables gain v2 columns (memory v1 → v2, full-context unchanged); "What changed in v2" paragraph citing the diagnostic numbers (86.7% archived-evidence misses; 91.1% buffer archived) and the new default; diagnostic section (how to run `diagnose_recall`, v1 vs v2 miss distribution); runtime with `--max_num_seqs 8`. `docs/RESULTS.md` re-rendered (renderer prints whatever keys are in `external_latest.json` — v2 runs overwrite the `bench:mode` keys; keep v1 per-run files and cite them). README headline; CHANGELOG (behavior change: consolidation no longer archives sources by default; config flag); `docs/CONFIGURATION.md` row; ARCHITECTURE consolidation paragraph.
 - [ ] Commit results JSON (`external_latest.json`, `external_*-v2.json`, judge sample) with `git add -f`.
+
+### Task 5: Relevance-first RRF defaults + relationship tie-bias fix (scope extension)
+- [ ] `retrieval.py`: relationship ranked list contains only candidates with boost > 0; importance tiebreak newest-first; defaults `weight_recency=0`, `weight_importance=0` (relationship stays 1); CONFIGURATION/ARCHITECTURE/CHANGELOG; regression tests (no hidden bias; boosted candidate promoted); long-horizon bench unchanged or controller ruling.
+- [ ] Controller: re-answer measurement — copy `locomo-mem-v2/{conv}.db,.ingest.json` → `locomo-mem-v2b/`, run 10 shards + aggregate; `plus-mem-v2b --reuse-run locomo-mem-v2b`; diagnostic on v2b. Docs (Task 4) report v1 → v2 → v2b.

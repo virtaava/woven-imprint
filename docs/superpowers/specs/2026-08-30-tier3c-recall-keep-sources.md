@@ -23,6 +23,9 @@ Make the verbatim source memories stay retrievable after consolidation, without 
 - Success bar: LoCoMo J improves materially (expect single-hop to move most); report exactly as measured either way. Also re-run `diagnose_recall` on v2 to show the new miss distribution.
 - Docs: BENCHMARKS.md gains a v2 column/rows + a "what changed" note; RESULTS.md re-rendered; README headline updated; CHANGELOG.
 
+## Scope extension (2026-08-30 07:55, after the v2 diagnostic + offline ranking experiments)
+The v2 diagnostic moved 85% of misses to "evidence active but outside top-20". Offline experiments (`eval/external/ranking_experiments.py`) showed a query-time-only fix: RRF `weight_recency=weight_importance=0` and a bug fix in the relationship strategy (unboosted candidates tied at 0 kept insertion order = oldest-first bias) lift evidence recall@20 from 23.9% to 50.8% on the same stored embeddings. Task 5 ships both (new defaults; relationship list ranks only boosted candidates). Measurement adds `locomo-mem-v2b` / `plus-mem-v2b`: re-answer the v2 DBs (no re-ingestion). Contextualized embedding text (+rrf_k 120, keyword weight 2.0 → 54.7% @20) needs re-embedding and is deferred to Tier 3d.
+
 ## Out of scope (follow-ups)
 Ranking misses (9.9%: temporal/date-aware retrieval, query rewriting), generation failures (2.8%), `single-session-preference` instrument, run_plus aggregation guard, `_run_bookkeeping` beat no-op.
 

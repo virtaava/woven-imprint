@@ -186,10 +186,11 @@ class FactStore:
             memory_id = f["memory_id"]
             old_mem = self.storage.get_memory(memory_id)
             shared = self.storage.count_active_facts_for_memory(memory_id) > 1
-            if shared and old_mem is not None:
+            can_embed = self.embed_fn is not None or self.embedder is not None
+            if shared and old_mem is not None and can_embed:
                 new_memory_id = self._relink_to_fresh_memory(statement, old_mem)
                 self.storage.update_fact_fields(fact_id, memory_id=new_memory_id)
-            elif self.embed_fn is not None or self.embedder is not None:
+            elif not shared and can_embed:
                 embedding = self._embed(statement, old_mem)
                 self.storage.update_memory_fields(memory_id, content=statement, embedding=embedding)
         updated = self.get(fact_id)
@@ -223,6 +224,9 @@ class FactStore:
             "id": new_id,
             "character_id": self.character_id,
             "tier": old_mem.get("tier", "core"),
+            "created_at": old_mem.get(
+                "created_at"
+            ),  # keep the formed date the vector was built with
             "content": statement,
             "embedding": embedding,
             "importance": old_mem.get("importance", 0.75),

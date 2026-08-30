@@ -630,3 +630,11 @@ class TestHarnessDedupStat:
         core = _fact_rows(char)
         assert len(core) == 1
         assert core[0]["metadata"]["dup_count"] == 1
+
+
+def test_dedup_token_guard_is_word_bounded():
+    from woven_imprint.memory.store import _content_has_all_tokens
+
+    assert _content_has_all_tokens("Caroline's favorite color is red.", ["red"])
+    assert not _content_has_all_tokens("Fred shredded the paper.", ["red"])
+    assert _content_has_all_tokens("She moved to Oulu in 2023", ["oulu", "2023"])

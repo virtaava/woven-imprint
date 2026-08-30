@@ -206,3 +206,58 @@ def test_memory_delete_cascade_retracts_all_shared_facts():
     r2 = char.facts.get(f2["id"])
     assert r1["metadata"]["retracted"] is True and r1["memory_id"] is None
     assert r2["metadata"]["retracted"] is True and r2["memory_id"] is None
+
+
+def test_edit_shared_memory_without_embedder_is_noop_on_memory():
+    from tests.helpers import make_test_engine
+    from woven_imprint.memory.facts import FactStore
+
+    engine = make_test_engine()
+    char = engine.create_character("Ada")
+    mem = char.memory.add("shared statement", tier="core", role="observation")
+    fs = FactStore(char.storage, char.id)  # no embedder, no embed_fn
+    f1 = fs.add(
+        subject="user",
+        predicate="plays",
+        object="chess",
+        statement="x plays chess",
+        memory_id=mem["id"],
+    )
+    fs.add(
+        subject="user",
+        predicate="enjoys",
+        object="go",
+        statement="x enjoys go",
+        memory_id=mem["id"],
+    )
+    updated = fs.edit(f1["id"], object="shogi", statement="x plays shogi")
+    assert (
+        updated["memory_id"] == mem["id"]
+    )  # no relink possible without an embedder; memory untouched
+    assert char.storage.get_memory(mem["id"])["content"] == "shared statement"
+
+
+def test_relinked_memory_keeps_original_created_at():
+    from tests.helpers import make_test_engine
+
+    engine = make_test_engine()
+    char = engine.create_character("Ada")
+    mem = char.memory.add("shared statement", tier="core", role="observation")
+    old_created = char.storage.get_memory(mem["id"])["created_at"]
+    f1 = char.facts.add(
+        subject="user",
+        predicate="plays",
+        object="chess",
+        statement="x plays chess",
+        memory_id=mem["id"],
+    )
+    char.facts.add(
+        subject="user",
+        predicate="enjoys",
+        object="go",
+        statement="x enjoys go",
+        memory_id=mem["id"],
+    )
+    updated = char.facts.edit(f1["id"], object="shogi", statement="x plays shogi")
+    assert updated["memory_id"] != mem["id"]
+    assert char.storage.get_memory(updated["memory_id"])["created_at"] == old_created

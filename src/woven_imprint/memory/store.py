@@ -91,14 +91,17 @@ def build_embed_text(
 
 
 def _content_has_all_tokens(content: str, tokens: list[str]) -> bool:
-    """Case-insensitive substring check: does `content` contain every one of `tokens`?
+    """Case-insensitive whole-word check: does `content` contain every one of `tokens`?
 
     Used by the entity-delta dedup guard (`MemoryStore._find_dedup_match`'s
-    `require_tokens`) — a plain substring match, not a whole-word boundary
-    match, so a token like "red" still matches inside "reddish".
+    `require_tokens`). Word boundaries matter: the object "red" must not be
+    satisfied by "Fred" or "shredded", or the guard would wave through the very
+    merges it exists to block.
     """
+    import re
+
     lowered = content.lower()
-    return all(tok.lower() in lowered for tok in tokens)
+    return all(re.search(rf"(?<!\w){re.escape(tok.lower())}(?!\w)", lowered) for tok in tokens)
 
 
 class MemoryStore:

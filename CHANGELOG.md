@@ -99,6 +99,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   buffer/bedrock tiers. To be validated live by the Tier 3d v3 benchmark
   re-run.
 
+### Fixed — Tier 3d (fact dedup follow-ups, T3 review)
+- Retracting one of several facts that share a deduped memory no longer
+  archives the shared memory. `FactStore.retract()` now archives the linked
+  memory only when `SQLiteStorage.count_active_facts_for_memory(memory_id)`
+  (new helper) is `0` — i.e. no other active, non-retracted fact still
+  references it. Semantic dedup can link more than one structured fact to the
+  same core memory row (see above); retracting one of them used to pull the
+  memory out from under the others.
+- `_store_structured_fact` no longer lets a new fact's dedup match land on
+  the very memory (subject, predicate) supersession is about to mark
+  `contradicted`: when `MemoryStore.add`'s dedup match is `old["memory_id"]`,
+  it re-adds with `dedup_similarity=0` to force a fresh memory row instead of
+  reinforcing the soon-to-be-superseded one, so the new fact never ends up
+  pointing at a contradicted memory.
+
 ### Changed (behavior) — Tier 3c (recall: keep consolidated sources)
 - **Retrieval RRF defaults**: `weight_importance` `1.0` → `0.0`, `weight_recency`
   `1.0` → `0.1` (relevance-first ranking) — LoCoMo evidence recall@20 23.9% →

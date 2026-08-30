@@ -102,6 +102,57 @@ class TestMemoryStoreDedup:
         assert result["deduped"] is False
         assert len(mem.get_all(tier="core")) == 2
 
+    def test_near_threshold_gated_by_configured_similarity(self, store):
+        """Genuine ~0.8-cosine near-duplicate: the first 10 embed-text tokens
+        (the shared date token + 7 leading shared words) overlap 8/10 between
+        the two, 2 differ on each side — computed below via the embedder
+        rather than assumed. Must NOT dedupe at the 0.92 default but MUST
+        dedupe once the (config) threshold is lowered to 0.75."""
+        from woven_imprint.config import get_config
+
+        mem, _s = store
+        content1 = "alpha bravo charlie delta echo foxtrot golf hotel india"
+        content2 = "alpha bravo charlie delta echo foxtrot golf juliet kilo"
+
+        with clock.override(T0):
+            created_at = clock.sqlite_ts()
+            text1 = MemoryStore.build_embed_text(content1, "observation", created_at, None, "Ada")
+            text2 = MemoryStore.build_embed_text(content2, "observation", created_at, None, "Ada")
+            v1 = mem.embedder.embed(text1)
+            v2 = mem.embedder.embed(text2)
+            sim = sum(a * b for a, b in zip(v1, v2))
+            assert 0.7 < sim < 0.9  # genuinely near-threshold, not 0.0 or 1.0
+
+            cfg = get_config()
+            original = cfg.memory.fact_dedup_similarity
+            try:
+                mem.add(
+                    content=content1,
+                    tier="core",
+                    role="observation",
+                    dedup_similarity=cfg.memory.fact_dedup_similarity,
+                )
+                not_deduped = mem.add(
+                    content=content2,
+                    tier="core",
+                    role="observation",
+                    dedup_similarity=cfg.memory.fact_dedup_similarity,
+                )
+                assert not_deduped["deduped"] is False
+                assert len(mem.get_all(tier="core")) == 2
+
+                cfg.memory.fact_dedup_similarity = 0.75
+                deduped = mem.add(
+                    content=content2,
+                    tier="core",
+                    role="observation",
+                    dedup_similarity=cfg.memory.fact_dedup_similarity,
+                )
+                assert deduped["deduped"] is True
+                assert len(mem.get_all(tier="core")) == 2
+            finally:
+                cfg.memory.fact_dedup_similarity = original
+
     def test_threshold_zero_disables_dedup(self, store):
         mem, _s = store
         mem.add(
@@ -300,6 +351,56 @@ class TestFactPipelineDedupStructured:
         assert f1 is not None and f2 is not None
         assert f1["memory_id"] == core[0]["id"]
         assert f2["memory_id"] == core[0]["id"]
+
+    def test_dedup_match_equal_to_contradicted_old_memory_gets_fresh_row(self):
+        """Same (subject, predicate), different object, near-identical statement
+        text: the first 10 words are identical, the object word lands after
+        position 10 so the bag-of-words embedding is identical (cosine 1.0) —
+        the new fact's dedup match is exactly the old fact's memory, the very
+        row (subject, predicate) supersession is about to mark `contradicted`.
+        The new fact must NOT end up linked to a contradicted memory."""
+        _engine, char = _char()
+        prefix = "alpha bravo charlie delta echo foxtrot golf hotel india juliet"
+
+        with clock.override(T0):
+            char._store_structured_fact(
+                {
+                    "statement": f"{prefix} Tampere",
+                    "subject": "user",
+                    "predicate": "lives_in",
+                    "object": "Tampere",
+                    "event_time": None,
+                },
+                "toni",
+                None,
+                0.75,
+            )
+            old = char.facts.find_active("user", "lives_in")
+            assert old is not None
+            old_mem_id = old["memory_id"]
+
+            char._store_structured_fact(
+                {
+                    "statement": f"{prefix} Oulu",
+                    "subject": "user",
+                    "predicate": "lives_in",
+                    "object": "Oulu",
+                    "event_time": None,
+                },
+                "toni",
+                None,
+                0.75,
+            )
+
+        new = char.facts.find_active("user", "lives_in")
+        assert new is not None and new["id"] != old["id"] and new["object"] == "Oulu"
+        assert new["memory_id"] != old_mem_id
+
+        old_mem = _engine.storage.get_memory(old_mem_id)
+        assert old_mem["status"] == "contradicted"
+
+        new_mem = _engine.storage.get_memory(new["memory_id"])
+        assert new_mem is not None and new_mem["status"] == "active"
 
 
 # --- Harness ingest stat -----------------------------------------------------------------------

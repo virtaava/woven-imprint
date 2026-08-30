@@ -766,6 +766,20 @@ class SQLiteStorage:
         with self._lock:
             return self._conn.execute(q, (character_id,)).fetchone()[0]
 
+    def count_active_facts_for_memory(self, memory_id: str) -> int:
+        """Count facts still referencing `memory_id` that are active — `valid_to
+        IS NULL` and not `metadata.retracted` — used to guard against archiving
+        a memory shared by more than one fact (semantic dedup can link two
+        facts to the same row) when only one of them is being retracted."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM facts WHERE memory_id = ? AND valid_to IS NULL "
+                "AND (json_extract(metadata, '$.retracted') IS NULL "
+                "OR json_extract(metadata, '$.retracted') = 0)",
+                (memory_id,),
+            ).fetchone()
+        return row[0]
+
     def update_fact_fields(
         self,
         fact_id: str,

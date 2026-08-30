@@ -173,7 +173,10 @@ class FactStore:
 
     def retract(self, fact_id: str) -> dict:
         """Expire a fact now with no successor and mark it retracted; archives the
-        linked memory (if it still exists)."""
+        linked memory (if it still exists) ONLY when no other active fact still
+        references it — semantic dedup (`MemoryStore.add`'s `dedup_similarity`
+        path) can link more than one fact to the same memory row, and retracting
+        one of them must not pull the memory out from under the other."""
         f = self.get(fact_id)
         if f is None or f.get("character_id") != self.character_id:
             raise KeyError(fact_id)
@@ -183,8 +186,10 @@ class FactStore:
         meta = dict(f.get("metadata") or {})
         meta["retracted"] = True
         self.storage.update_fact_fields(fact_id, metadata=meta)
-        if f.get("memory_id") and self.storage.get_memory(f["memory_id"]) is not None:
-            self.storage.update_memory_status(f["memory_id"], "archived")
+        memory_id = f.get("memory_id")
+        if memory_id and self.storage.get_memory(memory_id) is not None:
+            if self.storage.count_active_facts_for_memory(memory_id) == 0:
+                self.storage.update_memory_status(memory_id, "archived")
         updated = self.get(fact_id)
         assert updated is not None
         return updated

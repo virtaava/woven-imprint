@@ -117,3 +117,48 @@ def test_delete_fact_only():
     char.facts.delete(f["id"])
     assert char.facts.get(f["id"]) is None
     assert engine.storage.get_memory(m["id"]) is not None
+
+
+def test_retract_leaves_memory_active_while_another_fact_still_references_it():
+    """Two facts can end up pointing at the same memory row (semantic dedup —
+    see MemoryStore.add's dedup_similarity path). Retracting one of them must
+    not archive a memory the other one still actively references."""
+    engine, char = _char()
+    m = char.memory.add("The visitor plays chess and also enjoys go.", tier="core")
+    f1 = char.facts.add(
+        subject="user", predicate="plays", object="chess", statement=m["content"], memory_id=m["id"]
+    )
+    f2 = char.facts.add(
+        subject="user", predicate="enjoys", object="go", statement=m["content"], memory_id=m["id"]
+    )
+
+    out1 = char.facts.retract(f1["id"])
+    assert out1["metadata"]["retracted"] is True
+    assert engine.storage.get_memory(m["id"])["status"] == "active"
+    # The still-active fact's link is untouched.
+    assert char.facts.get(f2["id"])["memory_id"] == m["id"]
+
+    out2 = char.facts.retract(f2["id"])
+    assert out2["metadata"]["retracted"] is True
+    assert engine.storage.get_memory(m["id"])["status"] == "archived"
+
+
+def test_memory_delete_cascade_retracts_all_shared_facts():
+    """MemoryStore.delete() hard-deletes a memory and retracts every fact still
+    pointing at it — including when more than one fact shares the row."""
+    engine, char = _char()
+    m = char.memory.add("The visitor plays chess and also enjoys go.", tier="core")
+    f1 = char.facts.add(
+        subject="user", predicate="plays", object="chess", statement=m["content"], memory_id=m["id"]
+    )
+    f2 = char.facts.add(
+        subject="user", predicate="enjoys", object="go", statement=m["content"], memory_id=m["id"]
+    )
+
+    char.memory.delete(m["id"])
+
+    assert engine.storage.get_memory(m["id"]) is None
+    r1 = char.facts.get(f1["id"])
+    r2 = char.facts.get(f2["id"])
+    assert r1["metadata"]["retracted"] is True and r1["memory_id"] is None
+    assert r2["metadata"]["retracted"] is True and r2["memory_id"] is None

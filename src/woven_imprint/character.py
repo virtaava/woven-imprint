@@ -1544,6 +1544,27 @@ class Character:
             metadata=meta,
             dedup_similarity=get_config().memory.fact_dedup_similarity,
         )
+        if (
+            not backdated
+            and old
+            and old.get("memory_id")
+            and mem.get("deduped")
+            and mem["id"] == old["memory_id"]
+        ):
+            # The dedup match is the very memory this supersession is about to
+            # mark `contradicted` below (near-identical statement text under the
+            # embedder, different object) — linking the new fact to it would
+            # leave the fact pointing at a contradicted memory. Force a fresh
+            # row instead of reinforcing the soon-to-be-superseded one.
+            mem = self.memory.add(
+                content=fact["statement"],
+                tier="core",
+                role="observation",
+                session_id=session_id,
+                importance=importance,
+                metadata=meta,
+                dedup_similarity=0,
+            )
         deduped = bool(mem.get("deduped"))
         if deduped:
             self._dedup_skipped += 1

@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relationship strategy now ranks only candidates whose boost is actually
   positive (fixes a hidden oldest-first tie bias that previously ranked every
   gated candidate, including the untouched 0.0-tied majority, in ascending-rowid
-  order whenever `weight_relationship > 0`); `weight_relationship` stays `1.0`
+  order whenever `weight_relationship > 0`); `weight_relationship` default `0.0` (measured 2026-08-30: the name-mention boost outranks evidence — LoCoMo J 0.476 with it at 1.0 vs 0.536 at 0.0 on identical DBs)
   since its positive effect is legitimate once that bug is fixed. The importance
   strategy's tie-break changed from ascending-rowid (oldest-first) to
   descending-rowid (newest-first) for the same reason; `eval/external/ranking_experiments.py`'s

@@ -300,3 +300,35 @@ def argparse_namespace(**kw):
     import argparse
 
     return argparse.Namespace(**kw)
+
+
+def test_edit_reembeds_with_context():
+    """edit() must embed the same contextualized text add() would (T2 review note)."""
+    from tests.helpers import make_test_engine
+
+    engine = make_test_engine()
+    seen: list[str] = []
+    inner = engine.embedder
+
+    class Spy:
+        model = "spy"
+
+        def embed(self, text):
+            seen.append(text)
+            return inner.embed(text)
+
+        def embed_batch(self, texts):
+            seen.extend(texts)
+            return inner.embed_batch(texts)
+
+        def dimensions(self):
+            return inner.dimensions()
+
+    char = engine.create_character("Ada")
+    char.memory.embedder = Spy()
+    row = char.memory.add(
+        "[User] I adopted a cat", tier="buffer", role="user", metadata={"user_id": "caroline"}
+    )
+    seen.clear()
+    char.memory.edit(row["id"], content="[User] I adopted two cats")
+    assert seen and seen[-1].startswith("[") and "User: caroline: I adopted two cats" in seen[-1]

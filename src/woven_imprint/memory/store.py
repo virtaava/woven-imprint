@@ -341,7 +341,11 @@ class MemoryStore:
             raise KeyError(memory_id)
         embedding = None
         if content is not None and content != row["content"]:
-            embedding = self.embedder.embed(content)
+            embedding = self.embedder.embed(
+                self._embed_text_for(
+                    content, row.get("role"), row.get("created_at"), row.get("metadata")
+                )
+            )
             guard_embedding_dimension(self.storage, embedding)
         else:
             content = None

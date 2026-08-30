@@ -139,3 +139,27 @@ class TestMemoryStoreUnconsolidated:
             assert store.needs_consolidation(threshold=cfg.memory.consolidation_threshold) is True
         finally:
             cfg.memory.consolidation_threshold = original_threshold
+
+    def test_needs_consolidation_honors_keep_sources_flag(self, storage):
+        """MemoryStore.needs_consolidation must match ConsolidationEngine.needs_consolidation:
+        with consolidation_keep_sources off, it's a plain buffer count that does NOT ignore
+        consolidated/seen rows."""
+        from woven_imprint.config import get_config
+
+        cfg = get_config()
+        original_keep = cfg.memory.consolidation_keep_sources
+        try:
+            store = MemoryStore(storage, FakeEmbedder(), "c1")
+            _save(storage, "m1", {"consolidated_into": "mem-x"})
+            _save(storage, "m2", {"consolidation_seen": True})
+
+            # keep_sources=True (default): both rows are already consolidated/seen, so they
+            # don't count toward the threshold.
+            cfg.memory.consolidation_keep_sources = True
+            assert store.needs_consolidation(threshold=2) is False
+
+            # keep_sources=False: plain count, both rows count regardless of metadata.
+            cfg.memory.consolidation_keep_sources = False
+            assert store.needs_consolidation(threshold=2) is True
+        finally:
+            cfg.memory.consolidation_keep_sources = original_keep

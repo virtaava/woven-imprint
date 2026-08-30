@@ -587,3 +587,47 @@ Notes from running this for real:
   must only run after every `--shard` worker for that run has actually exited — it refuses to run
   otherwise (see [Determinism/resumability](#determinismresumability)); `--force-aggregate`
   overrides this only when a partial run is genuinely what you want to publish.
+
+### Answer-only re-runs
+
+Testing a `memory.*` RRF weight change (or any other config knob) doesn't require
+re-ingesting: `--set section.key=value` (repeatable) overrides a config field for the
+run's duration, and `--reuse-ingest <run-id>` copies `<conv>.db`/`.ingest.json` from a
+sibling run under the same root the first time a conversation's own directory has
+neither file yet — the run then answers straight from the copied DB with zero
+ingestion/bookkeeping LLM calls. Both flags compose: a same-dataset run-id with
+different `--set` overrides and `--reuse-ingest` pointing at the already-ingested base
+run turns a multi-hour re-ingest into an answer-only pass. Example (the 2026-08-30
+`weight_recency`/`weight_importance`/`weight_relationship` sweep that produced the
+`weight_relationship` default above — both variants reuse `locomo-mem-v2`'s ingested
+DBs, 5-way sharded):
+
+```bash
+# v2c: weights 1.0/1.0/1.0 (tie-bias fix only, no relevance-first defaults)
+for i in $(seq 0 4); do
+  .venv/bin/python -m eval.external run --bench locomo --mode memory \
+    --run-id locomo-mem-v2c --reuse-ingest locomo-mem-v2 \
+    --set memory.weight_recency=1.0 --set memory.weight_importance=1.0 \
+    --set memory.weight_relationship=1.0 \
+    --shard "$i/5" --no-results --timeout 900 &
+done
+wait
+.venv/bin/python -m eval.external run --bench locomo --mode memory \
+  --run-id locomo-mem-v2c --reuse-ingest locomo-mem-v2 \
+  --set memory.weight_recency=1.0 --set memory.weight_importance=1.0 \
+  --set memory.weight_relationship=1.0 --timeout 900
+
+# v2d: recency 0.1 / importance 0.0 / relationship 0.0 (the offline-best cell)
+for i in $(seq 0 4); do
+  .venv/bin/python -m eval.external run --bench locomo --mode memory \
+    --run-id locomo-mem-v2d --reuse-ingest locomo-mem-v2 \
+    --set memory.weight_recency=0.1 --set memory.weight_importance=0.0 \
+    --set memory.weight_relationship=0.0 \
+    --shard "$i/5" --no-results --timeout 900 &
+done
+wait
+.venv/bin/python -m eval.external run --bench locomo --mode memory \
+  --run-id locomo-mem-v2d --reuse-ingest locomo-mem-v2 \
+  --set memory.weight_recency=0.1 --set memory.weight_importance=0.0 \
+  --set memory.weight_relationship=0.0 --timeout 900
+```

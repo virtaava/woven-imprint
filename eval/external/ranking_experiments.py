@@ -520,6 +520,7 @@ def validate_v0(
 
 
 def main(argv: list[str] | None = None) -> None:
+    global RUN_ID, RUN_DIR, RESULTS_FILE
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--skip-validation", action="store_true")
     parser.add_argument(
@@ -531,7 +532,17 @@ def main(argv: list[str] | None = None) -> None:
         help="run the coordinator follow-up sweep (a/b/c/d) instead of the main 12-variant pass; "
         "reuses cached embeddings, appends to the existing report instead of overwriting it",
     )
+    parser.add_argument(
+        "--run-id",
+        default=RUN_ID,
+        help=f"bench=locomo mode=memory run id whose ingested DBs/results to diagnose "
+        f"(default: {RUN_ID!r})",
+    )
     args = parser.parse_args(argv)
+
+    RUN_ID = args.run_id
+    RUN_DIR = RUNS_DIR / RUN_ID
+    RESULTS_FILE = RESULTS_DIR / f"external_{RUN_ID}.json"
 
     t_start = time.time()
     OUT_DIR.mkdir(parents=True, exist_ok=True)

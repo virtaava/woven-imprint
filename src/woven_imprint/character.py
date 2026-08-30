@@ -1125,9 +1125,12 @@ class Character:
             "persona": self.persona.to_dict(),
             "birthdate": self.persona.birthdate.isoformat() if self.persona.birthdate else None,
             "memories": {
-                "buffer": self.memory.get_all(tier="buffer"),
-                "core": self.memory.get_all(tier="core"),
-                "bedrock": self.memory.get_all(tier="bedrock"),
+                # limit=None: export must carry every memory, not just the newest 1000
+                # (MemoryStore.get_all's default limit) — a buffer larger than that would
+                # otherwise be silently truncated on export/import round-trip.
+                "buffer": self.memory.get_all(tier="buffer", limit=None),
+                "core": self.memory.get_all(tier="core", limit=None),
+                "bedrock": self.memory.get_all(tier="bedrock", limit=None),
             },
             "relationships": self.relationships.get_all(),
             "facts": self.storage.query_facts(self.id, active_only=False, limit=None),

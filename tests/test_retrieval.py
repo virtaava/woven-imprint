@@ -200,6 +200,11 @@ class TestRetrieval:
         assert results[0]["tier"] == "bedrock"
 
     def test_relationship_boost(self, setup):
+        """weight_relationship defaults to 0.0 (measured 2026-08-30: the name-mention boost
+        outranks evidence on LoCoMo) — the relationship strategy's machinery must still work
+        when a caller opts back in by raising the weight, so this test exercises it explicitly
+        (opting in like the importance tests above; without this, the test is vacuous since the
+        relationship list is never built at the default weight)."""
         storage, embedder, retriever = setup
         storage.save_memory(
             {
@@ -222,7 +227,15 @@ class TestRetrieval:
             }
         )
 
-        results = retriever.retrieve("the case", limit=2, relationship_target="player_bob")
+        from woven_imprint.config import get_config
+
+        cfg = get_config().memory
+        orig = cfg.weight_relationship
+        cfg.weight_relationship = 1.0
+        try:
+            results = retriever.retrieve("the case", limit=2, relationship_target="player_bob")
+        finally:
+            cfg.weight_relationship = orig
         # Memory involving player_bob should rank higher
         assert "player_bob" in results[0]["content"]
 
@@ -363,6 +376,68 @@ class TestRetrieval:
         results = retriever.retrieve("test", limit=1)
         assert "_retrieval_score" in results[0]
         assert results[0]["_retrieval_score"] > 0
+
+    def test_zero_weight_importance_and_relationship_skip_list_building(self, setup, monkeypatch):
+        """weight_importance and weight_relationship both default to 0.0 — retrieval must not
+        build (or fuse) those lists at all in that case, even when a relationship_target is
+        passed. Verified two ways: (1) a spy on reciprocal_rank_fusion shows it was called with
+        exactly 3 paired lists/weights (semantic, keyword, recency — no importance, no
+        relationship), and (2) the fused result order is byte-identical to fusing just those 3
+        lists directly."""
+        import woven_imprint.memory.retrieval as retrieval_module
+        from woven_imprint.config import get_config
+
+        storage, embedder, retriever = setup
+        storage.save_memory(
+            {
+                "id": "m1",
+                "character_id": "c1",
+                "tier": "core",
+                "content": "Talked with player_bob about the case",
+                "embedding": embedder.embed("talked player_bob case"),
+                "importance": 0.9,
+            }
+        )
+        storage.save_memory(
+            {
+                "id": "m2",
+                "character_id": "c1",
+                "tier": "core",
+                "content": "Thought about the case alone",
+                "embedding": embedder.embed("thought about case alone"),
+                "importance": 0.1,
+            }
+        )
+
+        cfg = get_config().memory
+        orig_importance, orig_relationship = cfg.weight_importance, cfg.weight_relationship
+        cfg.weight_importance = 0.0
+        cfg.weight_relationship = 0.0
+
+        real_rrf = retrieval_module.reciprocal_rank_fusion
+        calls = []
+
+        def spy(ranked_lists, k=60, weights=None):
+            calls.append((list(ranked_lists), list(weights) if weights is not None else weights))
+            return real_rrf(ranked_lists, k=k, weights=weights)
+
+        monkeypatch.setattr(retrieval_module, "reciprocal_rank_fusion", spy)
+
+        try:
+            results = retriever.retrieve("the case", limit=2, relationship_target="player_bob")
+        finally:
+            cfg.weight_importance = orig_importance
+            cfg.weight_relationship = orig_relationship
+
+        assert len(calls) == 1
+        ranked_lists, weights = calls[0]
+        # Exactly semantic, keyword, recency — no importance, no relationship list.
+        assert len(ranked_lists) == 3
+        assert weights == [cfg.weight_semantic, cfg.weight_keyword, cfg.weight_recency]
+
+        expected = real_rrf(ranked_lists, k=cfg.rrf_k, weights=weights)
+        expected_order = [mid for mid, _ in expected[:2]]
+        assert [r["id"] for r in results] == expected_order
 
 
 class TestRecencyScore:

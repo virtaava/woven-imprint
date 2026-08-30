@@ -116,6 +116,14 @@ class RunConfig:
     # (~40 sessions each, one full haystack ingested) add up across 100 questions; nothing
     # downstream needs the DB once every question for that conversation is answered.
     delete_db_after_answer: bool = False
+    # `bench="locomo"`/`bench="longmemeval_s"` mode="memory" only: another run under the same
+    # root (sibling of this run's own run_id — see `run_root.parent`) whose per-conversation
+    # `<conv>.db`/`.ingest.json` this run copies from when its own conversation directory is
+    # missing both (see `_maybe_reuse_ingest`). Lets an answer-only re-run (e.g. testing new
+    # `--set` config overrides) skip re-ingesting entirely instead of requiring the caller to
+    # manually copy files first. Unlike `reuse_run` (locomo_plus's mandatory base-DB source),
+    # this is optional and applies to `run()`'s own per-conversation loop, not `run_plus()`.
+    reuse_ingest: str | None = None
 
     def __post_init__(self) -> None:
         if self.pair_turns is None:
@@ -341,10 +349,16 @@ def _judge_call(llm, messages: list[dict], temperature: float) -> dict:
     A truncated/garbled JSON reply (e.g. an over-long ``reason`` cut at ``max_tokens``) raises
     ``ValueError`` from the provider after its one retry; a benchmark shard must not die on that —
     it is recorded as an unparsed verdict (``judge_parsed`` False, counted in ``n_unparsed``).
+
+    Only ``ValueError`` (a parse/format failure) is caught here. A transport error (connection
+    drop, timeout, etc. — typically ``RuntimeError`` or an ``openai``/``requests`` exception) is
+    a different failure mode: recording it as an unparsed verdict would silently mark a real
+    connectivity outage as a wrong-but-scored answer instead of stopping the run so it can be
+    resumed from checkpoint once the provider is back. Such errors propagate.
     """
     try:
         result = llm.generate_json_robust(messages, temperature=temperature)
-    except Exception as exc:  # noqa: BLE001 — provider parse/format failures of any shape
+    except ValueError as exc:
         return {"label": "", "reason": f"judge error: {type(exc).__name__}: {str(exc)[:200]}"}
     return (
         result if isinstance(result, dict) else {"label": "", "reason": "judge returned non-dict"}
@@ -466,6 +480,34 @@ def _delete_conversation_db(paths: dict[str, Path]) -> None:
     _delete_db_with_sidecars(paths["db"])
 
 
+def _maybe_reuse_ingest(
+    cfg: "RunConfig", conv_id: str, paths: dict[str, Path], run_root: Path
+) -> None:
+    """If ``cfg.reuse_ingest`` names a sibling run and this conversation hasn't been ingested
+    into *this* run yet, copy the sibling's already-ingested ``<conv_id>.db``/``.ingest.json``
+    into this run's directory so the existing skip-ingestion path (``paths["ingest"].exists()``
+    in :func:`_process_conversation_memory`) takes over — no re-ingestion, no bookkeeping LLM
+    calls.
+
+    A no-op unless ``reuse_ingest`` is set, this run's own conversation directory has neither
+    file yet, and the reuse run actually has both (missing either on the source side is treated
+    as "nothing to reuse", not an error — the normal ingest path just runs instead). The reuse
+    run's sibling directory is ``run_root.parent / cfg.reuse_ingest`` — the same base ``run_root``
+    was built from (whether that's the real ``RUNS_DIR`` or a test's ``out_dir``), so this works
+    identically under both.
+    """
+    if not cfg.reuse_ingest or paths["db"].exists() or paths["ingest"].exists():
+        return
+    reuse_root = run_root.parent / cfg.reuse_ingest
+    reuse_paths = _conv_paths(reuse_root, conv_id)
+    if not (reuse_paths["db"].exists() and reuse_paths["ingest"].exists()):
+        return
+    _checkpoint_and_verify_wal(reuse_paths["db"])
+    paths["db"].parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(reuse_paths["db"], paths["db"])
+    shutil.copy2(reuse_paths["ingest"], paths["ingest"])
+
+
 def _process_conversation_memory(
     conv: Conversation,
     cfg: "RunConfig",
@@ -495,6 +537,7 @@ def _process_conversation_memory(
             )
             return ingest_stats, [answered[q.qid] for q in expected]
 
+    _maybe_reuse_ingest(cfg, conv.conv_id, paths, run_root)
     _cleanup_mid_ingest_db(paths)
 
     counting_llm = _CountingLLM(base_llm)
@@ -920,14 +963,22 @@ def _benchmark_config(cfg: "RunConfig"):
     and :func:`run_plus` so memory mode applies the identical benchmark config in either path;
     ``get_config()`` is process-global state, so a caller running multiple benches/modes in one
     process (or a test suite sharing a process) must not leak one run's settings into the next.
+
+    ``apply_overrides`` runs *inside* the ``try`` (not before it): if it raises partway through
+    ``cfg.overrides`` (an unknown field, a bad value on the 2nd/3rd override, ...),
+    ``apply_overrides`` itself rolls back whatever it already applied before re-raising (see its
+    docstring), and this function's ``finally`` still restores ``fact_extraction_interval``/
+    ``callbacks_refresh_on_session_end`` either way — a failing override no longer leaks any
+    config mutation past this context manager.
     """
     woven_cfg = get_config()
     prev_interval = woven_cfg.memory.fact_extraction_interval
     prev_refresh = woven_cfg.maintenance.callbacks_refresh_on_session_end
-    woven_cfg.memory.fact_extraction_interval = cfg.fact_extraction_interval
-    woven_cfg.maintenance.callbacks_refresh_on_session_end = False
-    restores = apply_overrides(woven_cfg, cfg.overrides)
+    restores: list[tuple[str, str, object]] = []
     try:
+        woven_cfg.memory.fact_extraction_interval = cfg.fact_extraction_interval
+        woven_cfg.maintenance.callbacks_refresh_on_session_end = False
+        restores = apply_overrides(woven_cfg, cfg.overrides)
         yield woven_cfg
     finally:
         woven_cfg.memory.fact_extraction_interval = prev_interval
@@ -936,32 +987,59 @@ def _benchmark_config(cfg: "RunConfig"):
             setattr(getattr(woven_cfg, section), key, prev)
 
 
+_TRUE_STRINGS = {"1", "true", "yes", "on"}
+_FALSE_STRINGS = {"0", "false", "no", "off"}
+
+
 def apply_overrides(woven_cfg, overrides) -> list[tuple[str, str, object]]:
     """Apply ``"section.key=value"`` overrides to the config object; return (section, key, previous)
-    triples for restoration. Values are coerced to the type of the current attribute (bool accepts
-    true/false/1/0). Unknown section/key raises ``ValueError`` so a typo cannot silently run the
-    default configuration.
+    triples for restoration. Values are coerced to the type of the current attribute.
+
+    Bool coercion is strict: the value (case-insensitive, surrounding whitespace stripped) must
+    be exactly one of ``1``/``0``/``true``/``false``/``yes``/``no``/``on``/``off``, else
+    ``ValueError`` — a typo like ``--set memory.relevance_gate=fasle`` must fail loudly rather
+    than silently coercing to ``False`` (every non-``"true"``-ish string would otherwise be
+    falsy). Unknown section/key raises ``ValueError`` too, so a typo there can't silently run
+    the default configuration either.
+
+    If applying override N fails (unknown field, bad value), overrides 1..N-1 that were already
+    applied are rolled back before the exception propagates — a caller never has to distinguish
+    "no overrides applied" from "some overrides applied, then it failed".
     """
     restores: list[tuple[str, str, object]] = []
-    for item in overrides:
-        if "=" not in item or "." not in item.split("=", 1)[0]:
-            raise ValueError(f"override must look like section.key=value, got {item!r}")
-        path, raw = item.split("=", 1)
-        section, key = path.split(".", 1)
-        if not hasattr(woven_cfg, section) or not hasattr(getattr(woven_cfg, section), key):
-            raise ValueError(f"unknown config field {path!r}")
-        target = getattr(woven_cfg, section)
-        prev = getattr(target, key)
-        if isinstance(prev, bool):
-            value: object = raw.strip().lower() in ("1", "true", "yes", "on")
-        elif isinstance(prev, int):
-            value = int(raw)
-        elif isinstance(prev, float):
-            value = float(raw)
-        else:
-            value = raw
-        setattr(target, key, value)
-        restores.append((section, key, prev))
+    try:
+        for item in overrides:
+            if "=" not in item or "." not in item.split("=", 1)[0]:
+                raise ValueError(f"override must look like section.key=value, got {item!r}")
+            path, raw = item.split("=", 1)
+            section, key = path.split(".", 1)
+            if not hasattr(woven_cfg, section) or not hasattr(getattr(woven_cfg, section), key):
+                raise ValueError(f"unknown config field {path!r}")
+            target = getattr(woven_cfg, section)
+            prev = getattr(target, key)
+            if isinstance(prev, bool):
+                normalized = raw.strip().lower()
+                if normalized in _TRUE_STRINGS:
+                    value: object = True
+                elif normalized in _FALSE_STRINGS:
+                    value = False
+                else:
+                    raise ValueError(
+                        f"override {path}={raw!r} is not a valid bool "
+                        f"(expected one of {sorted(_TRUE_STRINGS | _FALSE_STRINGS)})"
+                    )
+            elif isinstance(prev, int):
+                value = int(raw)
+            elif isinstance(prev, float):
+                value = float(raw)
+            else:
+                value = raw
+            setattr(target, key, value)
+            restores.append((section, key, prev))
+    except Exception:
+        for section, key, prev in reversed(restores):
+            setattr(getattr(woven_cfg, section), key, prev)
+        raise
     return restores
 
 

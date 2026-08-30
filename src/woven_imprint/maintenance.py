@@ -95,8 +95,13 @@ class MaintenanceRunner:
         cutoff = clock.now() - timedelta(days=self.cfg.buffer_ttl_days)
         cutoff_str = clock.sqlite_ts(cutoff)
         limit = 1000
+        # exclude_consolidated=True keeps consolidation-kept sources (metadata.consolidated_into)
+        # out of the oldest-first LIMIT window at the SQL level — otherwise >=1000 kept sources
+        # could fill the whole window and starve genuinely stale, unrelated rows from ever being
+        # considered. The Python guard below is kept too (belt and suspenders: it also protects
+        # against a future caller of this method bypassing the SQL filter).
         candidates = char.storage.get_memories(
-            char.id, tier="buffer", limit=limit, oldest_first=True
+            char.id, tier="buffer", limit=limit, oldest_first=True, exclude_consolidated=True
         )
         stale = [
             m["id"]

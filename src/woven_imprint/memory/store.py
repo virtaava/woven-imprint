@@ -192,8 +192,14 @@ class MemoryStore:
     def needs_consolidation(self, threshold: int = 100) -> bool:
         """Check if buffer has exceeded consolidation threshold.
 
-        Counts only unconsolidated buffer rows — memories already claimed by a
-        previous consolidation pass (`metadata.consolidated_into` /
-        `consolidation_seen`) don't recount toward the threshold.
+        Mirrors `ConsolidationEngine.needs_consolidation`: when
+        `get_config().memory.consolidation_keep_sources` is on, counts only
+        *unconsolidated* buffer rows — memories already claimed by a previous
+        consolidation pass (`metadata.consolidated_into` / `consolidation_seen`)
+        don't recount toward the threshold. When the flag is off, this is a
+        plain buffer count (byte-identical to the pre-Tier-3c behavior).
         """
-        return self.count(tier="buffer", unconsolidated=True) >= threshold
+        from ..config import get_config
+
+        keep_sources = get_config().memory.consolidation_keep_sources
+        return self.count(tier="buffer", unconsolidated=keep_sources) >= threshold

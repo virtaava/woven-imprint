@@ -17,8 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relationship strategy now ranks only candidates whose boost is actually
   positive (fixes a hidden oldest-first tie bias that previously ranked every
   gated candidate, including the untouched 0.0-tied majority, in ascending-rowid
-  order whenever `weight_relationship > 0`); `weight_relationship` default `0.0` (measured 2026-08-30: the name-mention boost outranks evidence — LoCoMo J 0.476 with it at 1.0 vs 0.536 at 0.0 on identical DBs)
-  since its positive effect is legitimate once that bug is fixed. The importance
+  order whenever `weight_relationship > 0`). Despite that fix, `weight_relationship`
+  defaults to `0.0` (was `1.0`): measured on identical DBs, answer-only re-runs
+  scored LoCoMo J `0.476` with it at `1.0` vs `0.536` at `0.0` (2026-08-30) — the
+  name-mention boost outranks genuine evidence and costs 6 J points. The
+  strategy's code is unchanged and kept available as an opt-in for callers who
+  want it (raise the weight above `0.0`). The importance
   strategy's tie-break changed from ascending-rowid (oldest-first) to
   descending-rowid (newest-first) for the same reason; `eval/external/ranking_experiments.py`'s
   `fuse_rank` mirrors both tie-break fixes. Decay/tier-boost machinery is
@@ -57,6 +61,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (guarded import — a no-op if `openai` isn't installed), so a vLLM/OpenAI-compatible call that
   times out or drops its connection gets the same retry/backoff/circuit-breaker treatment as a
   `requests` timeout instead of failing the whole run immediately.
+
+### Fixed
+- **Nightly `buffer_hygiene` no longer archives sources kept by consolidation**
+  (`metadata.consolidated_into`); rows only marked `consolidation_seen` are
+  still swept by TTL.
+- **`buffer_hygiene`'s oldest-first fetch window can no longer be starved by
+  consolidation-kept sources.** `SQLiteStorage.get_memories(...,
+  exclude_consolidated=True)` excludes `metadata.consolidated_into` rows in
+  SQL (unlike `unconsolidated=True`, it does *not* also exclude
+  `consolidation_seen` rows — those must stay sweepable), so a pile of
+  `>= 1000` kept sources can no longer fill the whole 1000-row LIMIT window
+  and hide a genuinely stale, unrelated row from ever being considered. The
+  existing Python-side guard is kept as well.
+- **`Character.export()` no longer truncates the buffer at 1000 memories.**
+  It now calls `MemoryStore.get_all(tier=..., limit=None)` for every tier
+  (buffer/core/bedrock already supported `limit=None`; `export()` just
+  wasn't passing it), so an export/import round-trip carries every memory,
+  not just the newest 1000.
+- **`eval/external/runner.py`'s `_judge_call` now catches only `ValueError`**
+  (an unparseable judge response) instead of every `Exception`. A transport
+  error (a dropped connection, a timeout — typically `RuntimeError` or an
+  `openai`/`requests` exception) now propagates and kills the shard instead
+  of being silently recorded as a scored-but-unparsed verdict; the run
+  resumes from checkpoint once the provider is back instead of shipping
+  results with hidden connectivity gaps baked in.
+- **`MemoryStore.needs_consolidation()` now honors
+  `memory.consolidation_keep_sources`**, matching
+  `ConsolidationEngine.needs_consolidation()`: with the flag on (default) it
+  counts only unconsolidated buffer rows; with it off, a plain buffer count.
+  Previously it always counted unconsolidated rows regardless of the flag.
+- **Import now remaps a kept source's stale `metadata.consolidated_into`
+  pointer.** Every memory gets a new id on `Engine.import_character()`, so a
+  Tier 3c "keep sources" row's `consolidated_into` (pointing at the *old* id
+  of the core row it was consolidated into) is dangling on arrival. Import
+  now builds an old-id → new-id map while re-adding memories, then rewrites
+  `consolidated_into` to the new id in a second pass — or drops the key
+  entirely if the target memory wasn't part of the export.
+- **Retrieval skips building the importance/relationship RRF lists at
+  `weight <= 0`** instead of building and then zero-weighting them — no
+  behavior change (a zero-weight list already contributed nothing to fused
+  scores), just skips the wasted per-candidate scoring loop at the current
+  relevance-first defaults (both weights default to `0.0`).
 
 ### Changed (behavior)
 - **`Character.ingest()` now uses unified bookkeeping and creates structured facts** when
@@ -740,4 +786,3 @@ curl -b "woven_demo_auth=<token>" \
 
 — Sona (Hermes Agent), 2026‑03‑25
 - **Fixed:** `OpenAILLM.generate_json` now sends `max_tokens` (default 2048); previously an unbounded JSON-mode generation could run to the context limit (observed: a temperature-0 judge call looping for hours, reproduced on every retry).
-- **Fixed:** nightly `buffer_hygiene` no longer archives sources kept by consolidation (`metadata.consolidated_into`); rows only marked `consolidation_seen` are still swept by TTL.

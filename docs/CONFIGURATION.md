@@ -78,6 +78,7 @@ Controls how characters store, consolidate, and retrieve memories.
 ```yaml
 memory:
   consolidation_threshold: 100
+  consolidation_keep_sources: true
   consolidation_interval: 20
   state_save_interval: 10
   fact_extraction_interval: 3
@@ -96,9 +97,9 @@ memory:
   rrf_k: 60
   weight_semantic: 1.0
   weight_keyword: 1.0
-  weight_recency: 1.0
-  weight_importance: 1.0
-  weight_relationship: 1.0
+  weight_recency: 0.1
+  weight_importance: 0.0
+  weight_relationship: 0.0
   # recency_anchor: created        # "created" | "accessed"
   max_candidates: 5000
   relevance_gate: true
@@ -108,7 +109,8 @@ memory:
 
 | Setting | Default | Env Var | Description |
 |---------|---------|---------|-------------|
-| `consolidation_threshold` | `100` | — | Number of buffer memories that triggers consolidation. When buffer exceeds this count, similar memories are clustered and summarized into core memories. Checked at session end (`end_session()`) and via explicit `Character.consolidate()` — no longer polled mid-chat. |
+| `consolidation_threshold` | `100` | — | Number of buffer memories that triggers consolidation. When buffer exceeds this count, similar memories are clustered and summarized into core memories. Checked at session end (`end_session()`) and via explicit `Character.consolidate()` — no longer polled mid-chat. Counts only *unconsolidated* buffer rows (see `consolidation_keep_sources`). |
+| `consolidation_keep_sources` | `true` | — | When on, consolidation keeps source memories `active`/`buffer` (tagged `metadata.consolidated_into`) instead of archiving them, so verbatim sources stay retrievable after being summarized. When off, sources are archived as before (excluded from retrieval). |
 | `consolidation_interval` | `20` | — | **Unused as of Phase A.** Previously: check for consolidation every N chat turns. Consolidation checks moved to session end (`end_session()`) / explicit `Character.consolidate()` only — see Changelog "Auto-consolidation no longer runs mid-chat." Kept in config for backward-compatible file parsing; has no effect. |
 | `state_save_interval` | `10` | — | Save emotion and narrative arc state to database every N turns. Protects against mid-session data loss. Lower = safer but more DB writes. |
 | `fact_extraction_interval` | `3` | — | Extract notable facts from conversation every N turns. Every turn = comprehensive but expensive (1 LLM call per extraction). |
@@ -127,9 +129,9 @@ memory:
 | `rrf_k` | `60` | — | Reciprocal Rank Fusion constant. Combines semantic/keyword/recency/importance/relationship rankings into one score: `1 / (rrf_k + rank)` per signal. Higher = flatter fusion (rank position matters less); lower = top ranks dominate more. Replaces the old tier-priority retrieval strategy (which had a seed-dominance bug — see Changelog). |
 | `weight_semantic` | `1.0` | — | Weight applied to the semantic (embedding cosine similarity) signal in weighted RRF. Higher = semantic relevance matters more relative to other signals. |
 | `weight_keyword` | `1.0` | — | Weight applied to the keyword (FTS) signal in weighted RRF. |
-| `weight_recency` | `1.0` | — | Weight applied to the recency-decay signal in weighted RRF. |
-| `weight_importance` | `1.0` | — | Weight applied to the stored importance score (plus tier boost) in weighted RRF. |
-| `weight_relationship` | `1.0` | — | Weight applied to the relationship-target-match signal in weighted RRF (only relevant when a `relationship_target`/`user_id` is passed to retrieval). |
+| `weight_recency` | `0.1` | — | Weight applied to the recency-decay signal in weighted RRF. Default `0.1` (was `1.0`): recency/importance ranking *inside the relevance gate* dilutes relevance rather than sharpening it — offline LoCoMo ranking experiments (`eval/external/ranking_experiments.py`, `eval/external/runs/diagnostics/ranking/ranking_experiments_report.md`, 2026-08-30) measured evidence recall@20 rising from 23.9% to 50.8% with `weight_recency`/`weight_importance` at 0. `0.1` costs only ~2 recall@20 points (48.7 vs 50.8) versus a bare `0.0` (controller ruling 2026-08-30) while still nudging ties toward newer memories. The long-horizon `recency_ordering` bench check tests the recency strategy itself by opting into `weight_recency=1.0` locally (see ARCHITECTURE.md#retrieval-relevance-gate) rather than relying on the `0.1` product default, since the benchmark's `HashEmbedder` makes the two memories it compares unequal in semantic relevance for reasons unrelated to recency. The decay machinery (`decay_bedrock`/`decay_core`/`decay_buffer`, `_recency_score`) is unchanged and still feeds this signal — raise it further to prefer recent memories among the already-relevant (gated) set more strongly. |
+| `weight_importance` | `0.0` | — | Weight applied to the stored importance score (plus tier boost, plus a `relationship_target`/`user_id` affinity bonus of `+0.2`) in weighted RRF. Default `0.0` (was `1.0`) for the same reason as `weight_recency` — see above (importance had no equivalent long-horizon regression, so it stayed at `0.0` rather than `0.1`). At `0.0` the importance list is never built at all (see `retrieval.py`), so the tier boosts and the `+0.2` user-affinity bonus are dead weight until you raise this above `0.0` — they don't influence ranking on their own. |
+| `weight_relationship` | `0.0` | — | Weight applied to the relationship-target-match signal in weighted RRF (only relevant when a `relationship_target`/`user_id` is passed to retrieval). Default `0.0` (was `1.0`): measured on identical DBs, answer-only re-runs scored LoCoMo J `0.476` with it at `1.0` vs `0.536` at `0.0` (2026-08-30) — the name-mention boost outranks genuine evidence. This is despite the tie-bias fix below being real and still in place: the strategy ranks only candidates whose boost is actually positive (see [ARCHITECTURE.md](ARCHITECTURE.md#retrieval-relevance-gate)), so it no longer injects an oldest-first bias on the untouched majority the way it used to — the fix just isn't enough to make the boost net-positive for recall. At `0.0` the relationship list is never built at all. Setting this above `0.0` re-enables the name-mention boost — the code is unchanged and available as an explicit opt-in. |
 | `recency_anchor` | `created` | — | Which timestamp recency decay is anchored on: `created` (memory's creation time — decay is a fixed clock, independent of retrieval activity) or `accessed` (last-access time — frequently-recalled memories stay "fresh"). |
 | `max_candidates` | `5000` | — | Hard cap on active memories scored per `retrieve()` call. Every active memory for the character is a retrieval candidate (no more 200-newest-core-rows window); if the character has more than this many active memories, the newest `max_candidates` are scored and older ones are reachable only via FTS keyword match. Raise it for characters with very long histories on capable hardware; lower it to bound retrieval latency. |
 | `relevance_gate` | `true` | — | When true and the query is non-empty, recency/importance/relationship ranking is confined to memories that are semantically similar (similarity > `relevance_min_similarity`, top `relevance_semantic_topk` of those) or keyword-matching (FTS) — see [ARCHITECTURE.md](ARCHITECTURE.md#retrieval-relevance-gate). Narrows (does not eliminate) an off-topic bedrock/core flood outranking a fresh relevant fact via recency/importance floors alone — an off-topic memory with genuine positive similarity landing in the semantic top-K can still outrank on those signals. Falls back to scoring every active memory if nothing is relevant at all. Set `false` to restore the pre-gate fusion (those signals rank every active memory unconditionally). An empty query always bypasses the gate. |

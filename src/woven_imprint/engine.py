@@ -190,16 +190,35 @@ class Engine:
         persona_model = PersonaModel(persona, birthdate=birthdate)
         char = Character(char_id, self.storage, self.llm, self.embedding, persona_model)
 
-        # Import memories (re-embed them)
+        # Import memories (re-embed them). Every memory gets a brand-new id here, so a
+        # source row's `metadata.consolidated_into` (Tier 3c "keep sources" — pointing at the
+        # OLD id of the core row it was consolidated into) is stale on arrival: it still
+        # points at an id that no longer exists in this database. Track old_id -> new_id as
+        # we go, then do a second pass (below) to rewrite `consolidated_into` to the new id —
+        # or drop it if the target wasn't part of this export.
+        id_map: dict[str, str] = {}
+        imported: list[tuple[str, dict]] = []  # (new_id, original mem_data)
         for tier_name in ("bedrock", "core", "buffer"):
             for mem_data in data.get("memories", {}).get(tier_name, []):
-                char.memory.add(
+                new_mem = char.memory.add(
                     content=mem_data["content"],
                     tier=tier_name,
                     role=mem_data.get("role"),
                     importance=mem_data.get("importance", 0.5),
                     metadata=mem_data.get("metadata", {}),
                 )
+                old_id = mem_data.get("id")
+                if old_id:
+                    id_map[old_id] = new_mem["id"]
+                imported.append((new_mem["id"], mem_data))
+
+        # Second pass: remap consolidated_into now that every old id's new id is known.
+        for new_id, mem_data in imported:
+            old_target = (mem_data.get("metadata") or {}).get("consolidated_into")
+            if not old_target:
+                continue
+            new_target = id_map.get(old_target)
+            self.storage.update_memory_metadata(new_id, {"consolidated_into": new_target})
 
         # Import relationships
         for rel_data in data.get("relationships", []):

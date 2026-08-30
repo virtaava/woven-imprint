@@ -54,6 +54,23 @@ def main(argv: list[str] | None = None) -> int:
         "'--bench locomo --mode memory' run to copy ingested DBs from",
     )
     run_parser.add_argument(
+        "--reuse-ingest",
+        default=None,
+        metavar="RUN_ID",
+        help="Before ingesting a conversation, if this run's own <conv>.db/.ingest.json are "
+        "missing and RUN_ID (a sibling run under the same root) has both, copy them over so "
+        "this run answers/judges without re-ingesting — e.g. re-running with different "
+        "--set config overrides against an already-ingested run's DBs",
+    )
+    run_parser.add_argument(
+        "--set",
+        dest="overrides",
+        action="append",
+        default=[],
+        metavar="SECTION.KEY=VALUE",
+        help="Override a woven-imprint config field for this run (repeatable)",
+    )
+    run_parser.add_argument(
         "--shard",
         default=None,
         help="i/n: process only conversations with index %% n == i (parallel workers)",
@@ -139,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
             k=args.k,
             limit_conversations=args.limit,
             shard=_parse_shard(args.shard),
+            overrides=tuple(args.overrides),
             write_results=not args.no_results,
             sample=args.sample,
             seed=args.seed,
@@ -146,6 +164,7 @@ def main(argv: list[str] | None = None) -> int:
             max_sessions=args.max_sessions,
             max_questions=args.max_questions,
             reuse_run=args.reuse_run,
+            reuse_ingest=args.reuse_ingest,
             timeout=args.timeout,
             force_aggregate=args.force_aggregate,
             pair_turns=args.pair_turns,

@@ -95,14 +95,23 @@ class MaintenanceRunner:
         cutoff = clock.now() - timedelta(days=self.cfg.buffer_ttl_days)
         cutoff_str = clock.sqlite_ts(cutoff)
         limit = 1000
+        # exclude_consolidated=True keeps consolidation-kept sources (metadata.consolidated_into)
+        # out of the oldest-first LIMIT window at the SQL level — otherwise >=1000 kept sources
+        # could fill the whole window and starve genuinely stale, unrelated rows from ever being
+        # considered. The Python guard below is kept too (belt and suspenders: it also protects
+        # against a future caller of this method bypassing the SQL filter).
         candidates = char.storage.get_memories(
-            char.id, tier="buffer", limit=limit, oldest_first=True
+            char.id, tier="buffer", limit=limit, oldest_first=True, exclude_consolidated=True
         )
         stale = [
             m["id"]
             for m in candidates
             if (m.get("created_at") or "") < cutoff_str
             and m.get("importance", 0.5) <= self.cfg.buffer_hygiene_max_importance
+            # Sources kept retrievable by consolidation (memory.consolidation_keep_sources)
+            # are exempt: archiving them would silently undo that feature. Rows only
+            # marked consolidation_seen are still swept by TTL as before.
+            and not (m.get("metadata") or {}).get("consolidated_into")
         ]
         char.storage.archive_memories_batch(stale)
         result = {"archived": len(stale)}

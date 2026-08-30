@@ -192,6 +192,101 @@ memories unconditionally — useful for comparing behavior or if a workload
 depends on the old semantics. An empty query always bypasses the gate (there
 is nothing to be relevant to), matching prior behavior exactly.
 
+#### Relevance-first RRF defaults, and the relationship oldest-first bias fix
+
+Offline LoCoMo ranking experiments (`eval/external/ranking_experiments.py`,
+report at `eval/external/runs/diagnostics/ranking/ranking_experiments_report.md`,
+2026-08-30) found that ranking *inside* the already-gated eligible set on
+recency/importance/relationship dilutes relevance rather than sharpening it:
+evidence recall@20 went from 23.9% under the old equal-weight defaults
+(`weight_recency`=`weight_importance`=`weight_relationship`=`1.0`) to **50.8%**
+with `weight_recency`/`weight_importance`/`weight_relationship` **all** at
+`0.0` (semantic + keyword only, inside the relevance gate — relationship
+contributes nothing at this cell, it isn't "on"). A separate cell in the same
+sweep — `weight_recency`=`weight_importance`=`0.0`,
+`weight_relationship`=`1.0` — measured only **35.6%**, i.e. *worse* than
+turning relationship off; that cell is not evidence that the relationship
+signal itself is harmful, because it was measured against the relationship
+strategy's **pre-fix** implementation (the oldest-first tie bias described
+below), which was still present when this sweep ran. Corrected attribution:
+**50.8% = relationship weight 0** (the true ceiling this sweep found);
+**35.6% = the buggy relationship list at weight 1**, not a clean read on the
+signal. `weight_importance` defaults to `0.0`. `weight_recency` defaults to a
+small `0.1` instead of `0.0` (controller ruling 2026-08-30): the same
+experiment's follow-up sweep measured the shipped `0.1`/`0.0`/`0.0` triple
+directly at **48.7%** recall@20 — only ~2 points below the 50.8% ceiling —
+while still nudging ties toward newer memories for the product-facing case
+the long-horizon benchmark's `recency_ordering` check exercises (a fresh
+day-60 fact vs. an old day-5 fact for the same generic query,
+`"the visitor mentioned"`).
+
+That check was red at `weight_recency=0.1` (and at `0.25`, tried as a
+fallback and also red) for a benchmark-specific reason, not a product
+regression: instrumenting the fused ranked lists for that exact query showed
+the benchmark's `HashEmbedder` places the day-5 memory 2nd of 851 candidates
+on the semantic list and the day-60 memory 34th — almost certainly a crc32
+bucket collision between a query token and one of the day-number tokens
+(`noun_for`'s docstring already documents this class of artifact for day 2
+vs. `"mentioned"`), not a genuine relevance difference. At relevance-first
+defaults (`weight_recency=0.1`), that noise dominates the tiny recency
+contribution, so the check no longer measures what it claims to. **Resolution
+(controller ruling 2026-08-30): fix the bench, not the product or
+`KNOWN_OPEN`** — `recency_ordering` now sets `weight_recency=1.0` locally for
+that one check only (restored in a `finally`), isolating and testing the
+recency strategy itself independent of the product's relevance-first default;
+the product's actual default stays `0.1`. See
+[CONFIGURATION.md](CONFIGURATION.md#memory-settings) for the weight
+descriptions. The decay/tier-boost machinery (`_recency_score`, `tier_boost_*`)
+is untouched and still feeds these signals for anyone who raises either
+weight further.
+
+**Shipped defaults: `weight_recency=0.1`, `weight_importance=0.0`,
+`weight_relationship=0.0`.** The relationship weight's path to `0.0` went
+through a real candidate at `1.0`: once the tie-bias fix below landed, the
+natural hypothesis was that a *correctly implemented* relationship boost
+(mentions-the-user's-name) would recover some of the 35.6%-vs-50.8% gap seen
+above. It doesn't reduce cleanly to an offline recall number (the sweep above
+only ever measured the pre-fix strategy at weight 1), so it was measured live
+instead, on identical embeddings/DBs (no re-ingestion): full LoCoMo
+answer-only re-runs against the fixed relationship strategy scored
+`weight_relationship=1.0` (`locomo-mem-v2b`) at J **0.476** versus
+`weight_relationship=0.0` (`locomo-mem-v2d`, otherwise identical —
+`weight_recency=0.1`, `weight_importance=0.0`) at J **0.536** — six points
+higher with the boost off. (For context, the unranked baseline before any of
+this — `keep_sources` on, still at the old `1.0`/`1.0`/`1.0` weights —
+measured J 0.490 on the same DBs (`locomo-mem-v2`), so both the weight change
+and the relationship-off decision are net gains over that baseline, not just
+over each other.) The mechanism: the relationship boost is a binary
+"mentions the user's name" signal, and once relevance ranking is no longer
+diluted by recency/importance, outranking genuine topical evidence with a
+name-mention costs more accuracy than it buys, even with the tie bias gone.
+See
+[BENCHMARKS.md](BENCHMARKS.md#tier-3c-keep-sources--relevance-first-ranking-2026-08-30)
+for the full v1→v2→v2b/v2c/v2d table. The relationship strategy's tie-bias
+fix itself is real, shipped, and independent of this default — it stays off
+only because the underlying signal doesn't pay for itself on this benchmark,
+not because the fix failed. Setting `weight_relationship` above `0.0`
+re-enables the (now bias-fixed) boost as an explicit opt-in. The relationship
+strategy is a *binary* signal — a candidate either mentions
+`relationship_target` (boost) or it doesn't (no boost) — so before the fix,
+`retrieve()` ranked every `gated` candidate on that boost, and the untouched
+majority (boost 0.0) all tied. Python's stable sort then fell back to
+`gated`'s input order, which is ascending rowid (oldest first, see "Sort by
+rowid for stable input order" in `MemoryRetriever.retrieve`) — so with
+`weight_relationship > 0`, every candidate that *doesn't* mention the target
+still got an oldest-first rank injected into RRF fusion, not just the ones
+that do. The fix: the relationship ranked list now contains only candidates
+whose boost is positive; RRF (`utils/rrf.py::reciprocal_rank_fusion`) already
+treats an id absent from a ranked list as a zero contribution from that
+list, so the untouched majority gets no signal from this strategy at all
+instead of a hidden bias. The (typically few) matching candidates tie-break
+newest-first (descending rowid). The importance strategy's tie-break was
+audited for the same failure mode and changed the same way — importance is a
+real per-row score so exact ties are less common, but they do happen (e.g. a
+batch of same-tier, same-importance facts), and the old ascending-rowid
+tie-break was oldest-first for the same reason. Both strategies now tie-break
+newest-first (descending rowid) rather than falling back to insertion order.
+
 ### Persona Model
 
 Four constraint levels (hard, temporal, soft, emergent):
@@ -372,8 +467,60 @@ Triggered when Buffer exceeds threshold (default: 100 entries):
 1. Cluster related Buffer entries by semantic similarity
 2. For each cluster, LLM generates a consolidated summary
 3. Summary stored as Core memory with source_refs pointing to originals
-4. Original Buffer entries archived (not deleted)
-5. Importance scores aggregated (max of cluster)
+4. Original Buffer entries kept active and retrievable by default (see
+   `memory.consolidation_keep_sources` below); importance scores aggregated
+   (max of cluster)
+
+#### `consolidation_keep_sources` (Tier 3c, default `true`)
+
+The recall diagnostic that motivated this (`eval/external/diagnose_recall.py`,
+`eval/external/runs/diagnostics/recall_diagnostic.md`) found that 86.7% of
+LoCoMo memory-mode WRONG answers had their evidence sitting only in
+`archived` buffer rows — retrieval never scores or returns archived rows
+regardless of `limit`, so consolidation's step 4 (archive the sources once
+summarized) was quietly deleting recall. `consolidation_keep_sources: true`
+changes that:
+
+- **Multi-member cluster**: the `[Consolidated]` core summary row is created
+  exactly as before, but its source rows stay `status='active'`,
+  `tier='buffer'` and gain two metadata keys instead of being archived —
+  `metadata.consolidated_into` (the summary row's id) and
+  `metadata.consolidated_at` (timestamp), written via a merge-not-replace
+  `update_memory_metadata(id, patch)` storage call.
+- **Singleton cluster, importance ≥ 0.6**: promoted **in place** — the same
+  row's `tier` flips to `core` and it gains `metadata.promoted_from_buffer =
+  true` — instead of the old copy-then-archive, so its text never appears
+  twice in retrieval.
+- **Singleton cluster, importance < 0.6**: left untouched except for
+  `metadata.consolidation_seen = true`, so it stops recounting toward the
+  consolidation threshold without being archived or promoted.
+- **Threshold bookkeeping**: `needs_consolidation()` (both
+  `ConsolidationEngine` and `MemoryStore`) and the consolidation chunk query
+  count/pull only *unconsolidated* buffer rows — SQL
+  `json_extract(metadata,'$.consolidated_into') IS NULL AND
+  json_extract(metadata,'$.consolidation_seen') IS NULL` — so kept/promoted/
+  seen rows don't perpetually re-trigger consolidation.
+- **Hygiene exemption**: the nightly `buffer_hygiene` TTL sweep excludes rows
+  with `metadata.consolidated_into` set (`SQLiteStorage.get_memories(...,
+  exclude_consolidated=True)`, enforced in SQL so a pile of ≥1000 kept
+  sources can't starve the sweep's oldest-first fetch window either) — a kept
+  source is never silently archived by hygiene after the fact. Rows only
+  marked `consolidation_seen` (no `consolidated_into`) are still swept by TTL
+  as before.
+- **Setting the flag off** restores the pre-Tier-3c behavior byte-for-byte:
+  every source archived, nothing kept.
+
+**Candidate-window caveat at product scale.** Retrieval's candidate pool is
+still bounded (`memory.max_candidates`, default 5000 active rows plus a
+bounded FTS pull) — kept sources are ordinary active rows competing for that
+same window, not a separate always-included pool. On LoCoMo's scale (a few
+thousand memories per conversation) this is a non-issue; on a character with
+tens of thousands of accumulated memories, old kept sources can eventually
+fall out of the candidate window the same way any other old active memory
+would, and keep_sources does nothing to change that — it only stops
+consolidation from being the thing that removes them. See
+[BENCHMARKS.md](BENCHMARKS.md#tier-3c-keep-sources--relevance-first-ranking-2026-08-30)
+for the measured recall effect and the follow-on ranking work this motivated.
 
 ### Session Management
 

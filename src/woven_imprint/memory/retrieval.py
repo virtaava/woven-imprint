@@ -226,36 +226,55 @@ class MemoryRetriever:
         recency_scores.sort(key=lambda x: (-x[1], x[2]))
         recency_ranked = [mid for mid, _, _ in recency_scores]
 
-        # Strategy 4: Importance with tier boost + user affinity (with rowid tiebreaker)
-        importance_scores = []
-        for m in gated:
-            base = m.get("importance", 0.5) * m.get("certainty", 1.0)
-            boost = _get_tier_boosts().get(m.get("tier", "buffer"), 0.0)
-            # User affinity bonus
-            if relationship_target:
-                meta = m.get("metadata", {})
-                if meta.get("user_id") == relationship_target:
-                    base += 0.2
-            importance_scores.append((m["id"], base + boost, m.get("rowid", 0)))
-        # Sort by score descending, then by rowid ascending (newer=higher rowid comes last in tie)
-        importance_scores.sort(key=lambda x: (-x[1], x[2]))
-        importance_ranked = [mid for mid, _, _ in importance_scores]
+        # Strategies 4 & 5 (importance, relationship) are skipped entirely — no list built,
+        # no per-candidate scoring loop run — when their weight is <= 0: a 0-weight list
+        # contributes nothing to weighted RRF (score * 0 == 0 from every id), so building it
+        # is pure wasted work at the current relevance-first defaults (both default to 0.0).
+        # `ranked_lists`/`weights` stay paired throughout — a list is appended if and only if
+        # its weight is too.
+        ranked_lists = [semantic_ranked, keyword_ranked, recency_ranked]
+        weights = [mem_cfg.weight_semantic, mem_cfg.weight_keyword, mem_cfg.weight_recency]
 
-        # Strategy 5: Relationship boost (if target specified)
-        ranked_lists = [
-            semantic_ranked,
-            keyword_ranked,
-            recency_ranked,
-            importance_ranked,
-        ]
-        weights = [
-            mem_cfg.weight_semantic,
-            mem_cfg.weight_keyword,
-            mem_cfg.weight_recency,
-            mem_cfg.weight_importance,
-        ]
+        # Strategy 4: Importance with tier boost + user affinity (with rowid tiebreaker).
+        # Importance is a real per-row score (base * certainty + tier boost), so exact
+        # ties are rarer than for the boolean relationship signal below, but they do
+        # happen (e.g. a batch of same-tier, same-importance, no-certainty facts).
+        # Ties break newest-first (descending rowid) — NOT oldest-first: with a stable
+        # sort over `gated` (which is ordered ascending-rowid, see above), an ascending
+        # rowid tiebreak would silently prefer older memories among every tied group,
+        # matching the same oldest-first bias found in the relationship strategy below.
+        if mem_cfg.weight_importance > 0:
+            importance_scores = []
+            for m in gated:
+                base = m.get("importance", 0.5) * m.get("certainty", 1.0)
+                boost = _get_tier_boosts().get(m.get("tier", "buffer"), 0.0)
+                # User affinity bonus
+                if relationship_target:
+                    meta = m.get("metadata", {})
+                    if meta.get("user_id") == relationship_target:
+                        base += 0.2
+                importance_scores.append((m["id"], base + boost, m.get("rowid", 0)))
+            # Sort by score descending, then by rowid descending (newest wins ties).
+            importance_scores.sort(key=lambda x: (-x[1], -x[2]))
+            ranked_lists.append([mid for mid, _, _ in importance_scores])
+            weights.append(mem_cfg.weight_importance)
 
-        if relationship_target:
+        # Strategy 5: Relationship boost (if target specified).
+        #
+        # Regression fix (ranking_experiments 2026-08-30): the relationship boost is
+        # binary (a candidate either mentions relationship_target or it doesn't), so
+        # the untouched majority all tie at 0.0. The old code ranked *every* gated
+        # candidate — the tied majority then fell back to Python's stable sort, which
+        # preserves `gated`'s ascending-rowid input order, i.e. oldest first. With
+        # weight_relationship > 0 that silently injected an oldest-first bias into
+        # RRF fusion for every candidate that doesn't mention the target — not just
+        # the ones that do. Fix: only candidates with a positive boost enter the
+        # relationship ranked list at all; RRF (`utils/rrf.py`) already scores an id
+        # missing from a list as a 0 contribution from that list, so the untouched
+        # majority now gets *no* signal from this strategy instead of an accidental
+        # rank. Ties among the (typically few) matching candidates break newest-first
+        # (descending rowid), matching the importance tiebreak above.
+        if relationship_target and mem_cfg.weight_relationship > 0:
             rel_scores = []
             target_lower = relationship_target.lower()
             for m in gated:
@@ -264,9 +283,10 @@ class MemoryRetriever:
                 involves_target = (
                     target_lower in content_lower or meta.get("target_id") == relationship_target
                 )
-                rel_scores.append((m["id"], 1.0 if involves_target else 0.0))
-            rel_scores.sort(key=lambda x: x[1], reverse=True)
-            ranked_lists.append([mid for mid, _ in rel_scores])
+                if involves_target:
+                    rel_scores.append((m["id"], 1.0, m.get("rowid", 0)))
+            rel_scores.sort(key=lambda x: (-x[1], -x[2]))
+            ranked_lists.append([mid for mid, _, _ in rel_scores])
             weights.append(mem_cfg.weight_relationship)
 
         # Fuse with weighted RRF

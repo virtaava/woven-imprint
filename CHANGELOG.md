@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (behavior) — Tier 3c (recall: keep consolidated sources)
+- **Retrieval RRF defaults**: `weight_importance` `1.0` → `0.0`, `weight_recency`
+  `1.0` → `0.1` (relevance-first ranking) — LoCoMo evidence recall@20 23.9% →
+  50.8% with both at 0 (`ranking_experiments`, 2026-08-30). `weight_recency` is
+  kept at a small `0.1` rather than `0.0` (controller ruling, same day): `0.1`
+  costs only ~2 recall@20 points (48.7% vs 50.8%) while still breaking ties
+  newest-first when semantic/keyword relevance ties on a generic query. The
+  relationship strategy now ranks only candidates whose boost is actually
+  positive (fixes a hidden oldest-first tie bias that previously ranked every
+  gated candidate, including the untouched 0.0-tied majority, in ascending-rowid
+  order whenever `weight_relationship > 0`). Despite that fix, `weight_relationship`
+  defaults to `0.0` (was `1.0`): measured on identical DBs, answer-only re-runs
+  scored LoCoMo J `0.476` with it at `1.0` vs `0.536` at `0.0` (2026-08-30) — the
+  name-mention boost outranks genuine evidence and costs 6 J points. The
+  strategy's code is unchanged and kept available as an opt-in for callers who
+  want it (raise the weight above `0.0`). The importance
+  strategy's tie-break changed from ascending-rowid (oldest-first) to
+  descending-rowid (newest-first) for the same reason; `eval/external/ranking_experiments.py`'s
+  `fuse_rank` mirrors both tie-break fixes. Decay/tier-boost machinery is
+  unchanged and still feeds these signals for anyone who raises the weight
+  further. Long-horizon `recency_ordering` now opts into `weight_recency=1.0`
+  to test the recency strategy under relevance-first defaults.
+- **Consolidation keeps source memories active and retrievable** (config
+  `memory.consolidation_keep_sources`, default `true`): a multi-member buffer
+  cluster still gets a summarized `[Consolidated]` core row, but its sources
+  stay `active`/`buffer` and gain `metadata.consolidated_into`/
+  `consolidated_at` instead of being archived. A singleton with importance
+  `>= 0.6` is now **promoted in place** (tier flipped to `core` on the same
+  row, `metadata.promoted_from_buffer = true`) instead of being copied and
+  archived, so its text never appears twice in retrieval; a singleton below
+  the bar gets `metadata.consolidation_seen = true` so it stops recounting
+  toward the consolidation threshold. `needs_consolidation()` and the
+  consolidation chunk query now count/pull only *unconsolidated* buffer rows.
+  `ConsolidationEngine.consolidate()`'s stats dict gains `kept`, `promoted`,
+  `seen` alongside `archived` (always present, `0` when the flag is off).
+  Setting `memory.consolidation_keep_sources: false` restores the prior
+  archive-everything behavior byte-for-byte.
+- **`eval/external/diagnose_recall.py`** gains `--run-id`, `--results`, and
+  `--out-dir` CLI arguments (defaults unchanged in spirit: `locomo-mem-v1`,
+  `eval/results/external_<run-id>.json`,
+  `eval/external/runs/diagnostics/<run-id>/`) so it can diagnose a different
+  run without editing the script.
+- **Results**: LoCoMo memory-mode J `0.444` → `0.536` (2026-08-30 defaults,
+  `locomo-mem-v2d`); LoCoMo-Plus cognitive `0.332` → `0.421`
+  (`plus-mem-v2d`) — same local judge, full v1→v2→v2b/v2c/v2d progression and
+  diagnostics in `docs/BENCHMARKS.md`. LongMemEval-S not re-run this tier
+  (`lme-s-50-v1` numbers still stand, measured under the prior defaults).
+
 ### Added (Tier 3b — external benchmarks · library enablers)
 - **`OpenAILLM(extra_body=...)`** — an optional dict forwarded verbatim into every
   `chat.completions.create` call (`generate`, `generate_stream`, `generate_json`) when set, e.g.
@@ -18,6 +66,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (guarded import — a no-op if `openai` isn't installed), so a vLLM/OpenAI-compatible call that
   times out or drops its connection gets the same retry/backoff/circuit-breaker treatment as a
   `requests` timeout instead of failing the whole run immediately.
+
+### Fixed (Tier 3c)
+- **Nightly `buffer_hygiene` no longer archives sources kept by consolidation**
+  (`metadata.consolidated_into`); rows only marked `consolidation_seen` are
+  still swept by TTL.
+- **`buffer_hygiene`'s oldest-first fetch window can no longer be starved by
+  consolidation-kept sources.** `SQLiteStorage.get_memories(...,
+  exclude_consolidated=True)` excludes `metadata.consolidated_into` rows in
+  SQL (unlike `unconsolidated=True`, it does *not* also exclude
+  `consolidation_seen` rows — those must stay sweepable), so a pile of
+  `>= 1000` kept sources can no longer fill the whole 1000-row LIMIT window
+  and hide a genuinely stale, unrelated row from ever being considered. The
+  existing Python-side guard is kept as well.
+- **`Character.export()` no longer truncates the buffer at 1000 memories.**
+  It now calls `MemoryStore.get_all(tier=..., limit=None)` for every tier
+  (buffer/core/bedrock already supported `limit=None`; `export()` just
+  wasn't passing it), so an export/import round-trip carries every memory,
+  not just the newest 1000.
+- **`eval/external/runner.py`'s `_judge_call` now catches only `ValueError`**
+  (an unparseable judge response) instead of every `Exception`. A transport
+  error (a dropped connection, a timeout — typically `RuntimeError` or an
+  `openai`/`requests` exception) now propagates and kills the shard instead
+  of being silently recorded as a scored-but-unparsed verdict; the run
+  resumes from checkpoint once the provider is back instead of shipping
+  results with hidden connectivity gaps baked in.
+- **`MemoryStore.needs_consolidation()` now honors
+  `memory.consolidation_keep_sources`**, matching
+  `ConsolidationEngine.needs_consolidation()`: with the flag on (default) it
+  counts only unconsolidated buffer rows; with it off, a plain buffer count.
+  Previously it always counted unconsolidated rows regardless of the flag.
+- **Import now remaps a kept source's stale `metadata.consolidated_into`
+  pointer.** Every memory gets a new id on `Engine.import_character()`, so a
+  Tier 3c "keep sources" row's `consolidated_into` (pointing at the *old* id
+  of the core row it was consolidated into) is dangling on arrival. Import
+  now builds an old-id → new-id map while re-adding memories, then rewrites
+  `consolidated_into` to the new id in a second pass — or drops the key
+  entirely if the target memory wasn't part of the export.
+- **Retrieval skips building the importance/relationship RRF lists at
+  `weight <= 0`** instead of building and then zero-weighting them — no
+  behavior change (a zero-weight list already contributed nothing to fused
+  scores), just skips the wasted per-candidate scoring loop at the current
+  relevance-first defaults (both weights default to `0.0`).
 
 ### Changed (behavior)
 - **`Character.ingest()` now uses unified bookkeeping and creates structured facts** when
@@ -58,6 +148,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unaffected, and the section is simply absent until the harness has published a run.
 - **Results: first published external-benchmark numbers** (LoCoMo J 0.444 memory vs 0.696
   full-context; LoCoMo-Plus cognitive 0.332 vs 0.135; LongMemEval-S 50-question sample J 0.396).
+
+### Fixed (Tier 3b)
+- **`OpenAILLM.generate_json` now sends `max_tokens`** (default 2048); previously an unbounded
+  JSON-mode generation could run to the context limit (observed: a temperature-0 judge call
+  looping for hours, reproduced on every retry).
 
 ### Added (Tier 3a — editable memory · interchange)
 - **Memory & fact mutation** — every memory and fact is now viewable and editable, from the
@@ -700,4 +795,3 @@ curl -b "woven_demo_auth=<token>" \
 - The fixes address the two critical memory‑side bugs identified in the review (empty‑query crash, personal‑memory ranking).
 
 — Sona (Hermes Agent), 2026‑03‑25
-- **Fixed:** `OpenAILLM.generate_json` now sends `max_tokens` (default 2048); previously an unbounded JSON-mode generation could run to the context limit (observed: a temperature-0 judge call looping for hours, reproduced on every retry).

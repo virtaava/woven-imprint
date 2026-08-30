@@ -117,8 +117,10 @@ class MemoryStore:
         """`limit=None` returns all matching rows (no LIMIT clause)."""
         return self.storage.get_memories(self.character_id, tier=tier, limit=limit)
 
-    def count(self, tier: str | None = None) -> int:
-        return self.storage.count_memories(self.character_id, tier=tier)
+    def count(self, tier: str | None = None, unconsolidated: bool = False) -> int:
+        return self.storage.count_memories(
+            self.character_id, tier=tier, unconsolidated=unconsolidated
+        )
 
     def touch(self, memory_id: str) -> None:
         """Mark memory as recently accessed.
@@ -188,5 +190,16 @@ class MemoryStore:
         return self.storage.list_pinned_memories(self.character_id)
 
     def needs_consolidation(self, threshold: int = 100) -> bool:
-        """Check if buffer has exceeded consolidation threshold."""
-        return self.count(tier="buffer") >= threshold
+        """Check if buffer has exceeded consolidation threshold.
+
+        Mirrors `ConsolidationEngine.needs_consolidation`: when
+        `get_config().memory.consolidation_keep_sources` is on, counts only
+        *unconsolidated* buffer rows — memories already claimed by a previous
+        consolidation pass (`metadata.consolidated_into` / `consolidation_seen`)
+        don't recount toward the threshold. When the flag is off, this is a
+        plain buffer count (byte-identical to the pre-Tier-3c behavior).
+        """
+        from ..config import get_config
+
+        keep_sources = get_config().memory.consolidation_keep_sources
+        return self.count(tier="buffer", unconsolidated=keep_sources) >= threshold

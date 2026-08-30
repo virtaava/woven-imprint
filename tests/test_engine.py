@@ -174,6 +174,92 @@ class TestImportExport:
         engine.close()
         engine2.close()
 
+    def test_export_carries_full_buffer_beyond_default_get_all_limit(self):
+        """export() must not silently truncate at MemoryStore.get_all's default limit=1000 —
+        it needs limit=None (unbounded) for every tier."""
+        engine = _engine()
+        char = engine.create_character("Packrat", persona={})
+        for i in range(1200):
+            char.memory.add(f"buffer row {i}", tier="buffer")
+
+        data = char.export()
+
+        assert len(data["memories"]["buffer"]) == 1200
+        engine.close()
+
+    def test_import_remaps_consolidated_into_to_new_id(self):
+        """A consolidation-kept source's `metadata.consolidated_into` points at the OLD id of
+        its core row. On import every memory gets a new id, so the pointer must be rewritten
+        to the imported core row's new id — not left dangling at the stale old id."""
+        import tempfile
+        from pathlib import Path
+
+        engine = _engine()
+        original = engine.create_character("Archivist", persona={})
+        core = original.memory.add("Summary of the case", tier="core", importance=0.8)
+        original.memory.add(
+            "Raw detail about the case",
+            tier="buffer",
+            importance=0.3,
+            metadata={"consolidated_into": core["id"]},
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
+            original.export(f.name)
+            path = f.name
+
+        engine2 = Engine(db_path=":memory:", llm=FakeLLM(), embedding=FakeEmbedder())
+        imported = engine2.import_character(path)
+
+        new_core = next(
+            m for m in imported.memory.get_all(tier="core") if m["content"] == "Summary of the case"
+        )
+        new_source = next(
+            m
+            for m in imported.memory.get_all(tier="buffer")
+            if m["content"] == "Raw detail about the case"
+        )
+        assert new_source["metadata"]["consolidated_into"] == new_core["id"]
+        assert new_source["metadata"]["consolidated_into"] != core["id"]
+
+        Path(path).unlink()
+        engine.close()
+        engine2.close()
+
+    def test_import_drops_consolidated_into_when_target_not_in_export(self):
+        """If `consolidated_into` points at an id that isn't part of this export (e.g. a
+        partial/hand-edited export file), the stale pointer is dropped rather than imported
+        verbatim — it would otherwise point at nothing in the new database."""
+        import tempfile
+        from pathlib import Path
+
+        engine = _engine()
+        original = engine.create_character("Archivist", persona={})
+        original.memory.add(
+            "Orphaned kept source",
+            tier="buffer",
+            importance=0.3,
+            metadata={"consolidated_into": "mem-does-not-exist"},
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
+            original.export(f.name)
+            path = f.name
+
+        engine2 = Engine(db_path=":memory:", llm=FakeLLM(), embedding=FakeEmbedder())
+        imported = engine2.import_character(path)
+
+        new_source = next(
+            m
+            for m in imported.memory.get_all(tier="buffer")
+            if m["content"] == "Orphaned kept source"
+        )
+        assert "consolidated_into" not in new_source["metadata"]
+
+        Path(path).unlink()
+        engine.close()
+        engine2.close()
+
 
 class TestContextManager:
     def test_with_statement(self):

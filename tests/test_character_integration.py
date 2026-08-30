@@ -255,6 +255,10 @@ class TestChatLoop:
         for i in range(15):
             char.memory.add(f"Similar memory about topic {i}", tier="buffer")
 
+        # Tier 3c: default consolidation_keep_sources=True keeps cluster
+        # sources active instead of archiving them — force the legacy
+        # archive-everything path to preserve this test's original intent.
+        char.consolidator.keep_sources = False
         stats = char.consolidate()
         assert stats["created"] >= 1
         assert stats["archived"] >= 1

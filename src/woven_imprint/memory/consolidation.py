@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .. import clock
 from ..llm.base import LLMProvider
 from ..embedding.base import EmbeddingProvider
 from ..prompts import render
@@ -52,7 +53,9 @@ class ConsolidationEngine:
 
     When the buffer exceeds a threshold, semantically similar memories
     are clustered and summarized by the LLM into dense core entries.
-    Original buffer entries are archived (not deleted).
+    Sources stay active and retrievable (metadata.consolidated_into) unless
+    `consolidation_keep_sources` is False, in which case original buffer
+    entries are archived (not deleted) as before.
     """
 
     def __init__(
@@ -63,6 +66,7 @@ class ConsolidationEngine:
         character_id: str,
         threshold: int = 100,
         similarity: float = 0.75,
+        keep_sources: bool | None = None,
     ):
         self.storage = storage
         self.llm = llm
@@ -70,9 +74,30 @@ class ConsolidationEngine:
         self.character_id = character_id
         self.threshold = threshold
         self.similarity = similarity
+        # None (default) means "follow get_config().memory.consolidation_keep_sources
+        # at call time"; an explicit True/False overrides the config (used by tests
+        # that want deterministic behavior regardless of the ambient config).
+        self.keep_sources = keep_sources
+
+    def _resolve_keep_sources(self) -> bool:
+        if self.keep_sources is not None:
+            return self.keep_sources
+        from ..config import get_config
+
+        return get_config().memory.consolidation_keep_sources
 
     def needs_consolidation(self) -> bool:
-        count = self.storage.count_memories(self.character_id, tier="buffer")
+        """True once the *unconsolidated* buffer count reaches threshold.
+
+        When keep_sources is on, rows already claimed by a previous
+        consolidation pass (`metadata.consolidated_into` / `consolidation_seen`
+        set) don't recount toward the threshold. When keep_sources is off this
+        is a plain buffer count — byte-identical to the pre-Tier-3c behavior.
+        """
+        keep_sources = self._resolve_keep_sources()
+        count = self.storage.count_memories(
+            self.character_id, tier="buffer", unconsolidated=keep_sources
+        )
         return count >= self.threshold
 
     def consolidate(
@@ -95,15 +120,30 @@ class ConsolidationEngine:
                 the returned stats.
 
         Returns:
-            Dict with keys: clusters, summarized, created, archived,
-            llm_calls, and (only when it happened) budget_exhausted=True.
+            Dict with keys: clusters, summarized, created, archived, kept,
+            promoted, seen, llm_calls, and (only when it happened)
+            budget_exhausted=True. ``kept``/``promoted``/``seen`` are always
+            present (0 when `consolidation_keep_sources` is off, matching the
+            pre-Tier-3c archive-everything behavior byte-for-byte).
         """
         from ..config import get_config
 
+        keep_sources = self._resolve_keep_sources()
         chunk_size = chunk_size or get_config().maintenance.consolidate_chunk_size
-        buffer = self.storage.get_memories(self.character_id, tier="buffer", limit=chunk_size)
+        buffer = self.storage.get_memories(
+            self.character_id, tier="buffer", limit=chunk_size, unconsolidated=keep_sources
+        )
         if len(buffer) < 10:
-            return {"clusters": 0, "summarized": 0, "created": 0, "archived": 0, "llm_calls": 0}
+            return {
+                "clusters": 0,
+                "summarized": 0,
+                "created": 0,
+                "archived": 0,
+                "kept": 0,
+                "promoted": 0,
+                "seen": 0,
+                "llm_calls": 0,
+            }
 
         clusters = _cluster_memories(buffer, self.similarity)
 
@@ -112,6 +152,9 @@ class ConsolidationEngine:
             "summarized": 0,
             "created": 0,
             "archived": 0,
+            "kept": 0,
+            "promoted": 0,
+            "seen": 0,
             "llm_calls": 0,
         }
 
@@ -122,17 +165,31 @@ class ConsolidationEngine:
                 mem = cluster[0]
                 if mem.get("importance", 0) >= 0.6:
                     if not dry_run:
-                        self.storage.save_memory(
-                            {
-                                **mem,
-                                "id": generate_id("mem-"),
-                                "tier": "core",
-                                "source_refs": [mem["id"]],
-                            }
-                        )
-                        self.storage.update_memory_status(mem["id"], "archived")
-                        stats["created"] += 1
-                        stats["archived"] += 1
+                        if keep_sources:
+                            # Promote in place — no copy, no archive, so the
+                            # source text never appears twice in retrieval.
+                            self.storage.update_memory_fields(mem["id"], tier="core")
+                            self.storage.update_memory_metadata(
+                                mem["id"], {"promoted_from_buffer": True}
+                            )
+                            stats["promoted"] += 1
+                        else:
+                            self.storage.save_memory(
+                                {
+                                    **mem,
+                                    "id": generate_id("mem-"),
+                                    "tier": "core",
+                                    "source_refs": [mem["id"]],
+                                }
+                            )
+                            self.storage.update_memory_status(mem["id"], "archived")
+                            stats["created"] += 1
+                            stats["archived"] += 1
+                elif keep_sources and not dry_run:
+                    # Below the promotion bar: leave the row alone but stop it
+                    # from recounting toward the threshold every pass.
+                    self.storage.update_memory_metadata(mem["id"], {"consolidation_seen": True})
+                    stats["seen"] += 1
                 continue
 
             # Multi-memory cluster — summarize
@@ -196,10 +253,21 @@ class ConsolidationEngine:
             self.storage.save_memory(memory_dict)
             stats["created"] += 1
 
-            # Archive original buffer entries
-            for mem in cluster:
-                self.storage.update_memory_status(mem["id"], "archived")
-                stats["archived"] += 1
+            # Sources stay active and retrievable (keep_sources) or are
+            # archived (legacy behavior) — either way they're claimed so a
+            # later pass doesn't re-cluster them.
+            if keep_sources:
+                now_iso = clock.now().isoformat()
+                for mem in cluster:
+                    self.storage.update_memory_metadata(
+                        mem["id"],
+                        {"consolidated_into": memory_dict["id"], "consolidated_at": now_iso},
+                    )
+                    stats["kept"] += 1
+            else:
+                for mem in cluster:
+                    self.storage.update_memory_status(mem["id"], "archived")
+                    stats["archived"] += 1
 
             stats["summarized"] += len(cluster)
 
@@ -219,6 +287,9 @@ class ConsolidationEngine:
             "summarized": 0,
             "created": 0,
             "archived": 0,
+            "kept": 0,
+            "promoted": 0,
+            "seen": 0,
             "llm_calls": 0,
             "budget_exhausted": False,
         }
@@ -227,17 +298,34 @@ class ConsolidationEngine:
                 break
             result = self.consolidate(dry_run=dry_run, budget=budget)
             totals["passes"] += 1
-            for key in ("clusters", "summarized", "created", "archived", "llm_calls"):
+            for key in (
+                "clusters",
+                "summarized",
+                "created",
+                "archived",
+                "kept",
+                "promoted",
+                "seen",
+                "llm_calls",
+            ):
                 totals[key] += result.get(key, 0)
             if result.get("budget_exhausted"):
                 totals["budget_exhausted"] = True
                 break
             if dry_run:
                 break  # dry_run archives nothing → would loop forever
-            if result.get("archived", 0) == 0:
+            if (
+                result.get("archived", 0)
+                + result.get("kept", 0)
+                + result.get("promoted", 0)
+                + result.get("seen", 0)
+                == 0
+            ):
                 # No-progress short-circuit: a pass that clustered rows but
-                # archived nothing (e.g. every summary came back empty from a
-                # failing/misbehaving LLM) would re-cluster the exact same
+                # made no progress on any row — archived nothing (legacy
+                # path), kept/promoted/marked-seen nothing (keep_sources
+                # path) — e.g. every summary came back empty from a
+                # failing/misbehaving LLM, would re-cluster the exact same
                 # buffer rows next pass, burning budget up to max_chunks
                 # times for zero gain. Stop draining instead.
                 break

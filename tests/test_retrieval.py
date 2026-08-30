@@ -121,6 +121,9 @@ class TestRetrieval:
         assert results[0]["id"] == "m1"
 
     def test_importance_affects_ranking(self, setup):
+        """weight_importance defaults to 0.0 (relevance-first RRF, 2026-08-30) —
+        the importance strategy's machinery must still work when a caller opts
+        back in by raising the weight, so this test exercises it explicitly."""
         storage, embedder, retriever = setup
         vec = embedder.embed("some event happened")
         storage.save_memory(
@@ -144,12 +147,23 @@ class TestRetrieval:
             }
         )
 
-        results = retriever.retrieve("event happened", limit=2)
+        from woven_imprint.config import get_config
+
+        cfg = get_config().memory
+        orig = cfg.weight_importance
+        cfg.weight_importance = 1.0
+        try:
+            results = retriever.retrieve("event happened", limit=2)
+        finally:
+            cfg.weight_importance = orig
         # Higher importance should rank higher
         ids = [r["id"] for r in results]
         assert ids.index("m1") < ids.index("m2")
 
     def test_tier_boost(self, setup):
+        """weight_importance defaults to 0.0 (relevance-first RRF, 2026-08-30) —
+        the tier-boost machinery it feeds must still work when a caller opts
+        back in by raising the weight, so this test exercises it explicitly."""
         storage, embedder, retriever = setup
         vec = embedder.embed("my identity")
         storage.save_memory(
@@ -173,11 +187,24 @@ class TestRetrieval:
             }
         )
 
-        results = retriever.retrieve("identity", limit=2)
+        from woven_imprint.config import get_config
+
+        cfg = get_config().memory
+        orig = cfg.weight_importance
+        cfg.weight_importance = 1.0
+        try:
+            results = retriever.retrieve("identity", limit=2)
+        finally:
+            cfg.weight_importance = orig
         # Bedrock should rank higher due to tier boost
         assert results[0]["tier"] == "bedrock"
 
     def test_relationship_boost(self, setup):
+        """weight_relationship defaults to 0.0 (measured 2026-08-30: the name-mention boost
+        outranks evidence on LoCoMo) — the relationship strategy's machinery must still work
+        when a caller opts back in by raising the weight, so this test exercises it explicitly
+        (opting in like the importance tests above; without this, the test is vacuous since the
+        relationship list is never built at the default weight)."""
         storage, embedder, retriever = setup
         storage.save_memory(
             {
@@ -200,9 +227,95 @@ class TestRetrieval:
             }
         )
 
-        results = retriever.retrieve("the case", limit=2, relationship_target="player_bob")
+        from woven_imprint.config import get_config
+
+        cfg = get_config().memory
+        orig = cfg.weight_relationship
+        cfg.weight_relationship = 1.0
+        try:
+            results = retriever.retrieve("the case", limit=2, relationship_target="player_bob")
+        finally:
+            cfg.weight_relationship = orig
         # Memory involving player_bob should rank higher
         assert "player_bob" in results[0]["content"]
+
+    def test_relationship_weight_no_hidden_bias_when_nothing_matches(self, setup, monkeypatch):
+        """Regression: the relationship strategy must not inject an oldest-first
+        bias into RRF fusion for candidates that don't mention relationship_target.
+
+        Before the fix, the relationship ranked list ranked EVERY gated candidate
+        on a binary boost (1.0 if it mentions the target, else 0.0). The untouched
+        majority all tied at 0.0, and Python's stable sort fell back to `gated`'s
+        ascending-rowid input order (oldest first) — so with weight_relationship > 0,
+        older memories were silently favored over newer, more relevant ones for
+        every candidate that doesn't mention the target, not just the ones that do.
+
+        Construction: monkeypatch semantic similarity so a NEWER memory (highest
+        rowid, added last) is genuinely the most relevant, and an OLDER memory
+        (lowest rowid, added first) is a close second — a realistic "a fresh fact
+        slightly edges out an older one" scenario, with 4 filler memories in
+        between by insertion order. Neither "old" nor "new" mentions
+        relationship_target. Under the pre-fix code, the relationship list's
+        oldest-first bias (old at rank 0, new at the last rank in that list) is
+        large enough to flip the fused winner from "new" to "old" once
+        weight_relationship=1. Under the fix, the relationship list is empty
+        (nothing matches it) and contributes nothing, so fusion order at
+        weight_relationship=1 must be identical to weight_relationship=0.
+        """
+        from woven_imprint.config import get_config
+        from woven_imprint.memory import retrieval as retrieval_mod
+
+        storage, _embedder, retriever = setup
+        insertion_order = ["old", "f1", "f2", "f3", "f4", "new"]
+        for mid in insertion_order:
+            storage.save_memory(
+                {
+                    "id": mid,
+                    "character_id": "c1",
+                    "tier": "core",
+                    "content": f"memory {mid} about the lighthouse",
+                    "embedding": [1.0],  # placeholder — cosine_matrix is monkeypatched below
+                    "importance": 0.5,
+                }
+            )
+
+        # `embedded` preserves all_memories' ascending-rowid order == insertion_order
+        # above, so index i of this list corresponds to insertion_order[i]. "new"
+        # (last inserted, highest rowid) gets the top similarity; "old" (first
+        # inserted, lowest rowid) is a close second; fillers trail well behind.
+        sims_by_insertion_order = [0.59, 0.1, 0.09, 0.08, 0.07, 0.6]
+        monkeypatch.setattr(
+            retrieval_mod, "cosine_matrix", lambda query, rows: sims_by_insertion_order
+        )
+
+        cfg = get_config().memory
+        orig_rel = cfg.weight_relationship
+        orig_kw = cfg.weight_keyword
+        cfg.weight_keyword = 0.0  # isolate the semantic-vs-relationship interaction
+        try:
+            cfg.weight_relationship = 0.0
+            baseline = [
+                m["id"]
+                for m in retriever.retrieve(
+                    "lighthouse", limit=10, relationship_target="carol_not_mentioned"
+                )
+            ]
+            cfg.weight_relationship = 1.0
+            with_weight = [
+                m["id"]
+                for m in retriever.retrieve(
+                    "lighthouse", limit=10, relationship_target="carol_not_mentioned"
+                )
+            ]
+        finally:
+            cfg.weight_relationship = orig_rel
+            cfg.weight_keyword = orig_kw
+
+        assert baseline[0] == "new", baseline  # sanity: semantics alone favor the newer memory
+        assert with_weight == baseline, (
+            "weight_relationship=1 changed fusion order with no relationship match "
+            f"(hidden oldest-first bias): baseline={baseline} with_weight={with_weight}"
+        )
 
     def test_character_isolation(self, setup):
         storage, embedder, retriever = setup
@@ -263,6 +376,68 @@ class TestRetrieval:
         results = retriever.retrieve("test", limit=1)
         assert "_retrieval_score" in results[0]
         assert results[0]["_retrieval_score"] > 0
+
+    def test_zero_weight_importance_and_relationship_skip_list_building(self, setup, monkeypatch):
+        """weight_importance and weight_relationship both default to 0.0 — retrieval must not
+        build (or fuse) those lists at all in that case, even when a relationship_target is
+        passed. Verified two ways: (1) a spy on reciprocal_rank_fusion shows it was called with
+        exactly 3 paired lists/weights (semantic, keyword, recency — no importance, no
+        relationship), and (2) the fused result order is byte-identical to fusing just those 3
+        lists directly."""
+        import woven_imprint.memory.retrieval as retrieval_module
+        from woven_imprint.config import get_config
+
+        storage, embedder, retriever = setup
+        storage.save_memory(
+            {
+                "id": "m1",
+                "character_id": "c1",
+                "tier": "core",
+                "content": "Talked with player_bob about the case",
+                "embedding": embedder.embed("talked player_bob case"),
+                "importance": 0.9,
+            }
+        )
+        storage.save_memory(
+            {
+                "id": "m2",
+                "character_id": "c1",
+                "tier": "core",
+                "content": "Thought about the case alone",
+                "embedding": embedder.embed("thought about case alone"),
+                "importance": 0.1,
+            }
+        )
+
+        cfg = get_config().memory
+        orig_importance, orig_relationship = cfg.weight_importance, cfg.weight_relationship
+        cfg.weight_importance = 0.0
+        cfg.weight_relationship = 0.0
+
+        real_rrf = retrieval_module.reciprocal_rank_fusion
+        calls = []
+
+        def spy(ranked_lists, k=60, weights=None):
+            calls.append((list(ranked_lists), list(weights) if weights is not None else weights))
+            return real_rrf(ranked_lists, k=k, weights=weights)
+
+        monkeypatch.setattr(retrieval_module, "reciprocal_rank_fusion", spy)
+
+        try:
+            results = retriever.retrieve("the case", limit=2, relationship_target="player_bob")
+        finally:
+            cfg.weight_importance = orig_importance
+            cfg.weight_relationship = orig_relationship
+
+        assert len(calls) == 1
+        ranked_lists, weights = calls[0]
+        # Exactly semantic, keyword, recency — no importance, no relationship list.
+        assert len(ranked_lists) == 3
+        assert weights == [cfg.weight_semantic, cfg.weight_keyword, cfg.weight_recency]
+
+        expected = real_rrf(ranked_lists, k=cfg.rrf_k, weights=weights)
+        expected_order = [mid for mid, _ in expected[:2]]
+        assert [r["id"] for r in results] == expected_order
 
 
 class TestRecencyScore:

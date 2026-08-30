@@ -136,6 +136,38 @@ def test_run_memory_mode_resumes_without_reingesting(tmp_path):
     assert len(qids) == len(set(qids))
 
 
+def test_reuse_ingest_answers_without_reingesting(tmp_path, monkeypatch):
+    """--reuse-ingest: a run whose own conversation directory has neither .db nor
+    .ingest.json copies both from a sibling run and answers straight away — zero
+    ingestion (bookkeeping) calls, no call into ingest_conversation() at all."""
+    import eval.external.runner as runner_module
+
+    run(_cfg("reuse-a"), llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+
+    ingest_calls = {"n": 0}
+    orig_ingest = runner_module.ingest_conversation
+
+    def _spy(*args, **kwargs):
+        ingest_calls["n"] += 1
+        return orig_ingest(*args, **kwargs)
+
+    monkeypatch.setattr(runner_module, "ingest_conversation", _spy)
+
+    cfg_b = _cfg("reuse-b")
+    cfg_b.reuse_ingest = "reuse-a"
+    run(cfg_b, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
+
+    assert ingest_calls["n"] == 0
+
+    run_root_b = tmp_path / "reuse-b"
+    assert (run_root_b / "conv-mini-1.db").exists()
+    assert (run_root_b / "conv-mini-1.ingest.json").exists()
+    answers = json.loads((run_root_b / "conv-mini-1.answers.json").read_text())
+    qids = [a["qid"] for a in answers]
+    assert len(answers) == 6
+    assert len(qids) == len(set(qids))
+
+
 def test_run_fullcontext_mode_creates_no_db(tmp_path):
     results = run(
         _cfg("t2", mode="fullcontext"), llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path
@@ -965,3 +997,166 @@ def test_delete_db_after_answer_resumes_cleanly_once_all_answers_exist(tmp_path)
     second = run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
     assert second["summary"]["n_questions"] == 6
     assert not (tmp_path / "delresume" / "conv-mini-1.db").exists()  # still not recreated
+
+
+def test_judge_records_unparsed_when_provider_raises():
+    from datetime import datetime, timezone
+
+    from eval.external.common import Question
+    from eval.external.runner import judge, judge_plus
+
+    class RaisingLLM(FakeLLM):
+        def generate_json_robust(self, messages, temperature=0.3):
+            raise ValueError("Could not parse JSON: {")
+
+    q = Question(
+        qid="x",
+        question="Q?",
+        answer="gold",
+        category="4",
+        evidence=[],
+        asked_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        kind="qa",
+    )
+    r = judge(q, "some answer", RaisingLLM())
+    assert (
+        r["judge_parsed"] is False
+        and r["correct"] is False
+        and "judge error" in (r.get("reason") or r.get("judge_reason") or "")
+    )
+    rp = judge_plus("evidence", "reply", RaisingLLM())
+    assert rp["judge_parsed"] is False and rp["correct"] is False
+
+
+def test_judge_propagates_transport_errors():
+    """A connection/transport failure (not a parse failure) must propagate so the shard dies
+    and can be resumed from checkpoint, rather than being silently recorded as an unparsed
+    (but scored) verdict."""
+    from datetime import datetime, timezone
+
+    from eval.external.common import Question
+    from eval.external.runner import judge, judge_plus
+
+    class DisconnectingLLM(FakeLLM):
+        def generate_json_robust(self, messages, temperature=0.3):
+            raise RuntimeError("connection")
+
+    q = Question(
+        qid="x",
+        question="Q?",
+        answer="gold",
+        category="4",
+        evidence=[],
+        asked_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        kind="qa",
+    )
+    with pytest.raises(RuntimeError, match="connection"):
+        judge(q, "some answer", DisconnectingLLM())
+    with pytest.raises(RuntimeError, match="connection"):
+        judge_plus("evidence", "reply", DisconnectingLLM())
+
+
+def test_apply_overrides_coerces_and_restores():
+    from eval.external.runner import _benchmark_config, apply_overrides
+    from woven_imprint.config import get_config
+
+    cfg = get_config()
+    before = (cfg.memory.weight_relationship, cfg.memory.relevance_gate, cfg.memory.max_candidates)
+    try:
+        restores = apply_overrides(
+            cfg,
+            (
+                "memory.weight_relationship=0",
+                "memory.relevance_gate=false",
+                "memory.max_candidates=42",
+            ),
+        )
+        assert cfg.memory.weight_relationship == 0.0 and isinstance(
+            cfg.memory.weight_relationship, float
+        )
+        assert cfg.memory.relevance_gate is False and cfg.memory.max_candidates == 42
+        for section, key, prev in reversed(restores):
+            setattr(getattr(cfg, section), key, prev)
+        assert (
+            cfg.memory.weight_relationship,
+            cfg.memory.relevance_gate,
+            cfg.memory.max_candidates,
+        ) == before
+        with pytest.raises(ValueError):
+            apply_overrides(cfg, ("memory.nope=1",))
+        run_cfg = _cfg("ovr", mode="memory")
+        run_cfg.overrides = ("memory.weight_relationship=0",)
+        with _benchmark_config(run_cfg):
+            assert cfg.memory.weight_relationship == 0.0
+        assert cfg.memory.weight_relationship == before[0]
+    finally:
+        cfg.memory.weight_relationship, cfg.memory.relevance_gate, cfg.memory.max_candidates = (
+            before
+        )
+
+
+def test_apply_overrides_bool_coercion_is_strict():
+    from eval.external.runner import apply_overrides
+    from woven_imprint.config import get_config
+
+    cfg = get_config()
+    orig = cfg.memory.relevance_gate
+    try:
+        for truthy in ("1", "true", "TRUE", "yes", "On"):
+            restores = apply_overrides(cfg, (f"memory.relevance_gate={truthy}",))
+            assert cfg.memory.relevance_gate is True
+            for section, key, prev in restores:
+                setattr(getattr(cfg, section), key, prev)
+        for falsy in ("0", "false", "FALSE", "no", "Off"):
+            cfg.memory.relevance_gate = True
+            restores = apply_overrides(cfg, (f"memory.relevance_gate={falsy}",))
+            assert cfg.memory.relevance_gate is False
+            for section, key, prev in restores:
+                setattr(getattr(cfg, section), key, prev)
+        with pytest.raises(ValueError):
+            apply_overrides(cfg, ("memory.relevance_gate=fasle",))
+        assert cfg.memory.relevance_gate == orig
+    finally:
+        cfg.memory.relevance_gate = orig
+
+
+def test_apply_overrides_rolls_back_earlier_overrides_on_later_failure():
+    """A failing 2nd/3rd override must not leave the 1st override applied — apply_overrides
+    rolls back everything it already did before re-raising."""
+    from eval.external.runner import apply_overrides
+    from woven_imprint.config import get_config
+
+    cfg = get_config()
+    before = (cfg.memory.weight_relationship, cfg.memory.max_candidates)
+    try:
+        with pytest.raises(ValueError):
+            apply_overrides(
+                cfg,
+                ("memory.weight_relationship=1.0", "memory.max_candidates=notanumber"),
+            )
+        assert (cfg.memory.weight_relationship, cfg.memory.max_candidates) == before
+    finally:
+        cfg.memory.weight_relationship, cfg.memory.max_candidates = before
+
+
+def test_benchmark_config_restores_interval_and_refresh_when_overrides_fail():
+    """_benchmark_config must restore fact_extraction_interval/callbacks_refresh_on_session_end
+    even when an override fails (apply_overrides now runs inside the try)."""
+    from eval.external.runner import _benchmark_config
+    from woven_imprint.config import get_config
+
+    cfg = get_config()
+    orig_interval = cfg.memory.fact_extraction_interval
+    orig_refresh = cfg.maintenance.callbacks_refresh_on_session_end
+    run_cfg = _cfg("ovr-fail", mode="memory")
+    run_cfg.fact_extraction_interval = orig_interval + 5
+    run_cfg.overrides = ("memory.nope=1",)
+    try:
+        with pytest.raises(ValueError):
+            with _benchmark_config(run_cfg):
+                pass  # pragma: no cover — apply_overrides raises before yield
+        assert cfg.memory.fact_extraction_interval == orig_interval
+        assert cfg.maintenance.callbacks_refresh_on_session_end == orig_refresh
+    finally:
+        cfg.memory.fact_extraction_interval = orig_interval
+        cfg.maintenance.callbacks_refresh_on_session_end = orig_refresh

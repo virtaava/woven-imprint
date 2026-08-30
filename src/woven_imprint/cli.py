@@ -151,7 +151,9 @@ def cmd_stats(args):
     print(f"  Emotion: {char.emotion.mood} (intensity {char.emotion.intensity:.1f})")
     print(f"  Arc phase: {char.arc.current_phase.value} (tension {char.arc.tension:.1f})")
     print("\n  Memories:")
-    print(f"    Buffer: {char.memory.count('buffer')}")
+    buffer_total = char.memory.count("buffer")
+    buffer_consolidated = buffer_total - char.memory.count("buffer", unconsolidated=True)
+    print(f"    Buffer: {buffer_total} ({buffer_consolidated} consolidated)")
     print(f"    Core:   {char.memory.count('core')}")
     print(f"    Bedrock:{char.memory.count('bedrock')}")
 
@@ -488,9 +490,10 @@ def _print_live_stats(char):
     print(f"  Emotion: {char.emotion.mood} ({char.emotion.intensity:.1f})")
     print(f"  Arc: {char.arc.current_phase.value} (tension {char.arc.tension:.1f})")
     buf = char.memory.count("buffer")
+    buf_consolidated = buf - char.memory.count("buffer", unconsolidated=True)
     core = char.memory.count("core")
     bed = char.memory.count("bedrock")
-    print(f"  Memory: {buf} buffer, {core} core, {bed} bedrock")
+    print(f"  Memory: {buf} buffer ({buf_consolidated} consolidated), {core} core, {bed} bedrock")
 
     rels = char.relationships.get_all()
     for r in rels:

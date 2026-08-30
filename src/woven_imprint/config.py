@@ -45,6 +45,9 @@ class LLMConfig:
 @dataclass
 class MemoryConfig:
     consolidation_threshold: int = 100
+    # consolidation keeps source memories active (metadata.consolidated_into)
+    # instead of archiving them
+    consolidation_keep_sources: bool = True
     consolidation_interval: int = 20  # turns between auto-consolidation checks
     state_save_interval: int = 10  # turns between state saves
     fact_extraction_interval: int = 3  # extract facts every N turns
@@ -63,9 +66,17 @@ class MemoryConfig:
     rrf_k: int = 60
     weight_semantic: float = 1.0
     weight_keyword: float = 1.0
-    weight_recency: float = 1.0
-    weight_importance: float = 1.0
-    weight_relationship: float = 1.0
+    # recency/importance ranking inside the relevance gate dilutes relevance;
+    # LoCoMo evidence recall@20 23.9%->50.8% with both at 0 (ranking_experiments
+    # 2026-08-30). weight_recency kept at a small 0.1 (not 0): the (a) sweep found
+    # 0.1 costs only ~2 pts recall@20 (48.7 vs 50.8) while still breaking ties
+    # newest-first when semantic/keyword relevance ties on a generic query — the
+    # long-horizon recency_ordering bench check is the product-facing case for
+    # that (controller ruling 2026-08-30). Set higher to prefer recent/important
+    # memories among relevant ones more strongly.
+    weight_recency: float = 0.1
+    weight_importance: float = 0.0
+    weight_relationship: float = 0.0
     recency_anchor: str = "created"  # "created" | "accessed"
     max_candidates: int = 5000  # cap on active memories scored per retrieve() call
     relevance_gate: bool = True  # gate recency/importance/relationship ranking to relevant memories
@@ -373,6 +384,7 @@ llm:
 
 memory:
   consolidation_threshold: 100
+  consolidation_keep_sources: true    # keep source memories active (metadata.consolidated_into) instead of archiving them
   consolidation_interval: 20
   state_save_interval: 10
   fact_extraction_interval: 3
@@ -391,9 +403,15 @@ memory:
   rrf_k: 60
   weight_semantic: 1.0
   weight_keyword: 1.0
-  weight_recency: 1.0
-  weight_importance: 1.0
-  weight_relationship: 1.0
+  # recency/importance ranking inside the relevance gate dilutes relevance;
+  # LoCoMo evidence recall@20 23.9%->50.8% with both at 0 (ranking_experiments 2026-08-30).
+  # weight_recency kept at a small 0.1 (not 0): costs ~2 pts recall@20 (48.7 vs 50.8) but
+  # preserves newest-first tie-breaking when semantic/keyword relevance ties on a generic
+  # query (controller ruling 2026-08-30). Set higher to prefer recent/important memories
+  # among relevant ones more strongly.
+  weight_recency: 0.1
+  weight_importance: 0.0
+  weight_relationship: 0.0
   # recency_anchor: created        # "created" | "accessed"
   # relevance_gate: true           # false = legacy fusion (recency/importance rank ALL candidates)
   # relevance_semantic_topk: 100   # semantic cutoff feeding the relevance gate

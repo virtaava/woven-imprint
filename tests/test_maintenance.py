@@ -121,6 +121,10 @@ def test_job_consolidate_happy_path(monkeypatch):
     engine = make_test_engine()
     char = engine.create_character("Piper")
     char.consolidator.threshold = 10
+    # Tier 3c: default consolidation_keep_sources=True keeps cluster sources
+    # active instead of archiving them — force the legacy archive-everything
+    # path to preserve this test's original intent.
+    char.consolidator.keep_sources = False
     for i in range(20):
         char.memory.add(f"the lake was calm on day {i}", tier="buffer")
 
@@ -179,6 +183,60 @@ def test_unknown_job_fails_loudly():
     runner = MaintenanceRunner(char)
     report = runner.run(jobs=["nonexistent"])
     assert report["jobs"]["nonexistent"]["status"] == "failed"
+
+
+def test_buffer_hygiene_keeps_consolidated_sources():
+    """Sources kept retrievable by consolidation must not be swept by TTL/importance."""
+    engine = make_test_engine()
+    char = engine.create_character("Tidy")
+    kept = char.memory.add("old kept source", tier="buffer", importance=0.3)
+    seen = char.memory.add("old seen singleton", tier="buffer", importance=0.3)
+    _age_memory(engine, kept["id"], 30)
+    _age_memory(engine, seen["id"], 30)
+    char.storage.update_memory_metadata(kept["id"], {"consolidated_into": "mem-core-1"})
+    char.storage.update_memory_metadata(seen["id"], {"consolidation_seen": True})
+
+    report = MaintenanceRunner(char).run(jobs=["buffer_hygiene"])
+    assert report["jobs"]["buffer_hygiene"]["archived"] == 1
+    active_ids = {m["id"] for m in char.memory.get_all(tier="buffer")}
+    assert kept["id"] in active_ids and seen["id"] not in active_ids
+
+
+def test_buffer_hygiene_sql_excludes_kept_sources_from_window():
+    """A >=1000-row pile of consolidation-kept sources must not starve the oldest-first
+    fetch window of room to see a genuinely stale plain row.
+
+    All 1002 rows are aged to the same 30-day timestamp, and the plain row is added last
+    (so it has the highest rowid, sorting LAST among ties in the oldest-first ORDER BY
+    created_at ASC, rowid ASC). Before the SQL-level exclude_consolidated fix, the plain
+    row would fall outside the 1000-row LIMIT window entirely (leaving it active,
+    `archived == 0`, `truncated == True`) because the 1001 kept rows fill the whole window
+    ahead of it.
+    """
+    engine = make_test_engine()
+    char = engine.create_character("Tidy")
+
+    kept_ids = [
+        char.memory.add(f"kept source {i}", tier="buffer", importance=0.3)["id"]
+        for i in range(1001)
+    ]
+    plain = char.memory.add("old plain chatter", tier="buffer", importance=0.3)
+
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+    conn = engine.storage._conn
+    conn.executemany(
+        "UPDATE memories SET created_at = ?, metadata = ? WHERE id = ?",
+        [(old_ts, '{"consolidated_into": "mem-core-1"}', mid) for mid in kept_ids]
+        + [(old_ts, "{}", plain["id"])],
+    )
+    conn.commit()
+
+    report = MaintenanceRunner(char).run(jobs=["buffer_hygiene"])
+    assert report["jobs"]["buffer_hygiene"]["archived"] == 1
+    assert "truncated" not in report["jobs"]["buffer_hygiene"]
+    active_ids = {m["id"] for m in char.memory.get_all(tier="buffer", limit=None)}
+    assert plain["id"] not in active_ids
+    assert set(kept_ids) <= active_ids
 
 
 def test_buffer_hygiene_scale_exceeds_fetch_limit():

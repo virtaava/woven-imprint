@@ -920,10 +920,13 @@ class Character:
         """Compress buffer memories into core memories.
 
         Clusters semantically similar buffer entries and summarizes them.
-        Original entries are archived, not deleted.
+        Sources stay active and retrievable (metadata.consolidated_into)
+        unless `consolidation_keep_sources` is False, in which case original
+        entries are archived, not deleted (the pre-Tier-3c behavior).
 
         Returns:
-            Stats dict: {clusters, summarized, created, archived}.
+            Stats dict: {clusters, summarized, created, archived, kept,
+            promoted, seen}.
         """
         return self.consolidator.consolidate()
 
@@ -1122,9 +1125,12 @@ class Character:
             "persona": self.persona.to_dict(),
             "birthdate": self.persona.birthdate.isoformat() if self.persona.birthdate else None,
             "memories": {
-                "buffer": self.memory.get_all(tier="buffer"),
-                "core": self.memory.get_all(tier="core"),
-                "bedrock": self.memory.get_all(tier="bedrock"),
+                # limit=None: export must carry every memory, not just the newest 1000
+                # (MemoryStore.get_all's default limit) — a buffer larger than that would
+                # otherwise be silently truncated on export/import round-trip.
+                "buffer": self.memory.get_all(tier="buffer", limit=None),
+                "core": self.memory.get_all(tier="core", limit=None),
+                "bedrock": self.memory.get_all(tier="bedrock", limit=None),
             },
             "relationships": self.relationships.get_all(),
             "facts": self.storage.query_facts(self.id, active_only=False, limit=None),

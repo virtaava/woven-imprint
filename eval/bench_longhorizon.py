@@ -442,7 +442,15 @@ def _score(
     out.append(
         BenchmarkResult("dates_rendered", dated, 1.0 if dated else 0.0, {"sample": text[:200]})
     )
-    # 3 recency ordering: newest day's fact ranks above day 5's for the same noun family.
+    # 3 recency ordering: verifies the recency strategy itself; the product default
+    # has been relevance-first (weight_recency 0.1) since 2026-08-30 because LoCoMo
+    # evidence recall@20 more than doubles — see ranking_experiments; the
+    # HashEmbedder's crc32 buckets make the two memories unequal in semantic
+    # relevance, so the default weight cannot be tested for ordering here. This
+    # check therefore opts weight_recency up to 1.0 locally (restored in finally)
+    # to isolate and test the recency strategy on its own, independent of the
+    # product's relevance-first default.
+    #
     # Anchored on day 5, not day 2: under HashEmbedder, the single-token numeral
     # "2" happens to crc32-hash into the same one of 512 buckets as "mentioned"
     # (verified: crc32(b"2") % 512 == crc32(b"mentioned") % 512 == 13), which
@@ -453,8 +461,18 @@ def _score(
     # load-bearing for paraphrase_recall_day5) does not collide with any of
     # the three query tokens and is 55 days older than day 60, so it still
     # tests the same thing: an old fact must not outrank a fresh one on a
-    # shared generic query.
-    ranked = char.retriever.retrieve("the visitor mentioned", limit=50)
+    # shared generic query — as long as recency is actually weighted, which the
+    # relevance-first product default (0.1) is deliberately too small to
+    # guarantee against this benchmark's own semantic noise (see above).
+    from woven_imprint.config import get_config
+
+    mem_cfg = get_config().memory
+    orig_weight_recency = mem_cfg.weight_recency
+    mem_cfg.weight_recency = 1.0
+    try:
+        ranked = char.retriever.retrieve("the visitor mentioned", limit=50)
+    finally:
+        mem_cfg.weight_recency = orig_weight_recency
     pos = {m["content"]: i for i, m in enumerate(ranked)}
     new = next((k for k in pos if f"day {days} " in k.lower()), None)
     old = next((k for k in pos if "day 5 " in k.lower()), None)

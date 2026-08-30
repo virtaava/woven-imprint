@@ -192,6 +192,66 @@ memories unconditionally — useful for comparing behavior or if a workload
 depends on the old semantics. An empty query always bypasses the gate (there
 is nothing to be relevant to), matching prior behavior exactly.
 
+#### Relevance-first RRF defaults, and the relationship oldest-first bias fix
+
+Offline LoCoMo ranking experiments (`eval/external/ranking_experiments.py`,
+report at `eval/external/runs/diagnostics/ranking/ranking_experiments_report.md`,
+2026-08-30) found that ranking *inside* the already-gated eligible set on
+recency/importance dilutes relevance rather than sharpening it: evidence
+recall@20 went from 23.9% under the old equal-weight defaults to 50.8% with
+`weight_recency`/`weight_importance` both at `0.0` (semantic + keyword +
+relationship only). `weight_importance` defaults to `0.0`. `weight_recency`
+defaults to a small `0.1` instead of `0.0` (controller ruling 2026-08-30): the
+same experiment's follow-up sweep found `0.1` costs only ~2 recall@20 points
+(48.7 vs 50.8) while intending to still break ties newest-first when
+semantic/keyword relevance ties on a generic query — the product-facing case
+the long-horizon benchmark's `recency_ordering` check exercises (a fresh
+day-60 fact vs. an old day-5 fact for the same generic query,
+`"the visitor mentioned"`).
+
+That check was red at `weight_recency=0.1` (and at `0.25`, tried as a
+fallback and also red) for a benchmark-specific reason, not a product
+regression: instrumenting the fused ranked lists for that exact query showed
+the benchmark's `HashEmbedder` places the day-5 memory 2nd of 851 candidates
+on the semantic list and the day-60 memory 34th — almost certainly a crc32
+bucket collision between a query token and one of the day-number tokens
+(`noun_for`'s docstring already documents this class of artifact for day 2
+vs. `"mentioned"`), not a genuine relevance difference. At relevance-first
+defaults (`weight_recency=0.1`), that noise dominates the tiny recency
+contribution, so the check no longer measures what it claims to. **Resolution
+(controller ruling 2026-08-30): fix the bench, not the product or
+`KNOWN_OPEN`** — `recency_ordering` now sets `weight_recency=1.0` locally for
+that one check only (restored in a `finally`), isolating and testing the
+recency strategy itself independent of the product's relevance-first default;
+the product's actual default stays `0.1`. See
+[CONFIGURATION.md](CONFIGURATION.md#memory-settings) for the weight
+descriptions. The decay/tier-boost machinery (`_recency_score`, `tier_boost_*`)
+is untouched and still feeds these signals for anyone who raises either
+weight further.
+
+`weight_relationship` stays at `1.0` — its positive contribution to recall
+(35.6% with only it on, vs. 23.9% baseline) turned out to be legitimate once
+a separate bug in the relationship strategy itself was fixed. The relationship
+strategy is a *binary* signal — a candidate either mentions
+`relationship_target` (boost) or it doesn't (no boost) — so before the fix,
+`retrieve()` ranked every `gated` candidate on that boost, and the untouched
+majority (boost 0.0) all tied. Python's stable sort then fell back to
+`gated`'s input order, which is ascending rowid (oldest first, see "Sort by
+rowid for stable input order" in `MemoryRetriever.retrieve`) — so with
+`weight_relationship > 0`, every candidate that *doesn't* mention the target
+still got an oldest-first rank injected into RRF fusion, not just the ones
+that do. The fix: the relationship ranked list now contains only candidates
+whose boost is positive; RRF (`utils/rrf.py::reciprocal_rank_fusion`) already
+treats an id absent from a ranked list as a zero contribution from that
+list, so the untouched majority gets no signal from this strategy at all
+instead of a hidden bias. The (typically few) matching candidates tie-break
+newest-first (descending rowid). The importance strategy's tie-break was
+audited for the same failure mode and changed the same way — importance is a
+real per-row score so exact ties are less common, but they do happen (e.g. a
+batch of same-tier, same-importance facts), and the old ascending-rowid
+tie-break was oldest-first for the same reason. Both strategies now tie-break
+newest-first (descending rowid) rather than falling back to insertion order.
+
 ### Persona Model
 
 Four constraint levels (hard, temporal, soft, emergent):

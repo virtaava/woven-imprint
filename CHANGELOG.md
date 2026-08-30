@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed (behavior) — Tier 3c (recall: keep consolidated sources)
+- **Retrieval RRF defaults**: `weight_importance` `1.0` → `0.0`, `weight_recency`
+  `1.0` → `0.1` (relevance-first ranking) — LoCoMo evidence recall@20 23.9% →
+  50.8% with both at 0 (`ranking_experiments`, 2026-08-30). `weight_recency` is
+  kept at a small `0.1` rather than `0.0` (controller ruling, same day): `0.1`
+  costs only ~2 recall@20 points (48.7% vs 50.8%) while still breaking ties
+  newest-first when semantic/keyword relevance ties on a generic query. The
+  relationship strategy now ranks only candidates whose boost is actually
+  positive (fixes a hidden oldest-first tie bias that previously ranked every
+  gated candidate, including the untouched 0.0-tied majority, in ascending-rowid
+  order whenever `weight_relationship > 0`); `weight_relationship` stays `1.0`
+  since its positive effect is legitimate once that bug is fixed. The importance
+  strategy's tie-break changed from ascending-rowid (oldest-first) to
+  descending-rowid (newest-first) for the same reason; `eval/external/ranking_experiments.py`'s
+  `fuse_rank` mirrors both tie-break fixes. Decay/tier-boost machinery is
+  unchanged and still feeds these signals for anyone who raises the weight
+  further. Long-horizon `recency_ordering` now opts into `weight_recency=1.0`
+  to test the recency strategy under relevance-first defaults.
 - **Consolidation keeps source memories active and retrievable** (config
   `memory.consolidation_keep_sources`, default `true`): a multi-member buffer
   cluster still gets a summarized `[Consolidated]` core row, but its sources

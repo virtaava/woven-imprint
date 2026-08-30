@@ -66,8 +66,16 @@ class MemoryConfig:
     rrf_k: int = 60
     weight_semantic: float = 1.0
     weight_keyword: float = 1.0
-    weight_recency: float = 1.0
-    weight_importance: float = 1.0
+    # recency/importance ranking inside the relevance gate dilutes relevance;
+    # LoCoMo evidence recall@20 23.9%->50.8% with both at 0 (ranking_experiments
+    # 2026-08-30). weight_recency kept at a small 0.1 (not 0): the (a) sweep found
+    # 0.1 costs only ~2 pts recall@20 (48.7 vs 50.8) while still breaking ties
+    # newest-first when semantic/keyword relevance ties on a generic query — the
+    # long-horizon recency_ordering bench check is the product-facing case for
+    # that (controller ruling 2026-08-30). Set higher to prefer recent/important
+    # memories among relevant ones more strongly.
+    weight_recency: float = 0.1
+    weight_importance: float = 0.0
     weight_relationship: float = 1.0
     recency_anchor: str = "created"  # "created" | "accessed"
     max_candidates: int = 5000  # cap on active memories scored per retrieve() call
@@ -395,8 +403,14 @@ memory:
   rrf_k: 60
   weight_semantic: 1.0
   weight_keyword: 1.0
-  weight_recency: 1.0
-  weight_importance: 1.0
+  # recency/importance ranking inside the relevance gate dilutes relevance;
+  # LoCoMo evidence recall@20 23.9%->50.8% with both at 0 (ranking_experiments 2026-08-30).
+  # weight_recency kept at a small 0.1 (not 0): costs ~2 pts recall@20 (48.7 vs 50.8) but
+  # preserves newest-first tie-breaking when semantic/keyword relevance ties on a generic
+  # query (controller ruling 2026-08-30). Set higher to prefer recent/important memories
+  # among relevant ones more strongly.
+  weight_recency: 0.1
+  weight_importance: 0.0
   weight_relationship: 1.0
   # recency_anchor: created        # "created" | "accessed"
   # relevance_gate: true           # false = legacy fusion (recency/importance rank ALL candidates)

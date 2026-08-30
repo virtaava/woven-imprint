@@ -64,7 +64,7 @@ import pickle
 import random
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -121,7 +121,9 @@ class Variant:
 VARIANTS: list[Variant] = [
     Variant("V0_baseline", fusion="rrf"),
     Variant("V1_semantic_only", fusion="semantic_only"),
-    Variant("V2_rrf_no_recency_importance", fusion="rrf", weight_recency=0.0, weight_importance=0.0),
+    Variant(
+        "V2_rrf_no_recency_importance", fusion="rrf", weight_recency=0.0, weight_importance=0.0
+    ),
     Variant(
         "V3_rrf_no_rec_imp_fts200",
         fusion="rrf",
@@ -201,7 +203,10 @@ def _save_cache(path: Path, cache: dict[str, np.ndarray]) -> None:
 
 
 def _embed_missing(
-    cache: dict[str, np.ndarray], items: list[tuple[str, str]], embed_fn, batch_size: int = EMBED_BATCH
+    cache: dict[str, np.ndarray],
+    items: list[tuple[str, str]],
+    embed_fn,
+    batch_size: int = EMBED_BATCH,
 ) -> int:
     """items: (key, text) pairs. Mutates cache for missing keys. Returns #embedded."""
     missing = [(k, t) for k, t in items if k not in cache]
@@ -303,14 +308,22 @@ def fuse_rank(
     """Full ranked id list for `query` under `variant`. Mirrors
     MemoryRetriever.retrieve()'s fusion logic (recency/importance/relationship
     scoring, relevance gate, weighted RRF) but takes weights/embeddings/rrf_k
-    as parameters instead of reading the process-global MemoryConfig."""
+    as parameters instead of reading the process-global MemoryConfig. Also
+    mirrors the 2026-08-30 fix in the product's importance/relationship
+    tie-breaks (see MemoryRetriever.retrieve): importance ties break
+    newest-first (descending rowid), and the relationship ranked list contains
+    only candidates with a positive boost (RRF already scores an id missing
+    from a list as a 0 contribution) instead of ranking every gated candidate
+    and leaving the untouched majority tied at 0 in oldest-first insertion
+    order. Keep this in sync with retrieval.py by hand if either changes
+    again — there is no shared implementation."""
     active = conv.active
     ids = [m["id"] for m in active]
     vecs = [doc_vecs[mid] for mid in ids]
     # cosine_matrix accepts numpy arrays directly (it asarray()s internally) — passing
     # arrays instead of converting to/from python lists here matters a lot at this call
     # volume (>100k calls across all variants x conversations x questions).
-    sims = cosine_matrix(query_vec, vecs)
+    sims = cosine_matrix(cast(list[float], query_vec), cast(list[list[float]], vecs))
     semantic_scores = sorted(zip(ids, sims), key=lambda x: x[1], reverse=True)
     semantic_ranked = [mid for mid, _ in semantic_scores]
 
@@ -321,7 +334,9 @@ def fuse_rank(
     keyword_ranked = [m["id"] for m in fts_rows]
 
     if variant.fusion == "rrf2":
-        fused = reciprocal_rank_fusion([semantic_ranked, keyword_ranked], k=variant.rrf_k, weights=[1.0, 1.0])
+        fused = reciprocal_rank_fusion(
+            [semantic_ranked, keyword_ranked], k=variant.rrf_k, weights=[1.0, 1.0]
+        )
         return [mid for mid, _ in fused]
 
     assert variant.fusion == "rrf"
@@ -348,11 +363,17 @@ def fuse_rank(
         if relationship_target and meta.get("user_id") == relationship_target:
             base += 0.2
         importance_scores.append((m["id"], base + boost, m.get("rowid", 0)))
-    importance_scores.sort(key=lambda x: (-x[1], x[2]))
+    # Ties break newest-first (descending rowid) — see fuse_rank's docstring.
+    importance_scores.sort(key=lambda x: (-x[1], -x[2]))
     importance_ranked = [mid for mid, _, _ in importance_scores]
 
     ranked_lists = [semantic_ranked, keyword_ranked, recency_ranked, importance_ranked]
-    weights = [variant.weight_semantic, variant.weight_keyword, variant.weight_recency, variant.weight_importance]
+    weights = [
+        variant.weight_semantic,
+        variant.weight_keyword,
+        variant.weight_recency,
+        variant.weight_importance,
+    ]
 
     if relationship_target:
         target_lower = relationship_target.lower()
@@ -361,9 +382,11 @@ def fuse_rank(
             content_lower = m["content"].lower()
             meta = m.get("metadata", {})
             involves = target_lower in content_lower or meta.get("target_id") == relationship_target
-            rel_scores.append((m["id"], 1.0 if involves else 0.0))
-        rel_scores.sort(key=lambda x: x[1], reverse=True)
-        ranked_lists.append([mid for mid, _ in rel_scores])
+            if involves:
+                rel_scores.append((m["id"], 1.0, m.get("rowid", 0)))
+        # Only boosted candidates enter the list — see fuse_rank's docstring.
+        rel_scores.sort(key=lambda x: (-x[1], -x[2]))
+        ranked_lists.append([mid for mid, _, _ in rel_scores])
         weights.append(variant.weight_relationship)
 
     fused = reciprocal_rank_fusion(ranked_lists, k=variant.rrf_k, weights=weights)
@@ -421,10 +444,7 @@ def validate_v0(
     rng = random.Random(SEED)
     emb = embedder()
     candidates = [
-        item
-        for conv_id, items in qa_by_conv.items()
-        for item in items
-        if not item.excluded
+        item for conv_id, items in qa_by_conv.items() for item in items if not item.excluded
     ]
     rng.shuffle(candidates)
     sample = candidates[:n]
@@ -445,7 +465,9 @@ def validate_v0(
         conv = conv_data[conv_id]
         from woven_imprint.engine import Engine
 
-        engine = Engine(db_path=conv.storage.db_path, llm=cast(LLMProvider, FakeLLM()), embedding=embedder())
+        engine = Engine(
+            db_path=conv.storage.db_path, llm=cast(LLMProvider, FakeLLM()), embedding=embedder()
+        )
         char = engine.get_character(conv_id)
         char.background = False
         char.parallel = False
@@ -454,22 +476,35 @@ def validate_v0(
 
         for item in items:
             clock.override(item.asked_at)
-            real_top20 = [m["id"] for m in char.retriever.retrieve(item.question, limit=20, relationship_target=user_name)]
+            real_top20 = [
+                m["id"]
+                for m in char.retriever.retrieve(
+                    item.question, limit=20, relationship_target=user_name
+                )
+            ]
 
             query_vec = np.asarray(emb.embed(item.question), dtype=np.float32)
             doc_vecs = {m["id"]: np.asarray(m["embedding"], dtype=np.float32) for m in conv.active}
             reimpl = fuse_rank(
-                conv=conv, variant=v0, query=item.question, query_vec=query_vec,
-                doc_vecs=doc_vecs, relationship_target=user_name,
+                conv=conv,
+                variant=v0,
+                query=item.question,
+                query_vec=query_vec,
+                doc_vecs=doc_vecs,
+                relationship_target=user_name,
             )[:20]
 
             if reimpl == real_top20:
                 exact_matches += 1
             elif set(reimpl) == set(real_top20):
                 set_matches += 1
-                mismatches.append({"qid": item.qid, "kind": "order_only", "real": real_top20, "reimpl": reimpl})
+                mismatches.append(
+                    {"qid": item.qid, "kind": "order_only", "real": real_top20, "reimpl": reimpl}
+                )
             else:
-                mismatches.append({"qid": item.qid, "kind": "set_mismatch", "real": real_top20, "reimpl": reimpl})
+                mismatches.append(
+                    {"qid": item.qid, "kind": "set_mismatch", "real": real_top20, "reimpl": reimpl}
+                )
         clock.override(None)
 
     return {
@@ -487,7 +522,9 @@ def validate_v0(
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--skip-validation", action="store_true")
-    parser.add_argument("--limit-convs", type=int, default=None, help="debug: only process N conversations")
+    parser.add_argument(
+        "--limit-convs", type=int, default=None, help="debug: only process N conversations"
+    )
     parser.add_argument(
         "--followup",
         action="store_true",
@@ -512,7 +549,7 @@ def main(argv: list[str] | None = None) -> None:
             if rec.get("kind") == "qa":
                 label_by_qid[rec["qid"]] = rec.get("label", "")
 
-    print(f"[{time.time()-t_start:.1f}s] preparing {len(conv_ids)} conversations...")
+    print(f"[{time.time() - t_start:.1f}s] preparing {len(conv_ids)} conversations...")
     conv_data: dict[str, ConvData] = {}
     qa_by_conv: dict[str, list[QAItem]] = {}
     for conv_id in conv_ids:
@@ -523,7 +560,7 @@ def main(argv: list[str] | None = None) -> None:
     all_items = [item for items in qa_by_conv.values() for item in items]
     n_excluded = sum(1 for i in all_items if i.excluded)
     print(
-        f"[{time.time()-t_start:.1f}s] {len(all_items)} qa items "
+        f"[{time.time() - t_start:.1f}s] {len(all_items)} qa items "
         f"({n_excluded} no_evidence_resolved, excluded from recall denominator)"
     )
 
@@ -532,16 +569,18 @@ def main(argv: list[str] | None = None) -> None:
 
     plain_cache = _load_cache(CACHE_DIR / "query_plain.pkl")
     sq_cache = _load_cache(CACHE_DIR / "query_search_query.pkl")
-    n_new = _embed_missing(
-        plain_cache, [(i.qid, i.question) for i in all_items], emb.embed_batch
+    n_new = _embed_missing(plain_cache, [(i.qid, i.question) for i in all_items], emb.embed_batch)
+    print(
+        f"[{time.time() - t_start:.1f}s] query plain embeddings: +{n_new} new, {len(plain_cache)} total"
     )
-    print(f"[{time.time()-t_start:.1f}s] query plain embeddings: +{n_new} new, {len(plain_cache)} total")
     n_new = _embed_missing(
         sq_cache,
         [(i.qid, SEARCH_QUERY_PREFIX + i.question) for i in all_items],
         emb.embed_batch,
     )
-    print(f"[{time.time()-t_start:.1f}s] query search_query embeddings: +{n_new} new, {len(sq_cache)} total")
+    print(
+        f"[{time.time() - t_start:.1f}s] query search_query embeddings: +{n_new} new, {len(sq_cache)} total"
+    )
     _save_cache(CACHE_DIR / "query_plain.pkl", plain_cache)
     _save_cache(CACHE_DIR / "query_search_query.pkl", sq_cache)
 
@@ -587,7 +626,7 @@ def main(argv: list[str] | None = None) -> None:
         _save_cache(ctx_path, ctx_cache)
         ctx_caches[conv_id] = ctx_cache
         print(
-            f"[{time.time()-t_start:.1f}s] {conv_id}: search_document +{n_new} new "
+            f"[{time.time() - t_start:.1f}s] {conv_id}: search_document +{n_new} new "
             f"({len(sd_cache)} total), contextualized +{n_new_ctx} new ({len(ctx_cache)} total, buffer-only)"
         )
 
@@ -604,7 +643,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         _save_cache(dated_cache_path, query_dated_cache)
         print(
-            f"[{time.time()-t_start:.1f}s] dated query embeddings: +{n_new} new, "
+            f"[{time.time() - t_start:.1f}s] dated query embeddings: +{n_new} new, "
             f"{len(query_dated_cache)} total"
         )
         followup_out = run_followup(
@@ -620,16 +659,22 @@ def main(argv: list[str] | None = None) -> None:
             json.dumps(followup_out, indent=2, default=str)
         )
         _append_followup_report(followup_out)
-        print(f"[{time.time()-t_start:.1f}s] wrote {OUT_DIR / 'ranking_followup_results.json'}")
-        print(f"[{time.time()-t_start:.1f}s] appended follow-up section to ranking_experiments_report.md")
+        print(f"[{time.time() - t_start:.1f}s] wrote {OUT_DIR / 'ranking_followup_results.json'}")
+        print(
+            f"[{time.time() - t_start:.1f}s] appended follow-up section to ranking_experiments_report.md"
+        )
         return
 
     # ── Validation (V0 reimplementation vs real product retrieve()) ──
     validation: dict = {}
     if not args.skip_validation:
-        print(f"[{time.time()-t_start:.1f}s] validating V0 reimplementation on {VALIDATION_N} sampled questions...")
+        print(
+            f"[{time.time() - t_start:.1f}s] validating V0 reimplementation on {VALIDATION_N} sampled questions..."
+        )
         validation = validate_v0(conv_data, qa_by_conv, VALIDATION_N, plain_cache)
-        print(f"[{time.time()-t_start:.1f}s] validation: {validation['exact_order_matches']}/{validation['n']} exact order match")
+        print(
+            f"[{time.time() - t_start:.1f}s] validation: {validation['exact_order_matches']}/{validation['n']} exact order match"
+        )
 
     # ── Run all variants ──────────────────────────────────────────────
     per_variant_ranks: dict[str, list[tuple[QAItem, int | None]]] = {}
@@ -664,14 +709,15 @@ def main(argv: list[str] | None = None) -> None:
         per_variant_ranks[variant.name] = ranks
         recalls = recall_at_k([r for _, r in ranks], K_LIST)
         print(
-            f"[{time.time()-t_start:.1f}s] {variant.name}: "
-            + ", ".join(f"@{k}={recalls[k]*100:.1f}%" for k in K_LIST)
-            + f"  ({time.time()-t_v:.1f}s)"
+            f"[{time.time() - t_start:.1f}s] {variant.name}: "
+            + ", ".join(f"@{k}={recalls[k] * 100:.1f}%" for k in K_LIST)
+            + f"  ({time.time() - t_v:.1f}s)"
         )
 
     # ── Aggregate results ─────────────────────────────────────────────
     variant_recalls = {
-        name: recall_at_k([r for _, r in ranks], K_LIST) for name, ranks in per_variant_ranks.items()
+        name: recall_at_k([r for _, r in ranks], K_LIST)
+        for name, ranks in per_variant_ranks.items()
     }
     best_name = max(variant_recalls, key=lambda n: variant_recalls[n][20])
     best_ranks = per_variant_ranks[best_name]
@@ -723,16 +769,20 @@ def main(argv: list[str] | None = None) -> None:
         "retrieved_but_wrong_note": retrieved_but_wrong_note,
         "elapsed_seconds": time.time() - t_start,
     }
-    (OUT_DIR / "ranking_experiments_results.json").write_text(json.dumps(out, indent=2, default=str))
+    (OUT_DIR / "ranking_experiments_results.json").write_text(
+        json.dumps(out, indent=2, default=str)
+    )
 
     _write_report(out)
-    print(f"[{time.time()-t_start:.1f}s] wrote {OUT_DIR / 'ranking_experiments_results.json'}")
-    print(f"[{time.time()-t_start:.1f}s] wrote {OUT_DIR / 'ranking_experiments_report.md'}")
+    print(f"[{time.time() - t_start:.1f}s] wrote {OUT_DIR / 'ranking_experiments_results.json'}")
+    print(f"[{time.time() - t_start:.1f}s] wrote {OUT_DIR / 'ranking_experiments_report.md'}")
 
 
 def _write_report(out: dict) -> None:
     lines = ["# LoCoMo ranking experiments (offline, no LLM calls)", ""]
-    lines.append(f"run_id: {out['run_id']}, qa questions scored: {out['n_scored']}/{out['n_qa_total']}")
+    lines.append(
+        f"run_id: {out['run_id']}, qa questions scored: {out['n_scored']}/{out['n_qa_total']}"
+    )
     lines.append("")
     v = out["validation"]
     if v:
@@ -743,16 +793,20 @@ def _write_report(out: dict) -> None:
             f"set mismatches: {v['set_mismatches']}\n"
         )
     lines.append("## Variant x recall@K\n")
-    lines.append("| variant | fusion | rrf_k | weights (s/k/r/i/rel) | query prefix | doc variant | @10 | @20 | @50 |")
+    lines.append(
+        "| variant | fusion | rrf_k | weights (s/k/r/i/rel) | query prefix | doc variant | @10 | @20 | @50 |"
+    )
     lines.append("|---|---|---:|---|---|---|---:|---:|---:|")
     for vd in out["variants"]:
         w = vd["weights"]
-        wstr = f"{w['semantic']}/{w['keyword']}/{w['recency']}/{w['importance']}/{w['relationship']}"
+        wstr = (
+            f"{w['semantic']}/{w['keyword']}/{w['recency']}/{w['importance']}/{w['relationship']}"
+        )
         r = vd["recall_at_k"]
         lines.append(
             f"| {vd['name']} | {vd['fusion']} | {vd['rrf_k']} | {wstr} | "
             f"{vd['query_prefix'] or '-'} | {vd['doc_variant']} | "
-            f"{r[10]*100:.1f}% | {r[20]*100:.1f}% | {r[50]*100:.1f}% |"
+            f"{r[10] * 100:.1f}% | {r[20] * 100:.1f}% | {r[50] * 100:.1f}% |"
         )
     lines.append("")
     lines.append(f"**Best variant (by recall@20): {out['best_variant']}**\n")
@@ -760,13 +814,12 @@ def _write_report(out: dict) -> None:
     lines.append("| category | recall@20 |")
     lines.append("|---|---:|")
     for cat, val in sorted(out["best_variant_per_category_recall_at_20"].items()):
-        lines.append(f"| {cat} | {val*100:.1f}% |")
+        lines.append(f"| {cat} | {val * 100:.1f}% |")
     lines.append("")
     lines.append("## 'Retrieved but wrong' note\n")
     lines.append(out["retrieved_but_wrong_note"])
     lines.append("")
     (OUT_DIR / "ranking_experiments_report.md").write_text("\n".join(lines))
-
 
 
 # ── Follow-up sweep (coordinator request 2026-08-30) ──────────────────────
@@ -811,8 +864,12 @@ def _eval_variant(
             clock.override(item.asked_at)
             qv = query_cache[item.qid]
             ranked = fuse_rank(
-                conv=conv, variant=variant, query=item.question, query_vec=qv,
-                doc_vecs=doc_vecs, relationship_target=rel_target,
+                conv=conv,
+                variant=variant,
+                query=item.question,
+                query_vec=qv,
+                doc_vecs=doc_vecs,
+                relationship_target=rel_target,
             )
             ranks.append(rank_of_best_evidence(ranked, item.evidence_active_ids))
     clock.override(None)
@@ -846,32 +903,58 @@ def run_followup(
     for wr in (0.0, 0.1, 0.25, 0.5):
         for wrel in (0.0, 1.0):
             v = Variant(
-                "a_wr{}_wrel{}".format(wr, wrel), fusion="rrf", weight_semantic=1.0,
-                weight_keyword=1.0, weight_recency=wr, weight_importance=wr,
-                weight_relationship=wrel, rrf_k=60,
+                "a_wr{}_wrel{}".format(wr, wrel),
+                fusion="rrf",
+                weight_semantic=1.0,
+                weight_keyword=1.0,
+                weight_recency=wr,
+                weight_importance=wr,
+                weight_relationship=wrel,
+                rrf_k=60,
             )
             ranks = _eval_variant(v, conv_data, qa_by_conv, plain_cache, doc_vecs_stored)
-            row = {"weight_recency_importance": wr, "weight_relationship": wrel,
-                   "recall": recall_at_k(ranks, K_LIST)}
+            row = {
+                "weight_recency_importance": wr,
+                "weight_relationship": wrel,
+                "recall": recall_at_k(ranks, K_LIST),
+            }
             a_rows.append(row)
-            print("  (a) wr=wi={} wrel={}: {}".format(
-                wr, wrel, ", ".join("@{}={:.1f}%".format(k, row["recall"][k] * 100) for k in K_LIST)
-            ))
+            print(
+                "  (a) wr=wi={} wrel={}: {}".format(
+                    wr,
+                    wrel,
+                    ", ".join("@{}={:.1f}%".format(k, row["recall"][k] * 100) for k in K_LIST),
+                )
+            )
 
     # ── (b) V6b fusion, recency=importance x rrf_k grid ──
     b_rows = []
     for wr in (0.0, 0.1, 0.25):
         for k in (20, 60, 120):
             v = Variant(
-                "b_wr{}_k{}".format(wr, k), fusion="rrf", weight_semantic=1.0, weight_keyword=1.0,
-                weight_recency=wr, weight_importance=wr, weight_relationship=1.0, rrf_k=k,
+                "b_wr{}_k{}".format(wr, k),
+                fusion="rrf",
+                weight_semantic=1.0,
+                weight_keyword=1.0,
+                weight_recency=wr,
+                weight_importance=wr,
+                weight_relationship=1.0,
+                rrf_k=k,
             )
             ranks = _eval_variant(v, conv_data, qa_by_conv, sq_cache, doc_vecs_ctx)
-            row = {"weight_recency_importance": wr, "rrf_k": k, "recall": recall_at_k(ranks, K_LIST)}
+            row = {
+                "weight_recency_importance": wr,
+                "rrf_k": k,
+                "recall": recall_at_k(ranks, K_LIST),
+            }
             b_rows.append(row)
-            print("  (b) wr=wi={} rrf_k={}: {}".format(
-                wr, k, ", ".join("@{}={:.1f}%".format(kk, row["recall"][kk] * 100) for kk in K_LIST)
-            ))
+            print(
+                "  (b) wr=wi={} rrf_k={}: {}".format(
+                    wr,
+                    k,
+                    ", ".join("@{}={:.1f}%".format(kk, row["recall"][kk] * 100) for kk in K_LIST),
+                )
+            )
 
     best_b = max(b_rows, key=lambda row: row["recall"][20])
 
@@ -879,24 +962,34 @@ def run_followup(
     b_kw_rows = []
     for wk in (0.5, 1.0, 2.0):
         v = Variant(
-            "b_kw{}".format(wk), fusion="rrf", weight_semantic=1.0, weight_keyword=wk,
+            "b_kw{}".format(wk),
+            fusion="rrf",
+            weight_semantic=1.0,
+            weight_keyword=wk,
             weight_recency=best_b["weight_recency_importance"],
             weight_importance=best_b["weight_recency_importance"],
-            weight_relationship=1.0, rrf_k=best_b["rrf_k"],
+            weight_relationship=1.0,
+            rrf_k=best_b["rrf_k"],
         )
         ranks = _eval_variant(v, conv_data, qa_by_conv, sq_cache, doc_vecs_ctx)
         row = {"weight_keyword": wk, "recall": recall_at_k(ranks, K_LIST)}
         b_kw_rows.append(row)
-        print("  (b) keyword sweep @best cell wk={}: {}".format(
-            wk, ", ".join("@{}={:.1f}%".format(kk, row["recall"][kk] * 100) for kk in K_LIST)
-        ))
+        print(
+            "  (b) keyword sweep @best cell wk={}: {}".format(
+                wk, ", ".join("@{}={:.1f}%".format(kk, row["recall"][kk] * 100) for kk in K_LIST)
+            )
+        )
 
     # ── (d) V6b (best-b weights) but the query is ALSO date-contextualized ──
     v_d = Variant(
-        "d_dated_query", fusion="rrf", weight_semantic=1.0, weight_keyword=1.0,
+        "d_dated_query",
+        fusion="rrf",
+        weight_semantic=1.0,
+        weight_keyword=1.0,
         weight_recency=best_b["weight_recency_importance"],
         weight_importance=best_b["weight_recency_importance"],
-        weight_relationship=1.0, rrf_k=best_b["rrf_k"],
+        weight_relationship=1.0,
+        rrf_k=best_b["rrf_k"],
     )
     items_by_id = {i.qid: i for items in qa_by_conv.values() for i in items}
     ranks_d = []
@@ -909,8 +1002,12 @@ def run_followup(
             clock.override(item.asked_at)
             qv = sq_dated_cache[item.qid]
             ranked = fuse_rank(
-                conv=conv, variant=v_d, query=item.question, query_vec=qv,
-                doc_vecs=doc_vecs_ctx[conv_id], relationship_target=rel_target,
+                conv=conv,
+                variant=v_d,
+                query=item.question,
+                query_vec=qv,
+                doc_vecs=doc_vecs_ctx[conv_id],
+                relationship_target=rel_target,
             )
             ranks_d.append(rank_of_best_evidence(ranked, item.evidence_active_ids))
             id_order.append(item.qid)
@@ -920,7 +1017,10 @@ def run_followup(
     for cat in sorted(set(items_by_id[qid].category for qid in id_order)):
         cat_ranks = [r for qid, r in zip(id_order, ranks_d) if items_by_id[qid].category == cat]
         d_per_cat[cat] = recall_at_k(cat_ranks, (20,))[20]
-    print("  (d) dated query: " + ", ".join("@{}={:.1f}%".format(k, d_overall[k] * 100) for k in K_LIST))
+    print(
+        "  (d) dated query: "
+        + ", ".join("@{}={:.1f}%".format(k, d_overall[k] * 100) for k in K_LIST)
+    )
     print("  (d) dated query per-category @20: {}".format(d_per_cat))
 
     # Same v_d weights/rrf_k but WITHOUT the date-in-query change, as the direct baseline
@@ -929,11 +1029,13 @@ def run_followup(
     b_best_overall = recall_at_k(ranks_b_best, K_LIST)
     b_best_per_cat = {}
     for cat in sorted(set(items_by_id[qid].category for qid in id_order)):
-        cat_ranks = [r for qid, r in zip(id_order, ranks_b_best) if items_by_id[qid].category == cat]
+        cat_ranks = [
+            r for qid, r in zip(id_order, ranks_b_best) if items_by_id[qid].category == cat
+        ]
         b_best_per_cat[cat] = recall_at_k(cat_ranks, (20,))[20]
 
     doc_template_lines = [
-        "Buffer-tier memories only: `f\"search_document: [{date}] {speaker}: {content}\"`",
+        'Buffer-tier memories only: `f"search_document: [{date}] {speaker}: {content}"`',
         "where date = `(m['created_at'] or '')[:10]` (SQLite TEXT timestamp's YYYY-MM-DD",
         "prefix, i.e. the memory's created_at, not the conversation/session date) and speaker",
         "is derived purely from the memories.role column (NOT metadata.user_id):",
@@ -953,7 +1055,7 @@ def run_followup(
         "'[Consolidated] ' by ConsolidationEngine._consolidate_cluster) and the 2 bedrock",
         "persona/self-description rows were NOT given date/speaker context in this",
         "experiment -- the buffer-only filter (tier == 'buffer') skips all of them, so they",
-        "fall back to the plain V5-style `f\"search_document: {content}\"` embedding (no",
+        'fall back to the plain V5-style `f"search_document: {content}"` embedding (no',
         "context at all). If this ships, core/bedrock rows need their own template decision",
         "(they have no natural single 'speaker'; role is always 'observation') rather than",
         "silently inheriting the no-context fallback.",
@@ -986,16 +1088,23 @@ def _append_followup_report(out):
     )
     lines.append("")
 
-    lines.append("## (a) V0 fusion (raw/stored content embeddings) -- recency=importance x relationship weight")
+    lines.append(
+        "## (a) V0 fusion (raw/stored content embeddings) -- recency=importance x relationship weight"
+    )
     lines.append("")
     lines.append("| w_recency=w_importance | w_relationship | @10 | @20 | @50 |")
     lines.append("|---:|---:|---:|---:|---:|")
     for row in out["a"]:
         r = row["recall"]
-        lines.append("| {} | {} | {:.1f}% | {:.1f}% | {:.1f}% |".format(
-            row["weight_recency_importance"], row["weight_relationship"],
-            r[10] * 100, r[20] * 100, r[50] * 100,
-        ))
+        lines.append(
+            "| {} | {} | {:.1f}% | {:.1f}% | {:.1f}% |".format(
+                row["weight_recency_importance"],
+                row["weight_relationship"],
+                r[10] * 100,
+                r[20] * 100,
+                r[50] * 100,
+            )
+        )
     lines.append("")
 
     lines.append("## (b) V6b fusion (contextualized docs) -- recency=importance x rrf_k")
@@ -1004,9 +1113,15 @@ def _append_followup_report(out):
     lines.append("|---:|---:|---:|---:|---:|")
     for row in out["b_grid"]:
         r = row["recall"]
-        lines.append("| {} | {} | {:.1f}% | {:.1f}% | {:.1f}% |".format(
-            row["weight_recency_importance"], row["rrf_k"], r[10] * 100, r[20] * 100, r[50] * 100,
-        ))
+        lines.append(
+            "| {} | {} | {:.1f}% | {:.1f}% | {:.1f}% |".format(
+                row["weight_recency_importance"],
+                row["rrf_k"],
+                r[10] * 100,
+                r[20] * 100,
+                r[50] * 100,
+            )
+        )
     lines.append("")
     bc = out["b_best_cell"]
     lines.append(
@@ -1021,9 +1136,14 @@ def _append_followup_report(out):
     lines.append("|---:|---:|---:|---:|")
     for row in out["b_keyword_sweep"]:
         r = row["recall"]
-        lines.append("| {} | {:.1f}% | {:.1f}% | {:.1f}% |".format(
-            row["weight_keyword"], r[10] * 100, r[20] * 100, r[50] * 100,
-        ))
+        lines.append(
+            "| {} | {:.1f}% | {:.1f}% | {:.1f}% |".format(
+                row["weight_keyword"],
+                r[10] * 100,
+                r[20] * 100,
+                r[50] * 100,
+            )
+        )
     lines.append("")
 
     lines.append("## (c) V6 document embedding template (for ingestion-path parity)")
@@ -1039,14 +1159,28 @@ def _append_followup_report(out):
     dd = out["d_dated_query"]
     bo, do = base["overall"], dd["overall"]
     bp, dp = base["per_category_at_20"], dd["per_category_at_20"]
-    lines.append("| b best cell, plain query | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% |".format(
-        bo[10] * 100, bo[20] * 100, bo[50] * 100,
-        bp.get("1", 0) * 100, bp.get("2", 0) * 100, bp.get("3", 0) * 100, bp.get("4", 0) * 100,
-    ))
-    lines.append("| + dated query ('[date] question') | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% |".format(
-        do[10] * 100, do[20] * 100, do[50] * 100,
-        dp.get("1", 0) * 100, dp.get("2", 0) * 100, dp.get("3", 0) * 100, dp.get("4", 0) * 100,
-    ))
+    lines.append(
+        "| b best cell, plain query | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% |".format(
+            bo[10] * 100,
+            bo[20] * 100,
+            bo[50] * 100,
+            bp.get("1", 0) * 100,
+            bp.get("2", 0) * 100,
+            bp.get("3", 0) * 100,
+            bp.get("4", 0) * 100,
+        )
+    )
+    lines.append(
+        "| + dated query ('[date] question') | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% | {:.1f}% |".format(
+            do[10] * 100,
+            do[20] * 100,
+            do[50] * 100,
+            dp.get("1", 0) * 100,
+            dp.get("2", 0) * 100,
+            dp.get("3", 0) * 100,
+            dp.get("4", 0) * 100,
+        )
+    )
     lines.append("")
     lines.append(
         "Note: LoCoMo's `asked_at` is computed once per conversation (last session's time + 1 "

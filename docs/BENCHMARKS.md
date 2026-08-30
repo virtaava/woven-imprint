@@ -320,12 +320,25 @@ anymore. The spec only requires a LoCoMo full-context baseline; LongMemEval-S is
 
 ## Results
 
+**Current defaults (2026-08-30, Tier 3c):** LoCoMo memory J **0.536** vs. full-context 0.696;
+LoCoMo-Plus cognitive memory **0.421** vs. full-context 0.135. These are `locomo-mem-v2d` /
+`plus-mem-v2d` — `consolidation_keep_sources=true`, `weight_recency=0.1`,
+`weight_importance=weight_relationship=0.0` — the config the library ships today, and what
+`eval/results/external_latest.json` / [docs/RESULTS.md](RESULTS.md) report under
+`locomo:memory` / `locomo_plus:memory`. The section below (`v1`, dated 2026-08-27/28) is the
+original Tier 3b measurement, kept as history — see
+[Tier 3c: keep sources + relevance-first ranking](#tier-3c-keep-sources--relevance-first-ranking-2026-08-30)
+for the full v1→v2→v2b/v2c/v2d progression, the diagnostics that drove each change, and why
+LongMemEval-S was not re-run this round.
+
 <!-- RESULTS:BEGIN -->
 Measured 2026-08-27/28 on the local judge (see [Hardware & runtime](#hardware--runtime)). Full
 per-`bench:mode` tables (rendered by `eval/render_results.py` from
 `eval/results/external_latest.json`) are in
 [docs/RESULTS.md](RESULTS.md#external-benchmarks-real-llm-local-judge); the tables below add the
-memory-vs-full-context comparison view the spec asked for.
+memory-vs-full-context comparison view the spec asked for. **These specific tables are the
+original Tier 3b (2026-08-27/28) numbers, kept as history — current defaults are summarized
+above and detailed in the [Tier 3c section](#tier-3c-keep-sources--relevance-first-ranking-2026-08-30).**
 
 ### LoCoMo — memory vs. full-context
 
@@ -414,6 +427,217 @@ retrieval-difficulty trend. These are local-35B-judge numbers scoring a local-35
 model, not comparable to published GPT-4o-judged results; the full-context baseline under the
 identical judge is the fair comparison this harness supports.
 <!-- RESULTS:END --> On LongMemEval-S (50-question sample) memory mode reaches J 0.396, strong on single-session user facts and knowledge updates (0.86 / 0.75) and weak on multi-session aggregation (0.11).
+
+## Tier 3c: keep sources + relevance-first ranking (2026-08-30)
+
+Spec: `docs/superpowers/specs/2026-08-30-tier3c-recall-keep-sources.md`. Ledger:
+`.superpowers/sdd/2026-08-30-tier3c-recall-keep-sources/progress.md`. This tier started from a
+single diagnostic finding on the Tier 3b baseline — 86.7% of LoCoMo memory-mode WRONG answers had
+their evidence sitting only in `archived` buffer rows, which retrieval never scores — and went
+through five measured runs (`v1` → `v2` → `v2b`/`v2c`/`v2d`) as each fix uncovered the next
+bottleneck: first "sources get archived", then "ranking dilutes relevance", then "does the
+relevance ranking actually convert to correct answers". Config changed twice:
+`memory.consolidation_keep_sources` (new default `true`) and the RRF weights
+(`weight_recency`/`weight_importance`/`weight_relationship`, defaults `0.1`/`0.0`/`0.0`, was
+`1.0`/`1.0`/`1.0`).
+
+### (a) LoCoMo memory mode — v1 → v2 → v2c → v2b → v2d
+
+| run | overall J | cat 1 | cat 2 | cat 3 | cat 4 | adversarial (cat 5) | token-F1 | tokens/q | config |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| v1 | 0.444 | 0.291 | 0.439 | 0.167 | 0.528 | 0.883 | 0.234 | 1,000 | `keep_sources=false`; weights 1.0/1.0/1.0 (pre-fix relationship) |
+| v2 | 0.490 | 0.309 | 0.467 | 0.198 | 0.593 | 0.899 | 0.264 | 1,044 | `keep_sources=true`; weights 1.0/1.0/1.0 (pre-fix relationship) |
+| v2c | 0.431 | 0.227 | 0.436 | 0.167 | 0.528 | 0.910 | 0.243 | 1,063 | `keep_sources=true`; weights 1.0/1.0/1.0 (tie-bias fix applied, restored via `--set`) |
+| v2b | 0.476 | 0.301 | 0.458 | 0.198 | 0.573 | 0.892 | 0.270 | 1,115 | `keep_sources=true`; weights 0.1/0.0/1.0 (code defaults at 5c84a76, tie-bias fix) |
+| v2d | **0.536** | 0.355 | 0.502 | 0.219 | 0.647 | 0.841 | 0.286 | 1,106 | `keep_sources=true`; weights 0.1/0.0/**0.0** (shipped default, tie-bias fix) |
+| full-context (v1, unchanged) | 0.696 | 0.504 | 0.511 | 0.302 | 0.875 | 0.832 | 0.388 | 24,917 | no `Engine`/retrieval |
+
+Provenance: `v2` is a **fresh ingest** on `b8ce67e` (the `keep_sources` commit) — new DBs, new
+bookkeeping, judged with the same local judge as `v1`. `v2b`/`v2c`/`v2d` are **answer-only
+re-runs of `v2`'s already-ingested DBs** — no re-ingestion, no new bookkeeping calls, only the
+QA/judge calls — via copied checkpoints (`--reuse-ingest locomo-mem-v2`, which copies each
+conversation's `.db`/`.ingest.json` the first time that run-id's own directory has neither file
+yet). `v2c` and `v2d`'s weight overrides are applied with repeatable `--set section.key=value`
+flags and recorded verbatim in the run's `config.overrides` list (see each result JSON); `v2b` has
+no `overrides` entry because it ran on the code defaults committed at `5c84a76` directly, with no
+`--set` needed. The full-context baseline is unchanged from Tier 3b (`v1`, no memory/retrieval
+involved, so nothing about consolidation or ranking touches it).
+
+### (b) LoCoMo-Plus cognitive — v1 → v2 → v2b → v2d (per-relation)
+
+| run | overall | causal | state | goal | value | config |
+|---|---:|---:|---:|---:|---:|---|
+| v1 | 0.332 | 0.356 | 0.440 | 0.260 | 0.270 | `keep_sources=false`; weights 1.0/1.0/1.0 (pre-fix relationship) |
+| v2 | 0.374 | 0.396 | 0.480 | 0.280 | 0.340 | `keep_sources=true`; weights 1.0/1.0/1.0 (pre-fix relationship) |
+| v2b | 0.384 | 0.446 | 0.440 | 0.300 | 0.350 | `keep_sources=true`; weights 0.1/0.0/1.0 (tie-bias fix) |
+| v2d | **0.421** | 0.495 | 0.410 | 0.340 | 0.440 | `keep_sources=true`; weights 0.1/0.0/**0.0** (shipped default) |
+| full-context (v1, unchanged) | 0.135 | 0.188 | 0.170 | 0.080 | 0.100 | no `Engine`/retrieval |
+
+No `v2c` Plus variant was run (the 1.0/1.0/1.0-tie-fix-only cell was judged not worth the LoCoMo
+generation-model calls once its LoCoMo answer numbers came back worse than `v2`). Each Plus run
+reuses its same-letter LoCoMo run's ingested DBs (`--reuse-run`) exactly as in Tier 3b.
+
+### (c) LongMemEval-S: not re-run in Tier 3c
+
+`lme-s-50-v1`'s numbers (J 0.396, per-type breakdown in [Results](#results) above) **stand
+unchanged** — LongMemEval-S was deliberately **not** re-run this round (ledger ruling: "skip
+lme-s-50-v2 in this slice (8 h for a modest change); run LME once after the ranking fix
+(Tier 3d)"). Concretely: `lme-s-50-v1` was measured under the **old** `keep_sources=false`
+(sources archived) and the **old** equal-weight (`1.0`/`1.0`/`1.0`) RRF defaults, not under
+anything shipped in this tier. `eval/results/external_latest.json`'s `longmemeval_s:memory` key
+still points at `lme-s-50-v1` — it is the only LongMemEval-S number this project has ever
+published, and it should be read as "measured under the pre-Tier-3c defaults," not as a Tier 3c
+result. Re-running it is explicit follow-up work for the next ranking change (Tier 3d), once
+contextualized embeddings and the abstention-with-evidence lever below are also in place, so it's
+measured once against a more settled target rather than twice against a moving one.
+
+### (d) The diagnostics story, in numbers
+
+Four diagnostic passes, run in sequence as each one's finding pointed at the next bottleneck.
+
+1. **v1 miss classes** (`eval/external/runs/diagnostics/recall_diagnostic.md`, top-level file):
+   of 857 WRONG LoCoMo answers, 743 (**86.7%**) had their evidence only in `archived` buffer
+   rows — consolidation had archived the very sources retrieval would have needed.
+   Evidence recall@20 (fraction of WRONG+CORRECT questions whose evidence memory was actually in
+   the top-20 retrieved set) was **3.5%**.
+2. **v2 diagnostic** (`.../diagnostics/locomo-mem-v2/recall_diagnostic.md`, after
+   `keep_sources=true`): 0 archived buffer rows (the fix worked structurally), but of 785 WRONG
+   answers, 666 (**85%**) were now `stored_active_not_retrieved` — the evidence was active and
+   eligible but simply outranked by everything else in RRF fusion. Evidence recall@20 rose to
+   **23.9%** (from 3.5%) — keep-sources alone made evidence retrievable in principle, but ranking
+   was now the bottleneck.
+3. **Offline ranking experiments** (`eval/external/ranking_experiments.py`, report at
+   `.../diagnostics/ranking/ranking_experiments_report.md`, no LLM calls — pure re-ranking over
+   already-computed embeddings): the equal-weight baseline (V0, weights 1.0/1.0/1.0) reproduced
+   `v2`'s live 23.9% @20 (50/50 exact-order validation against the product's own fused ranking).
+   Turning recency+importance to `0` with relationship still at `1` (the strategy's **pre-fix**,
+   buggy implementation) reached **35.6%** @20. Turning recency, importance, **and**
+   relationship all to `0` reached **50.8%** @20 — the real ceiling this sweep found; the 35.6%
+   cell is not a clean read on the relationship signal, since the tie-bias bug (below) was still
+   live when it was measured. A follow-up cell using **contextualized document text**
+   (`"[date] speaker: content"` instead of raw content) reached **54.7%** @20 — the single best
+   number in the sweep — but it needs a full re-embed of every buffer row and was deferred to
+   Tier 3d rather than shipped here. Two things made things *worse*: adding nomic's
+   `search_query:`/`search_document:` task prefixes (15.1% @20 in one prefix-both variant, well
+   below baseline), and widening the FTS keyword pull from 50 to 200 candidates (24.3% vs. 26.1%
+   @20 at the same weights) — both counterintuitive results kept, not silently dropped.
+4. **Flip analysis** (`.../diagnostics/flip/`, comparing `v2` vs. `v2b` on the same 1,540
+   questions): shipping the fixed relationship strategy at weight `1.0` (`v2b`) only moved live
+   evidence-in-top20 from 23.9% to **29.9%** — far short of the 50.8% offline ceiling, because the
+   shipped combo still had `weight_relationship=1.0` (the offline ceiling measured
+   relationship at `0`). Worse, correctness *conditional on* evidence being in the top-20 actually
+   *fell*, from **69.1% to 64.4%** — more relevant material in context didn't reliably turn into
+   more correct answers. The mechanism: mean top-20 composition shifted from 17.69 `core_fact` /
+   1.90 `buffer_raw_turn` (old) to 13.96 / 5.42 (new) — the newly-surfaced buffer turns were
+   displacing **near-duplicate core facts** (paraphrased restatements of the same underlying
+   fact) rather than adding new information, and the model answers more often from a paraphrased
+   core fact than from the literal evidence turn. This is what motivated measuring `v2c`
+   (weights 1.0/1.0/1.0 + tie-fix only, isolating whether the fix alone is neutral — it wasn't:
+   0.431, worse than `v2`'s 0.490, because removing the old tie bug's incidental oldest-first
+   prior actually cost something at equal weights) and `v2d` (the offline-best cell, `0.0`
+   relationship) as answer-only re-runs before picking a default.
+5. **v2d diagnostic** (`.../diagnostics/locomo-mem-v2d/recall_diagnostic.md`, the shipped
+   defaults): evidence recall@20 **49.6%**, matching the 50.8% offline prediction. Of 714
+   remaining WRONG answers: 457 (**64%**) still `stored_active_not_retrieved` (evidence active but
+   outside top-20 — the residual ranking miss, not fully closed); 251 (**35%**)
+   `retrieved`-but-wrong, of which **155 abstained** despite evidence being in the prompt (the
+   model said "Not mentioned" anyway) and 96 answered wrong with the evidence present. The 155
+   abstentions-with-evidence are now the single largest identified failure class and the clearest
+   Tier 3d lever: generation/abstention behavior, not retrieval.
+
+### (e) Caveats
+
+- **Adversarial abstention fell under the new defaults**: 0.899 (`v2`) → **0.841** (`v2d`). More
+  relevant evidence reaching the prompt makes the model answer more often instead of abstaining —
+  which is exactly right for genuine questions but costs a few points on category-5 adversarial
+  questions (whose gold behavior is declining to answer). Reported honestly, not smoothed over.
+- **Near-duplicate core facts** dominate the top-20 (mean 17.69/20 slots pre-`v2b`, still 13.96/20
+  post) — LoCoMo's fact-extraction pipeline produces multiple paraphrased restatements of the same
+  underlying fact, which crowd out literal evidence turns and each other. Not addressed in this
+  tier; a real dedup pass is Tier 3d scope.
+- **User-affinity and name-mention boosts are off by default.** `weight_relationship=0.0` also
+  means the `+0.2` user_id/relationship_target affinity bonus baked into the importance strategy's
+  scoring never fires by default either (the importance list itself is skipped at
+  `weight_importance=0.0`) — both are still fully implemented and available as opt-ins, not
+  removed.
+- **`consolidated_into` remap on import.** Every memory gets a new id on `Engine.import_character()`,
+  so a kept source's `metadata.consolidated_into` (pointing at the *old* id of its consolidated
+  summary) is dangling on arrival unless the import path rewrites it — it now does, via an
+  old-id→new-id map built during the same pass (or drops the key if the summary wasn't part of the
+  export).
+- **Buffer growth is unbounded by design under `keep_sources=true`** — sources that used to be
+  archived now persist as active buffer rows indefinitely. Nightly `buffer_hygiene` still sweeps
+  rows on TTL, but it's now scoped to exempt anything carrying `metadata.consolidated_into`
+  (a kept source), sweeping only unkept rows and rows merely marked `consolidation_seen`. This is a
+  deliberate trade (retrievability over storage compactness), not an oversight — see the
+  consolidation paragraph in [ARCHITECTURE.md](ARCHITECTURE.md#consolidation-engine).
+- **LongMemEval-S was not re-run** — see (c) above; its published number predates every change in
+  this tier.
+- **Judge unchanged.** All Tier 3c numbers use the same local judge (`v2` judge logic, unchanged
+  since Tier 3b) as `v1` — the comparison across `v1`→`v2d` isolates the retrieval/consolidation
+  changes, not judge drift.
+
+### (f) How to reproduce
+
+All commands assume `.venv/bin/python`, `vllm-brain` (`:11800`), and `llama-embed` (`:11801`)
+running, as in [Reproduce](#reproduce) above.
+
+```bash
+# 1. v2: fresh ingest + answer, 10-way sharded (new keep_sources=true default; the production
+#    vllm-brain was raised to --max_num_seqs 8 for this measurement; ~3h13m wall-clock, 2 shard
+#    restarts on this run)
+for i in $(seq 0 9); do
+  .venv/bin/python -m eval.external run --bench locomo --mode memory \
+    --run-id locomo-mem-v2 --shard "$i/10" --no-results --timeout 900 &
+done
+wait
+.venv/bin/python -m eval.external run --bench locomo --mode memory \
+  --run-id locomo-mem-v2 --timeout 900
+
+for i in $(seq 0 4); do
+  .venv/bin/python -m eval.external run --bench locomo_plus --mode memory \
+    --run-id plus-mem-v2 --reuse-run locomo-mem-v2 --shard "$i/5" --no-results --timeout 900 &
+done
+wait
+.venv/bin/python -m eval.external run --bench locomo_plus --mode memory \
+  --run-id plus-mem-v2 --reuse-run locomo-mem-v2 --timeout 900
+
+# 2. v2b/v2c/v2d: answer-only re-runs on v2's ingested DBs — no re-ingestion, no bookkeeping
+#    calls. The three variants that shipped this tier predate `--reuse-ingest` (added in the
+#    fix wave below) and were produced by copying locomo-mem-v2's <conv>.db/.ingest.json
+#    checkpoints into each new run-id's own directory before launching the answer-only shards
+#    (v2b: `cp` then run with no --set, on 5c84a76's code defaults; v2c/v2d: `cp` then run with
+#    the --set overrides shown). `--reuse-ingest <run-id>` (current code) does the same copy
+#    automatically the first time a conversation's own directory has neither file yet — see the
+#    "Answer-only re-runs" example under [Reproduce](#reproduce) above for the fully-sharded,
+#    `--reuse-ingest`-based form of the v2c/v2d commands (`--set memory.weight_recency=...`
+#    etc.); the v2b equivalent is the same pattern with no `--set` flags:
+.venv/bin/python -m eval.external run --bench locomo --mode memory \
+  --run-id locomo-mem-v2b --reuse-ingest locomo-mem-v2 --timeout 900
+
+.venv/bin/python -m eval.external run --bench locomo_plus --mode memory \
+  --run-id plus-mem-v2b --reuse-run locomo-mem-v2b --timeout 900
+
+.venv/bin/python -m eval.external run --bench locomo_plus --mode memory \
+  --run-id plus-mem-v2d --reuse-run locomo-mem-v2d \
+  --set memory.weight_recency=0.1 --set memory.weight_importance=0.0 \
+  --set memory.weight_relationship=0.0 --timeout 900
+
+# 3. Diagnose a run's recall miss classes
+.venv/bin/python -m eval.external.diagnose_recall --run-id locomo-mem-v2d
+
+# 4. Offline ranking experiments (no LLM calls; re-ranks already-computed embeddings)
+.venv/bin/python -m eval.external.ranking_experiments --run-id locomo-mem-v2
+
+# 5. Flip analysis between two answer-only variants on the same DBs
+.venv/bin/python -m eval.external.flip_analysis --old locomo-mem-v2 --new locomo-mem-v2b
+```
+
+Wall-clock, measured (`eval/external/runs/driver/chain.log`): `locomo-mem-v2` fresh
+ingest+answer **3 h 13 min** (8 concurrent seqs, 10-way sharded, 2 shard restarts);
+`plus-mem-v2` **1 h 18 min**; the `v2c`/`v2d` answer-only re-runs together **≈1 h 40 min**
+running in parallel (5 shards each, `v2b` ran separately at ≈30 min); `plus-mem-v2d`
+**1 h 17 min**.
 
 ## Caveats
 

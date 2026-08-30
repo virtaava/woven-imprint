@@ -76,24 +76,24 @@ Measured with the local brain (Qwen3.5-35B-A3B-FP8, thinking off) as both the an
 
 ### `locomo:memory`
 
-- Run id: `locomo-mem-v1` | Timestamp: 2026-08-28T02:08:54.533146+00:00
+- Run id: `locomo-mem-v2d` | Timestamp: 2026-08-30T07:31:23.833365+00:00
 - Judge version: 2
-- Overall J (categories 1-4 / non-abstain): 44.4% (n=1986)
-- Mean token-F1: 0.234
-- Adversarial accuracy (category 5): 88.3%
+- Overall J (categories 1-4 / non-abstain): 53.6% (n=1986)
+- Mean token-F1: 0.286
+- Adversarial accuracy (category 5): 84.1%
 - Abstain accuracy (`_abs`): n/a
-- Mean prompt tokens (est.): 1000
+- Mean prompt tokens (est.): 1106
 
 | category | n | J | token-F1 |
 |---|---|---|---|
-| 1 | 282 | 29.1% | 0.199 |
-| 2 | 321 | 43.9% | 0.155 |
-| 3 | 96 | 16.7% | 0.081 |
-| 4 | 841 | 52.8% | 0.293 |
+| 1 | 282 | 35.5% | 0.228 |
+| 2 | 321 | 50.2% | 0.186 |
+| 3 | 96 | 21.9% | 0.098 |
+| 4 | 841 | 64.7% | 0.366 |
 
 | category (abstention rule) | n | accuracy |
 |---|---|---|
-| 5 | 446 | 88.3% |
+| 5 | 446 | 84.1% |
 
 ### `locomo_plus:fullcontext`
 
@@ -123,29 +123,29 @@ Measured with the local brain (Qwen3.5-35B-A3B-FP8, thinking off) as both the an
 
 ### `locomo_plus:memory`
 
-- Run id: `plus-mem-v1` | Timestamp: 2026-08-28T03:49:49.009710+00:00
-- Cognitive accuracy overall: 33.2% (n=401)
-- Mean prompt tokens (est.): 1035
+- Run id: `plus-mem-v2d` | Timestamp: 2026-08-30T08:54:02.790480+00:00
+- Cognitive accuracy overall: 42.1% (n=401)
+- Mean prompt tokens (est.): 1163
 
 | relation_type | n | cognitive accuracy |
 |---|---|---|
-| causal | 101 | 35.6% |
-| goal | 100 | 26.0% |
-| state | 100 | 44.0% |
-| value | 100 | 27.0% |
+| causal | 101 | 49.5% |
+| goal | 100 | 34.0% |
+| state | 100 | 41.0% |
+| value | 100 | 44.0% |
 
 | time_gap (top buckets) | n | cognitive accuracy |
 |---|---|---|
-| two months later | 59 | 18.6% |
-| three months later | 56 | 35.7% |
-| one month later | 44 | 43.2% |
-| six months later | 33 | 27.3% |
-| four months later | 26 | 19.2% |
-| six weeks later | 25 | 36.0% |
+| two months later | 59 | 39.0% |
+| three months later | 56 | 37.5% |
+| one month later | 44 | 40.9% |
+| six months later | 33 | 36.4% |
+| four months later | 26 | 42.3% |
+| six weeks later | 25 | 40.0% |
 | one week later | 13 | 53.8% |
-| about one month later | 11 | 54.5% |
-| several months later | 11 | 72.7% |
-| two weeks later | 10 | 30.0% |
+| about one month later | 11 | 72.7% |
+| several months later | 11 | 63.6% |
+| two weeks later | 10 | 20.0% |
 
 ### `longmemeval_s:memory`
 

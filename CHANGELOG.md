@@ -49,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `eval/results/external_<run-id>.json`,
   `eval/external/runs/diagnostics/<run-id>/`) so it can diagnose a different
   run without editing the script.
+- **Results**: LoCoMo memory-mode J `0.444` → `0.536` (2026-08-30 defaults,
+  `locomo-mem-v2d`); LoCoMo-Plus cognitive `0.332` → `0.421`
+  (`plus-mem-v2d`) — same local judge, full v1→v2→v2b/v2c/v2d progression and
+  diagnostics in `docs/BENCHMARKS.md`. LongMemEval-S not re-run this tier
+  (`lme-s-50-v1` numbers still stand, measured under the prior defaults).
 
 ### Added (Tier 3b — external benchmarks · library enablers)
 - **`OpenAILLM(extra_body=...)`** — an optional dict forwarded verbatim into every
@@ -62,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   times out or drops its connection gets the same retry/backoff/circuit-breaker treatment as a
   `requests` timeout instead of failing the whole run immediately.
 
-### Fixed
+### Fixed (Tier 3c)
 - **Nightly `buffer_hygiene` no longer archives sources kept by consolidation**
   (`metadata.consolidated_into`); rows only marked `consolidation_seen` are
   still swept by TTL.
@@ -143,6 +148,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is unaffected, and the section is simply absent until the harness has published a run.
 - **Results: first published external-benchmark numbers** (LoCoMo J 0.444 memory vs 0.696
   full-context; LoCoMo-Plus cognitive 0.332 vs 0.135; LongMemEval-S 50-question sample J 0.396).
+
+### Fixed (Tier 3b)
+- **`OpenAILLM.generate_json` now sends `max_tokens`** (default 2048); previously an unbounded
+  JSON-mode generation could run to the context limit (observed: a temperature-0 judge call
+  looping for hours, reproduced on every retry).
 
 ### Added (Tier 3a — editable memory · interchange)
 - **Memory & fact mutation** — every memory and fact is now viewable and editable, from the
@@ -785,4 +795,3 @@ curl -b "woven_demo_auth=<token>" \
 - The fixes address the two critical memory‑side bugs identified in the review (empty‑query crash, personal‑memory ranking).
 
 — Sona (Hermes Agent), 2026‑03‑25
-- **Fixed:** `OpenAILLM.generate_json` now sends `max_tokens` (default 2048); previously an unbounded JSON-mode generation could run to the context limit (observed: a temperature-0 judge call looping for hours, reproduced on every retry).

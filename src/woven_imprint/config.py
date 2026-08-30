@@ -115,7 +115,7 @@ class ContextConfig:
     # LoCoMo abstention analysis (eval/external/runs/diagnostics/abstain/locomo-mem-v2d/
     # recommendation.md, 2026-08-30) found 133/251 evidence lines cut by that cap, 23 with the
     # gold answer's own words removed. Raised to 800 — still bounded by the overall
-    # context.memory_tokens prompt budget, which is unchanged.
+    # shared context.total_tokens prompt budget (memory_tokens is not enforced yet).
     memory_content_max_chars: int = 800
 
 

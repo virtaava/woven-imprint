@@ -30,6 +30,20 @@ from .storage.sqlite import SQLiteStorage
 from .utils.text import generate_id
 
 
+_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")  # locale-independent
+
+
+def _safe_tag(value: object, limit: int = 40) -> str:
+    """Sanitize a user-controlled value for use inside a ``[User: …]`` prompt tag.
+
+    Control characters, newlines and square brackets are removed so an attacker-chosen
+    ``user_id`` cannot close the tag or forge additional memory lines; long values are cut.
+    """
+    text = "".join(ch for ch in str(value) if ch.isprintable() and ch not in "[]")
+    text = " ".join(text.split())
+    return text[:limit] or "unknown"
+
+
 class Character:
     """A persistent AI character with memory, persona, and relationships.
 
@@ -1813,7 +1827,7 @@ class Character:
         Each line's displayed content is capped at
         ``context.memory_content_max_chars`` characters (default 800; ``0``
         means unlimited) — still bounded by the overall
-        ``context.memory_tokens`` prompt budget, which is unchanged.
+        shared ``context.total_tokens`` prompt budget (``memory_tokens`` is currently not enforced).
         """
         if not memories:
             return ""
@@ -1835,15 +1849,13 @@ class Character:
             if raw:
                 try:
                     dt = clock.parse_ts(raw)
-                    when = (
-                        f" ({dt.date().isoformat()} {dt.strftime('%a')}, {clock.relative(dt, ref)})"
-                    )
+                    when = f" ({dt.date().isoformat()} {_WEEKDAYS[dt.weekday()]}, {clock.relative(dt, ref)})"
                 except ValueError:
                     when = ""
             content = m["content"]
             user_id = (m.get("metadata") or {}).get("user_id")
             if user_id and content.startswith("[User] "):
-                content = f"[User: {user_id}] " + content[len("[User] ") :]
+                content = f"[User: {_safe_tag(user_id)}] " + content[len("[User] ") :]
             if content_cap > 0:
                 content = content[:content_cap]
             lines.append(f"- {tier_tag}{when}{cert_tag} {content}")

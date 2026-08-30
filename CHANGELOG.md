@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   evidence memory cut by the old hard-coded 200-char slice, 23 of them with the
   gold answer's own words falling after the cut. Behavior: prompts now carry
   longer memory lines by default — up to 800 chars each — within the existing
-  `context.memory_tokens` prompt budget, which is unchanged.
+  shared `context.total_tokens` prompt budget (`memory_tokens` is not enforced yet — follow-up).
 - **User-turn memories carry `metadata.user_id`** when `user_id` is passed to
   `chat()`/`chat_stream()`/`ingest()`/`ingest_exchange()`; `_format_memories`
   renders the leading tag as `[User: <user_id>]` instead of the anonymous

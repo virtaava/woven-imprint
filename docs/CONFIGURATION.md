@@ -172,7 +172,7 @@ context:
 |---------|---------|-------------|
 | `total_tokens` | `6000` | Total token budget for all content sent to the LLM. Should be less than your model's context window (`num_ctx`) to leave room for the response. |
 | `system_prompt_tokens` | `1000` | Budget for the persona system prompt (name, backstory, personality, speaking style). |
-| `memory_tokens` | `1500` | Budget for retrieved memories injected into the prompt. |
+| `memory_tokens` | `1500` | Intended budget for retrieved memories; **not enforced yet** — the shared `total_tokens` pool bounds the whole prompt (follow-up). |
 | `conversation_tokens` | `3000` | Budget for recent conversation history (sliding window). |
 | `reserve_tokens` | `500` | Reserved for safety margin. |
 | `max_turns` | `20` | Maximum conversation turns kept in the sliding window. Older turns are compressed into a summary. |

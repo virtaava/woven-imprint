@@ -994,3 +994,33 @@ def test_judge_records_unparsed_when_provider_raises():
     )
     rp = judge_plus("evidence", "reply", RaisingLLM())
     assert rp["judge_parsed"] is False and rp["correct"] is False
+
+
+def test_apply_overrides_coerces_and_restores():
+    from eval.external.runner import _benchmark_config, apply_overrides
+    from woven_imprint.config import get_config
+
+    cfg = get_config()
+    before = (cfg.memory.weight_relationship, cfg.memory.relevance_gate, cfg.memory.max_candidates)
+    restores = apply_overrides(
+        cfg,
+        ("memory.weight_relationship=0", "memory.relevance_gate=false", "memory.max_candidates=42"),
+    )
+    assert cfg.memory.weight_relationship == 0.0 and isinstance(
+        cfg.memory.weight_relationship, float
+    )
+    assert cfg.memory.relevance_gate is False and cfg.memory.max_candidates == 42
+    for section, key, prev in reversed(restores):
+        setattr(getattr(cfg, section), key, prev)
+    assert (
+        cfg.memory.weight_relationship,
+        cfg.memory.relevance_gate,
+        cfg.memory.max_candidates,
+    ) == before
+    with pytest.raises(ValueError):
+        apply_overrides(cfg, ("memory.nope=1",))
+    run_cfg = _cfg("ovr", mode="memory")
+    run_cfg.overrides = ("memory.weight_relationship=0",)
+    with _benchmark_config(run_cfg):
+        assert cfg.memory.weight_relationship == 0.0
+    assert cfg.memory.weight_relationship == before[0]

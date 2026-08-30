@@ -54,6 +54,14 @@ def main(argv: list[str] | None = None) -> int:
         "'--bench locomo --mode memory' run to copy ingested DBs from",
     )
     run_parser.add_argument(
+        "--set",
+        dest="overrides",
+        action="append",
+        default=[],
+        metavar="SECTION.KEY=VALUE",
+        help="Override a woven-imprint config field for this run (repeatable)",
+    )
+    run_parser.add_argument(
         "--shard",
         default=None,
         help="i/n: process only conversations with index %% n == i (parallel workers)",
@@ -139,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
             k=args.k,
             limit_conversations=args.limit,
             shard=_parse_shard(args.shard),
+            overrides=tuple(args.overrides),
             write_results=not args.no_results,
             sample=args.sample,
             seed=args.seed,

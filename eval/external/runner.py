@@ -99,6 +99,7 @@ class RunConfig:
         None  # (index, count): process conversations where i % count == index
     )
     write_results: bool = True  # shard workers pass False; the final unsharded call aggregates
+    overrides: tuple[str, ...] = ()  # "section.key=value" applied to get_config() during the run
     timeout: int = 900  # seconds; passed to brain_llm(timeout=...)
     force_aggregate: bool = False  # bypass the unsharded-aggregation safety check (see run())
     # Pair each (user, assistant) turn during ingestion into one `Character.ingest_exchange()`
@@ -823,6 +824,7 @@ def run_plus(
         "config": {
             "limit_conversations": cfg.limit_conversations,
             "shard": list(cfg.shard) if cfg.shard else None,
+            "overrides": list(cfg.overrides),
             "reuse_run": cfg.reuse_run,
             "temperature": {
                 "judge": JUDGE_TEMPERATURE,
@@ -924,11 +926,43 @@ def _benchmark_config(cfg: "RunConfig"):
     prev_refresh = woven_cfg.maintenance.callbacks_refresh_on_session_end
     woven_cfg.memory.fact_extraction_interval = cfg.fact_extraction_interval
     woven_cfg.maintenance.callbacks_refresh_on_session_end = False
+    restores = apply_overrides(woven_cfg, cfg.overrides)
     try:
         yield woven_cfg
     finally:
         woven_cfg.memory.fact_extraction_interval = prev_interval
         woven_cfg.maintenance.callbacks_refresh_on_session_end = prev_refresh
+        for section, key, prev in reversed(restores):
+            setattr(getattr(woven_cfg, section), key, prev)
+
+
+def apply_overrides(woven_cfg, overrides) -> list[tuple[str, str, object]]:
+    """Apply ``"section.key=value"`` overrides to the config object; return (section, key, previous)
+    triples for restoration. Values are coerced to the type of the current attribute (bool accepts
+    true/false/1/0). Unknown section/key raises ``ValueError`` so a typo cannot silently run the
+    default configuration.
+    """
+    restores: list[tuple[str, str, object]] = []
+    for item in overrides:
+        if "=" not in item or "." not in item.split("=", 1)[0]:
+            raise ValueError(f"override must look like section.key=value, got {item!r}")
+        path, raw = item.split("=", 1)
+        section, key = path.split(".", 1)
+        if not hasattr(woven_cfg, section) or not hasattr(getattr(woven_cfg, section), key):
+            raise ValueError(f"unknown config field {path!r}")
+        target = getattr(woven_cfg, section)
+        prev = getattr(target, key)
+        if isinstance(prev, bool):
+            value: object = raw.strip().lower() in ("1", "true", "yes", "on")
+        elif isinstance(prev, int):
+            value = int(raw)
+        elif isinstance(prev, float):
+            value = float(raw)
+        else:
+            value = raw
+        setattr(target, key, value)
+        restores.append((section, key, prev))
+    return restores
 
 
 def run(
@@ -1018,6 +1052,7 @@ def run(
                 "max_sessions": cfg.max_sessions,
                 "max_questions": cfg.max_questions,
                 "shard": list(cfg.shard) if cfg.shard else None,
+                "overrides": list(cfg.overrides),
             },
             "summary": summary,
             "ingest_totals": ingest_totals,

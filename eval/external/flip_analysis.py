@@ -64,7 +64,7 @@ import json
 import random
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from woven_imprint import clock
 from woven_imprint.config import get_config
@@ -758,7 +758,6 @@ def build_consolidated_ousted(items: list[dict]) -> dict:
     hits = []
     for it in a_flips:
         old_set, new_set = set(it["old_top20"]), set(it["new_top20"])
-        gold_lower = it["gold"].lower()
         ousted = []
         for mid in old_set - new_set:
             idx = it["old_top20"].index(mid)

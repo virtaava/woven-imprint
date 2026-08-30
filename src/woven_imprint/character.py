@@ -238,7 +238,9 @@ class Character:
 
         Args:
             message: The user's message.
-            user_id: Optional user identifier for relationship tracking.
+            user_id: Optional user identifier for relationship tracking. Also stamped as
+                `metadata.user_id` on the stored user-turn memory, so `_format_memories`
+                can render `"[User: <user_id>]"` instead of the anonymous `"[User]"` tag.
 
         Returns:
             The character's response.
@@ -266,6 +268,7 @@ class Character:
             role="user",
             session_id=self._session_id,
             importance=0.5,
+            metadata=({"user_id": user_id} if user_id else None),
         )
         metrics["store_user_memory_ms"] = round(
             (time.perf_counter() - store_user_started) * 1000.0, 2
@@ -419,7 +422,9 @@ class Character:
 
         Args:
             message: The user's message.
-            user_id: Optional user identifier for relationship tracking.
+            user_id: Optional user identifier for relationship tracking. Also stamped as
+                `metadata.user_id` on the stored user-turn memory, so `_format_memories`
+                can render `"[User: <user_id>]"` instead of the anonymous `"[User]"` tag.
 
         Yields:
             Response text chunks, in order.
@@ -444,6 +449,7 @@ class Character:
             role="user",
             session_id=self._session_id,
             importance=0.5,
+            metadata=({"user_id": user_id} if user_id else None),
         )
 
         # 2. Retrieve relevant memories
@@ -586,7 +592,9 @@ class Character:
         Args:
             role: ``"user"`` or ``"assistant"`` — who said it.
             content: The message text.
-            user_id: Optional user identifier for relationship tracking.
+            user_id: Optional user identifier for relationship tracking. Also stamped as
+                `metadata.user_id` on the stored user-turn memory, so `_format_memories`
+                can render `"[User: <user_id>]"` instead of the anonymous `"[User]"` tag.
         """
         if role not in ("user", "assistant"):
             raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
@@ -614,6 +622,7 @@ class Character:
             role=mem_role,
             session_id=self._session_id,
             importance=0.5,
+            metadata=({"user_id": user_id} if (role == "user" and user_id) else None),
         )
 
         # Subsystem updates — fact extraction + relationship assessment.
@@ -678,7 +687,9 @@ class Character:
         Args:
             user_message: What the user said.
             response: What the character said in reply.
-            user_id: Optional user identifier for relationship tracking.
+            user_id: Optional user identifier for relationship tracking. Also stamped as
+                `metadata.user_id` on the stored user-turn memory, so `_format_memories`
+                can render `"[User: <user_id>]"` instead of the anonymous `"[User]"` tag.
         """
         if not self._session_id:
             self.start_session()
@@ -705,6 +716,7 @@ class Character:
             role="user",
             session_id=self._session_id,
             importance=0.5,
+            metadata=({"user_id": user_id} if user_id else None),
         )
         self.memory.add(
             content=f"[{self.name}] {response}",
@@ -1785,11 +1797,30 @@ class Character:
         Memories are tagged by provenance to mitigate prompt injection:
         user-supplied content is clearly marked so the LLM can distinguish
         it from system-generated observations. Each memory also carries the
-        date it formed (and a relative-time phrase) so the character can
-        reason about how long ago something happened.
+        date it formed, its weekday, and a relative-time phrase so the
+        character can reason about how long ago something happened.
+
+        A user-turn memory (content stored as ``"[User] ..."``) whose
+        ``metadata.user_id`` is known renders as ``"[User: <user_id>]"``
+        instead of the anonymous ``"[User]"`` tag; character turns
+        (``"[<name>] ..."``) are never rewritten. Rows written before this
+        identity tag existed carry no ``metadata.user_id`` and so still
+        render as the plain ``"[User]"`` tag — that's expected, not a bug;
+        there is no migration of old rows. Stored ``content`` is never
+        modified by this rewrite or by the length cap below — both are
+        display-only, applied fresh on every render.
+
+        Each line's displayed content is capped at
+        ``context.memory_content_max_chars`` characters (default 800; ``0``
+        means unlimited) — still bounded by the overall
+        ``context.memory_tokens`` prompt budget, which is unchanged.
         """
         if not memories:
             return ""
+        from .config import get_config
+
+        ctx = get_config().context
+        content_cap = ctx.memory_content_max_chars
         ref = now or clock.now()
         lines = [
             "(The following are your character's memories, each with the date it formed. "
@@ -1804,10 +1835,18 @@ class Character:
             if raw:
                 try:
                     dt = clock.parse_ts(raw)
-                    when = f" ({dt.date().isoformat()}, {clock.relative(dt, ref)})"
+                    when = (
+                        f" ({dt.date().isoformat()} {dt.strftime('%a')}, {clock.relative(dt, ref)})"
+                    )
                 except ValueError:
                     when = ""
-            lines.append(f"- {tier_tag}{when}{cert_tag} {m['content'][:200]}")
+            content = m["content"]
+            user_id = (m.get("metadata") or {}).get("user_id")
+            if user_id and content.startswith("[User] "):
+                content = f"[User: {user_id}] " + content[len("[User] ") :]
+            if content_cap > 0:
+                content = content[:content_cap]
+            lines.append(f"- {tier_tag}{when}{cert_tag} {content}")
         return "\n".join(lines)
 
 

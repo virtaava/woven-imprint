@@ -618,6 +618,16 @@ prompts against a smaller model. `character.py::_build_context`'s "Today
 is …" header and memories preamble are intentionally NOT in the registry —
 they stay literal strings at the call site.
 
+`_format_memories` caps each rendered memory line's content at
+`context.memory_content_max_chars` characters (default 800, `0` = unlimited;
+was a hard-coded 200 — see [CONFIGURATION.md](CONFIGURATION.md)) without
+touching the stored content. A user-turn line renders as `[User: <user_id>]`
+when the memory carries `metadata.user_id` (set from `chat`/`ingest`/
+`ingest_exchange`'s `user_id` argument) and falls back to the anonymous
+`[User]` tag otherwise, including for memories stored before this tag
+existed. Each line's date prefix also carries the weekday, e.g.
+`(2023-05-08 Mon, 3 months ago)`.
+
 ### SillyTavern Interchange
 
 **Import** (`migrate/parsers.py::parse_tavernai_card`, `migrate/importer.py`): a TavernAI/

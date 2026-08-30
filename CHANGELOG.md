@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (behavior) — Tier 3d (rendering: content cap, user identity, weekday)
+- **Per-memory content cap raised 200 → 800 chars** (`context.memory_content_max_chars`,
+  `0` = unlimited) in `Character._format_memories`. The LoCoMo abstention analysis
+  (`eval/external/runs/diagnostics/abstain/locomo-mem-v2d/recommendation.md`,
+  2026-08-30) found 133/251 WRONG-but-evidence-in-block cases had at least one
+  evidence memory cut by the old hard-coded 200-char slice, 23 of them with the
+  gold answer's own words falling after the cut. Behavior: prompts now carry
+  longer memory lines by default — up to 800 chars each — within the existing
+  `context.memory_tokens` prompt budget, which is unchanged.
+- **User-turn memories carry `metadata.user_id`** when `user_id` is passed to
+  `chat()`/`chat_stream()`/`ingest()`/`ingest_exchange()`; `_format_memories`
+  renders the leading tag as `[User: <user_id>]` instead of the anonymous
+  `[User]` when known. Stored `content` is unchanged (still `"[User] ..."`) —
+  no migration — so memories written before this change (and calls made
+  without a `user_id`) keep rendering as the plain `[User]` tag.
+- **Weekday added to the rendered date prefix**: `(2023-05-08, 3 months ago)`
+  → `(2023-05-08 Mon, 3 months ago)`.
+
 ### Changed (behavior) — Tier 3c (recall: keep consolidated sources)
 - **Retrieval RRF defaults**: `weight_importance` `1.0` → `0.0`, `weight_recency`
   `1.0` → `0.1` (relevance-first ranking) — LoCoMo evidence recall@20 23.9% →

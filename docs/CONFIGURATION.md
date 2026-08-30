@@ -163,6 +163,7 @@ context:
   facts_block_limit: 12
   pinned_block: true       # always include pinned memories in the prompt (see MemoryStore.pin)
   pinned_limit: 10         # max pinned memories rendered in the "Things you always remember" block
+  memory_content_max_chars: 800  # per-memory content cap in rendered prompt lines (0 = unlimited)
 ```
 
 | Setting | Default | Description |
@@ -173,11 +174,12 @@ context:
 | `conversation_tokens` | `3000` | Budget for recent conversation history (sliding window). |
 | `reserve_tokens` | `500` | Reserved for safety margin. |
 | `max_turns` | `20` | Maximum conversation turns kept in the sliding window. Older turns are compressed into a summary. |
-| `include_date` | `true` | Prefix the volatile context block with `Today is {weekday}, {YYYY-MM-DD}.` (from `woven_imprint.clock`). Retrieved memory lines are always rendered with their date and a relative phrase (`2026-05-03, 3 weeks ago`) regardless of this setting — disabling it only removes the "Today is ..." line. |
+| `include_date` | `true` | Prefix the volatile context block with `Today is {weekday}, {YYYY-MM-DD}.` (from `woven_imprint.clock`). Retrieved memory lines are always rendered with their date, weekday, and a relative phrase (`2026-05-03 Sun, 3 weeks ago`) regardless of this setting — disabling it only removes the "Today is ..." line. |
 | `facts_block` | `true` | Inject a "What you currently know about {user}" block into the volatile context, built from the character's structured facts (`Character.facts`). Superseded facts show as `(since YYYY-MM-DD, previously: X)`. A short "Things you have said about yourself" block follows when self-facts exist. Set to `false` to disable the block entirely (e.g. to save tokens or when structured facts aren't in use). |
 | `facts_block_limit` | `12` | Maximum number of current user-facts included in the block, ordered by highest importance first, then by `recorded_at` **descending** (newest-recorded first) on ties, so the cap drops the oldest facts rather than the newest. Self-facts are capped separately at 5 and are not affected by this setting. |
 | `pinned_block` | `true` | Render a "Things you always remember:" block into the volatile system prompt from memories pinned via `MemoryStore.pin()` (`Character.memory.pin`). Unlike other volatile content, this block counts toward the non-sheddable base and is never dropped by the token budget; pinned memories are also excluded from the ordinary retrieved-memories list so they don't appear twice. Set `false` to disable the block entirely — pins still exist (and can still be listed via `pinned()`/`GET /api/memory/pinned`), but they're no longer rendered specially and can appear in the ordinary memories list like any other memory. |
 | `pinned_limit` | `10` | Maximum number of pinned memories rendered in the "Things you always remember" block, oldest-pinned-first. Has no effect on how many memories can be pinned — only on how many are shown in the prompt. |
+| `memory_content_max_chars` | `800` | Maximum characters of a memory's `content` shown per line in the rendered memories block (`Character._format_memories`); `0` = unlimited. Was a hard-coded `200` — the LoCoMo abstention analysis (`eval/external/runs/diagnostics/abstain/locomo-mem-v2d/recommendation.md`) found 133/251 evidence lines cut by that cap, 23 with the gold answer's own words removed. Applies only to the rendered prompt line; stored `content` is never truncated, and this cap is still bounded by the overall `memory_tokens` prompt budget. |
 
 When the total exceeds the budget, the system degrades gracefully:
 1. Compresses conversation history

@@ -97,6 +97,12 @@ class ContextConfig:
     facts_block_limit: int = 12
     pinned_block: bool = True  # always include pinned memories in the prompt (see MemoryStore.pin)
     pinned_limit: int = 10  # max pinned memories rendered in the "Things you always remember" block
+    # Per-memory content cap in _format_memories (0 = unlimited). Was a hard-coded 200; the
+    # LoCoMo abstention analysis (eval/external/runs/diagnostics/abstain/locomo-mem-v2d/
+    # recommendation.md, 2026-08-30) found 133/251 evidence lines cut by that cap, 23 with the
+    # gold answer's own words removed. Raised to 800 — still bounded by the overall
+    # context.memory_tokens prompt budget, which is unchanged.
+    memory_content_max_chars: int = 800
 
 
 @dataclass
@@ -427,6 +433,7 @@ context:
   include_date: true
   facts_block: true              # inject a "What you currently know about {user}" block
   facts_block_limit: 12          # max current user-facts in the block (importance desc, then newest first)
+  memory_content_max_chars: 800  # per-memory content cap in the rendered prompt (0 = unlimited); was a hard-coded 200
 
 relationship:
   max_delta: 0.15

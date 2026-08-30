@@ -965,3 +965,32 @@ def test_delete_db_after_answer_resumes_cleanly_once_all_answers_exist(tmp_path)
     second = run(cfg, llm=ScriptedLLM(), embedder=FakeEmbedder(), out_dir=tmp_path)
     assert second["summary"]["n_questions"] == 6
     assert not (tmp_path / "delresume" / "conv-mini-1.db").exists()  # still not recreated
+
+
+def test_judge_records_unparsed_when_provider_raises():
+    from datetime import datetime, timezone
+
+    from eval.external.common import Question
+    from eval.external.runner import judge, judge_plus
+
+    class RaisingLLM(FakeLLM):
+        def generate_json_robust(self, messages, temperature=0.3):
+            raise ValueError("Could not parse JSON: {")
+
+    q = Question(
+        qid="x",
+        question="Q?",
+        answer="gold",
+        category="4",
+        evidence=[],
+        asked_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        kind="qa",
+    )
+    r = judge(q, "some answer", RaisingLLM())
+    assert (
+        r["judge_parsed"] is False
+        and r["correct"] is False
+        and "judge error" in (r.get("reason") or r.get("judge_reason") or "")
+    )
+    rp = judge_plus("evidence", "reply", RaisingLLM())
+    assert rp["judge_parsed"] is False and rp["correct"] is False

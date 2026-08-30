@@ -334,6 +334,22 @@ def answer_fullcontext(conv: Conversation, q: Question, cfg: "RunConfig", llm) -
     }
 
 
+def _judge_call(llm, messages: list[dict], temperature: float) -> dict:
+    """``generate_json_robust`` that never raises on unparseable judge output.
+
+    A truncated/garbled JSON reply (e.g. an over-long ``reason`` cut at ``max_tokens``) raises
+    ``ValueError`` from the provider after its one retry; a benchmark shard must not die on that —
+    it is recorded as an unparsed verdict (``judge_parsed`` False, counted in ``n_unparsed``).
+    """
+    try:
+        result = llm.generate_json_robust(messages, temperature=temperature)
+    except Exception as exc:  # noqa: BLE001 — provider parse/format failures of any shape
+        return {"label": "", "reason": f"judge error: {type(exc).__name__}: {str(exc)[:200]}"}
+    return (
+        result if isinstance(result, dict) else {"label": "", "reason": "judge returned non-dict"}
+    )
+
+
 def judge(q: Question, response: str, llm) -> dict:
     """Judge ``response`` against ``q.answer``.
 
@@ -358,8 +374,8 @@ def judge(q: Question, response: str, llm) -> dict:
         }
 
     asked_on = q.asked_at.date().isoformat()
-    result = llm.generate_json_robust(
-        judge_messages(q.question, q.answer, response, asked_on), temperature=JUDGE_TEMPERATURE
+    result = _judge_call(
+        llm, judge_messages(q.question, q.answer, response, asked_on), temperature=JUDGE_TEMPERATURE
     )
     label = ""
     reason = ""
@@ -541,8 +557,8 @@ def judge_plus(evidence: str, response: str, llm) -> dict:
     non-empty ``label`` — see :func:`judge`.
     """
     started = time.perf_counter()
-    result = llm.generate_json_robust(
-        plus_judge_messages(evidence, response), temperature=JUDGE_TEMPERATURE
+    result = _judge_call(
+        llm, plus_judge_messages(evidence, response), temperature=JUDGE_TEMPERATURE
     )
     label = ""
     reason = ""

@@ -25,6 +25,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Weekday added to the rendered date prefix**: `(2023-05-08, 3 months ago)`
   → `(2023-05-08 Mon, 3 months ago)`.
 
+### Changed (behavior) — Tier 3d (embedding context + reembed)
+- **Buffer memories are embedded with date+speaker context** (`memory.embedding_context`,
+  default `true`): a memory's *vector* is now computed from
+  `MemoryStore.build_embed_text(...)` instead of raw `content` — e.g.
+  `"[2023-05-08] User: caroline: I adopted a cat"` (user row with a known
+  `user_id`), `"[2023-05-08] User: I adopted a cat"` (user row, no `user_id`),
+  `"[2023-05-08] Ada: Hey Caroline!"` (character row), or `"[2023-05-08]
+  Caroline has a cat named Max."` (everything else — facts, summaries,
+  reflections, consolidations, events — content unchanged, date-prefixed
+  only). Stored `content` is never touched — this is embedding-only. Ported
+  from the offline ranking experiment's winning template
+  (`eval/external/runs/diagnostics/ranking/ranking_experiments_report.md`
+  section (c)), with two fixes flagged there as worth doing before shipping:
+  the pre-existing `"[User] "`/`"[<name>] "` bracket tag is stripped before
+  the speaker is injected (that template embedded the speaker name twice),
+  and no nomic `search_document:`/`search_query:` prefix is added (prefixes
+  measured harmful on raw content in the same sweep). Set `embedding_context:
+  false` to restore the exact pre-Tier-3d behavior.
+  **Behavior change for existing databases**: memories written before this
+  change (or before a future re-run of `reembed`) keep their old raw-content
+  vector — a DB ends up with a mix of old and new vectors until re-embedded,
+  which still retrieves, just less consistently. Run `woven-imprint reembed
+  <character_id> [--batch N]` (or the maintenance job below) to bring every
+  active memory's vector in line with the current builder.
+- **`MemoryStore.reembed(batch_size=64) -> int`**: recomputes every active
+  memory's vector with the current embed-text builder, via `embed_batch` on
+  the store's own embedder (so a `CachedEmbedder` wrapper still dedupes
+  identical embed texts across the run). Idempotent — a second call
+  recomputes the same vectors from the same stored content/config. Only the
+  `embedding` column changes; `content`/`metadata`/tier are untouched.
+- **`reembed` maintenance job** (opt-in — **not** in `MaintenanceRunner.DEFAULT_JOBS`):
+  runs `MemoryStore.reembed()` for a character, reported as
+  `{"reembedded": <count>}`. Re-embedding a whole history is a one-off
+  migration (after flipping `embedding_context`, changing the embedder, or
+  upgrading a database), not a nightly task, and it makes no LLM calls, so it
+  doesn't compete with the maintenance budget. Run it via `jobs=["reembed"]`.
+- **`woven-imprint reembed <character_id> [--batch N]` CLI command**: prints
+  the count of memories re-embedded.
+- **Retrieval RRF defaults tuned for contextualized docs**: `rrf_k` `60` →
+  `120`, `weight_keyword` `1.0` → `2.0`. Offline LoCoMo ranking experiments on
+  contextualized docs (`ranking_experiments_report.md` section (b),
+  2026-08-30) found `rrf_k=120` the best cell (recall@20 51.9% vs 49.4% at
+  `60`), and the keyword-weight sweep at that cell found `weight_keyword=2.0`
+  → evidence recall@20 54.7% vs the pre-Tier-3d raw-content baseline (`rrf_k`
+  `60`, `weight_keyword` `1.0`) at 50.8% — a trade-off, not a strict
+  improvement: recall@50 dips slightly (63.6% vs 65.1%) at `weight_keyword=2.0`.
+  To be validated live by the Tier 3d v3 benchmark re-run; revert both if v3
+  contradicts.
+
 ### Changed (behavior) — Tier 3c (recall: keep consolidated sources)
 - **Retrieval RRF defaults**: `weight_importance` `1.0` → `0.0`, `weight_recency`
   `1.0` → `0.1` (relevance-first ranking) — LoCoMo evidence recall@20 23.9% →

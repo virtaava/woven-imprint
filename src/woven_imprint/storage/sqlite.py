@@ -450,6 +450,12 @@ class SQLiteStorage:
                 raise ValueError("content changes require a new embedding")
             sets += ["content = ?", "embedding = ?"]
             params += [content, _serialize_embedding(embedding)]
+        elif embedding is not None:
+            # Embedding-only update (no content change) — e.g. MemoryStore.reembed()
+            # recomputing a vector from the current embed-text builder without
+            # touching the stored content.
+            sets.append("embedding = ?")
+            params.append(_serialize_embedding(embedding))
         if importance is not None:
             sets.append("importance = ?")
             params.append(max(0.0, min(1.0, float(importance))))
@@ -529,6 +535,22 @@ class SQLiteStorage:
             self._conn.executemany(
                 "UPDATE memories SET accessed_at = ? WHERE id = ?",
                 [(stamp, mid) for mid in memory_ids],
+            )
+            self._commit()
+
+    def update_memory_embeddings_batch(self, pairs: list[tuple[str, list[float]]]) -> None:
+        """Update just the `embedding` column for multiple memories in one transaction.
+
+        Trivial batch variant of `update_memory_fields(id, embedding=...)` for
+        `MemoryStore.reembed()` — one `executemany` per chunk instead of one
+        UPDATE per row. `pairs` is `[(memory_id, embedding_vector), ...]`.
+        """
+        if not pairs:
+            return
+        with self._lock:
+            self._conn.executemany(
+                "UPDATE memories SET embedding = ? WHERE id = ?",
+                [(_serialize_embedding(vec), mid) for mid, vec in pairs],
             )
             self._commit()
 

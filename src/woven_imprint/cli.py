@@ -403,6 +403,31 @@ def cmd_maintain(args):
     engine.close()
 
 
+def cmd_reembed(args):
+    """Recompute a character's memory embeddings with the current embed-text
+    builder (opt-in — see `memory.embedding_context` in CONFIGURATION.md).
+
+    Use after flipping `embedding_context`, changing the embedding model, or
+    upgrading from a database written before contextualized embedding existed.
+    """
+    engine = _get_engine(args.db, args.model)
+    chars = engine.list_characters()
+    query = args.character.lower()
+    match = next(
+        (c for c in chars if c["id"] == args.character or c["name"].lower().startswith(query)),
+        None,
+    )
+    if not match:
+        print(f"Character not found: {args.character}")
+        engine.close()
+        return
+
+    char = engine.load_character(match["id"])
+    count = char.memory.reembed(batch_size=args.batch)
+    print(f"Re-embedded {count} memories for {char.name}")
+    engine.close()
+
+
 def cmd_prompts(args):
     """List registered prompts (id, version, expects)."""
     from .prompts import PROMPTS
@@ -634,6 +659,15 @@ def main():
     p_maintain.add_argument("--budget", type=int, default=None, help="Max LLM calls")
     p_maintain.add_argument("--json", action="store_true", help="Machine-readable output")
 
+    # reembed
+    p_reembed = sub.add_parser(
+        "reembed", help="Recompute a character's memory embeddings (opt-in, e.g. after upgrade)"
+    )
+    p_reembed.add_argument("character", help="Character name or ID")
+    p_reembed.add_argument(
+        "--batch", type=int, default=64, help="embed_batch() chunk size (default: 64)"
+    )
+
     args = parser.parse_args()
 
     commands = {
@@ -651,6 +685,7 @@ def main():
         "update": cmd_update,
         "serve": cmd_serve,
         "maintain": cmd_maintain,
+        "reembed": cmd_reembed,
         "prompts": cmd_prompts,
     }
 

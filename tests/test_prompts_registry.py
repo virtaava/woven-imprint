@@ -295,23 +295,40 @@ def drive_maintenance_importance() -> list[dict]:
 
 
 def drive_maintenance_contradiction() -> list[dict]:
+    from woven_imprint.config import get_config
+
     char = _fresh_character()
-    with clock.override(FIXED_NOW):
-        char.memory.add(
-            content=(
-                "Ada said she grew up on a research station orbiting Jupiter and misses the stars"
-            ),
-            tier="core",
-            role="observation",
-            importance=0.6,
-        )
-    with clock.override(datetime(2026, 8, 25, 9, 0, 0, tzinfo=timezone.utc)):
-        char.memory.add(
-            content=("Ada mentioned she grew up on a quiet research station and misses home"),
-            tier="core",
-            role="observation",
-            importance=0.6,
-        )
+    # These two memories are tuned to land in a narrow cosine-similarity band
+    # (contradiction_candidate_similarity <= sim < dedup_similarity) under
+    # FakeEmbedder's naive first-10-words bag-of-words. embedding_context's
+    # date-prefixed embed text ("[2026-08-24] Ada said..." vs "[2026-08-25] Ada
+    # mentioned...") shifts that narrow-band overlap for reasons unrelated to
+    # what this driver captures (the maintenance_contradiction prompt template,
+    # built from raw m["content"] — embeddings never appear in it), so the
+    # candidate pair is found here with the pre-Tier-3d raw-content embedding
+    # this fixture was tuned against.
+    cfg = get_config()
+    original_embedding_context = cfg.memory.embedding_context
+    cfg.memory.embedding_context = False
+    try:
+        with clock.override(FIXED_NOW):
+            char.memory.add(
+                content=(
+                    "Ada said she grew up on a research station orbiting Jupiter and misses the stars"
+                ),
+                tier="core",
+                role="observation",
+                importance=0.6,
+            )
+        with clock.override(datetime(2026, 8, 25, 9, 0, 0, tzinfo=timezone.utc)):
+            char.memory.add(
+                content=("Ada mentioned she grew up on a quiet research station and misses home"),
+                tier="core",
+                role="observation",
+                importance=0.6,
+            )
+    finally:
+        cfg.memory.embedding_context = original_embedding_context
     recorder = RecordingLLM()
     char.llm = recorder
     runner = MaintenanceRunner(char, budget=Budget(10))

@@ -63,9 +63,23 @@ class MemoryConfig:
     tier_boost_bedrock: float = 0.35
     tier_boost_core: float = 0.2
     tier_boost_buffer: float = 0.0
-    rrf_k: int = 60
+    # Buffer memories are embedded with date+speaker context (see
+    # memory/store.py::build_embed_text) instead of raw content —
+    # e.g. "[2023-05-08] User: caroline: I adopted a cat" instead of
+    # "[User] I adopted a cat". `false` restores the pre-Tier-3d exact-content
+    # embedding. Existing DBs mix old (raw) and new (contextualized) vectors
+    # until `woven-imprint reembed <character_id>` (or the opt-in `reembed`
+    # maintenance job) is run — see CHANGELOG.
+    embedding_context: bool = True
+    # rrf_k 120 (was 60) and weight_keyword 2.0 (was 1.0) are tuned for
+    # contextualized docs (embedding_context: true) — offline LoCoMo ranking
+    # experiments (ranking_experiments_report.md section (b), 2026-08-30)
+    # measured evidence recall@20 54.7% at this combination vs 50.8% on the
+    # pre-Tier-3d baseline (raw content, rrf_k 60, weight_keyword 1.0). To be
+    # validated live by the v3 benchmark re-run; revert both if v3 contradicts.
+    rrf_k: int = 120
     weight_semantic: float = 1.0
-    weight_keyword: float = 1.0
+    weight_keyword: float = 2.0
     # recency/importance ranking inside the relevance gate dilutes relevance;
     # LoCoMo evidence recall@20 23.9%->50.8% with both at 0 (ranking_experiments
     # 2026-08-30). weight_recency kept at a small 0.1 (not 0): the (a) sweep found
@@ -406,9 +420,18 @@ memory:
   tier_boost_bedrock: 0.35
   tier_boost_core: 0.2
   tier_boost_buffer: 0.0
-  rrf_k: 60
+  # buffer memories are embedded with date+speaker context (see build_embed_text
+  # in memory/store.py) instead of raw content; false = pre-Tier-3d raw-content
+  # embedding. Existing DBs need `woven-imprint reembed <character_id>` after a
+  # flag flip (or after an upgrade) to bring old vectors in line with new writes.
+  embedding_context: true
+  # rrf_k 120 / weight_keyword 2.0 are tuned for contextualized docs (above):
+  # offline LoCoMo ranking experiments measured evidence recall@20 54.7% at this
+  # combination vs 50.8% on the pre-Tier-3d baseline (rrf_k 60, weight_keyword 1.0,
+  # raw content) — ranking_experiments_report.md section (b), 2026-08-30.
+  rrf_k: 120
   weight_semantic: 1.0
-  weight_keyword: 1.0
+  weight_keyword: 2.0
   # recency/importance ranking inside the relevance gate dilutes relevance;
   # LoCoMo evidence recall@20 23.9%->50.8% with both at 0 (ranking_experiments 2026-08-30).
   # weight_recency kept at a small 0.1 (not 0): costs ~2 pts recall@20 (48.7 vs 50.8) but

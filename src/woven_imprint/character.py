@@ -61,7 +61,7 @@ class Character:
         _cfg = get_config()
 
         # Sub-systems
-        self.memory = MemoryStore(storage, embedder, char_id)
+        self.memory = MemoryStore(storage, embedder, char_id, character_name=persona.name)
         self.facts = FactStore(storage, char_id, embedder=embedder)
         self.memory.facts = self.facts
         self.retriever = MemoryRetriever(storage, embedder, char_id)

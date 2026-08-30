@@ -96,6 +96,18 @@ class MemoryConfig:
     relevance_gate: bool = True  # gate recency/importance/relationship ranking to relevant memories
     relevance_semantic_topk: int = 100  # semantic cutoff feeding the relevance gate
     relevance_min_similarity: float = 1e-6  # semantic eligibility floor; above float32 matmul noise
+    # Semantic dedup of fact-derived core memories (0 = off): before inserting a
+    # fact-derived core row, MemoryStore.add compares its embedding against active
+    # core rows (FTS hits for the statement ∪ newest 500 core rows); at or above this
+    # cosine similarity, no new row is inserted — the existing one is reinforced
+    # instead (importance +0.05 capped at 1.0, metadata.dup_count += 1,
+    # metadata.last_confirmed stamped). Evidence: Tier 3c diagnostics found
+    # near-duplicate extracted facts dominating the top-20 (17.7/20 avg; 78/491 active
+    # core rows in conv-26 fell into 6-word-prefix paraphrase groups, e.g.
+    # "considering a career in counseling and mental health" vs "...or mental health
+    # work"). Structured facts' own (subject, predicate) supersession is unaffected —
+    # this only gates the *core-memory* insert, not the `facts` table row.
+    fact_dedup_similarity: float = 0.92
 
 
 @dataclass
@@ -445,6 +457,11 @@ memory:
   # relevance_gate: true           # false = legacy fusion (recency/importance rank ALL candidates)
   # relevance_semantic_topk: 100   # semantic cutoff feeding the relevance gate
   # relevance_min_similarity: 0.000001  # semantic eligibility floor; above float32 matmul noise
+  # fact_dedup_similarity: skip inserting a fact-derived core memory when it cosine-matches
+  # an existing core row at/above this threshold (0 = off); reinforces the existing row
+  # (importance +0.05, metadata.dup_count += 1) instead. Tier 3c found near-duplicate
+  # extracted facts dominating the top-20 (17.7/20 avg; 78/491 core rows paraphrase-grouped).
+  fact_dedup_similarity: 0.92
 
 context:
   total_tokens: 6000

@@ -126,6 +126,10 @@ class Character:
         # degradation visible. Plain dict; worker thread + GIL, matches the
         # existing counter precedent in BackgroundWorker.
         self._health_counters: dict[str, dict] = {}
+        # Fact-derived core memories skipped as near-duplicates of an existing
+        # core row (`memory.fact_dedup_similarity`, Tier 3d) — see
+        # `_store_facts`/`_store_structured_fact`. Surfaced via `health()`.
+        self._dedup_skipped: int = 0
 
         # Restore persisted transient state (C3)
         self._restore_state()
@@ -244,6 +248,7 @@ class Character:
         return {
             "subsystems": {k: dict(v) for k, v in self._health_counters.items()},
             "worker": worker,
+            "dedup_skipped": self._dedup_skipped,
             "generated_at": clock.now().isoformat(),
         }
 
@@ -1483,14 +1488,19 @@ class Character:
             # Only store as new memory if it didn't contradict something
             # (contradict() already creates the replacement)
             if not contradictions:
-                self.memory.add(
+                from .config import get_config
+
+                mem = self.memory.add(
                     content=stmt,
                     tier="core",
                     role="observation",
                     session_id=session_id,
                     importance=importance,
                     metadata={"source": "extraction", "user_id": user_id},
+                    dedup_similarity=get_config().memory.fact_dedup_similarity,
                 )
+                if mem.get("deduped"):
+                    self._dedup_skipped += 1
 
     def _store_structured_fact(
         self,
@@ -1508,6 +1518,7 @@ class Character:
         stays current and the new fact is filed straight into history,
         superseded by the old one as of the old fact's valid_from.
         """
+        from .config import get_config
         from .memory.facts import _norm_time, normalize_object
 
         old = self.facts.find_active(fact["subject"], fact["predicate"])
@@ -1531,7 +1542,11 @@ class Character:
             session_id=session_id,
             importance=importance,
             metadata=meta,
+            dedup_similarity=get_config().memory.fact_dedup_similarity,
         )
+        deduped = bool(mem.get("deduped"))
+        if deduped:
+            self._dedup_skipped += 1
         new = self.facts.add(
             subject=fact["subject"],
             predicate=fact["predicate"],
@@ -1539,18 +1554,31 @@ class Character:
             statement=fact["statement"],
             event_time=fact.get("event_time"),
             importance=importance,
+            # Deduped: this fact's statement matched an existing core memory's
+            # embedding — link the fact row to that EXISTING memory rather than
+            # one that was never inserted (mem["id"] is already the existing
+            # id in that case; see MemoryStore.add's dedup_similarity contract).
             memory_id=mem["id"],
             session_id=session_id,
             user_id=user_id,
         )
-        mem["metadata"]["fact_id"] = new["id"]
-        if backdated:
-            # Filed straight into history behind the still-current fact: mark
-            # the memory row as historical and lower its certainty rather than
-            # letting it read as a fresh, fully-certain observation.
-            mem["metadata"]["historical"] = True
-            mem["certainty"] = 0.5
-        self.storage.save_memory(mem)
+        if not deduped:
+            # New memory row: tag it with the fact id and persist. (A deduped
+            # `mem` is an EXISTING row already updated in place by
+            # `MemoryStore.add` — dup_count/importance/last_confirmed — so it
+            # is not re-saved here; it can't carry a single `fact_id` anyway
+            # once more than one structured fact links to it.)
+            mem["metadata"]["fact_id"] = new["id"]
+            if backdated:
+                # Filed straight into history behind the still-current fact: mark
+                # the memory row as historical and lower its certainty rather than
+                # letting it read as a fresh, fully-certain observation.
+                mem["metadata"]["historical"] = True
+                mem["certainty"] = 0.5
+            self.storage.save_memory(mem)
+        # Supersession bookkeeping on the structured `facts` table runs
+        # regardless of whether the memory side was deduped — "own
+        # supersession logic unchanged" (Tier 3d spec).
         if old:
             if backdated:
                 self.facts.expire(new["id"], valid_to=old["valid_from"], superseded_by=old["id"])

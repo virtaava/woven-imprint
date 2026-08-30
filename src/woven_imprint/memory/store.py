@@ -8,6 +8,7 @@ from ..clock import sqlite_ts
 from ..embedding.base import EmbeddingProvider
 from ..storage.sqlite import SQLiteStorage
 from ..utils.text import generate_id
+from .retrieval import cosine_matrix
 
 if TYPE_CHECKING:
     from .facts import FactStore
@@ -135,6 +136,8 @@ class MemoryStore:
         session_id: str | None = None,
         importance: float = 0.5,
         metadata: dict | None = None,
+        dedup_similarity: float | None = None,
+        dedup_scope: str = "core",
     ) -> dict:
         """Add a new memory entry.
 
@@ -142,11 +145,29 @@ class MemoryStore:
         computed from `_embed_text_for(...)`, which — by default
         (`memory.embedding_context: true`) — embeds a date+speaker
         contextualized string instead of raw `content` (see `build_embed_text`).
+
+        `dedup_similarity` (0/None = off) opts this call into semantic dedup:
+        when `tier == dedup_scope` (default `"core"`) and the candidate's
+        embedding matches an existing active `dedup_scope` memory at or above
+        this cosine threshold, no new row is inserted — the *existing* row is
+        reinforced instead (`importance` bumped by 0.05 capped at 1.0,
+        `metadata.dup_count` incremented, `metadata.last_confirmed` stamped)
+        and returned. Every call — deduped or not — returns a memory dict
+        with a transient `"deduped": bool` key (not persisted to storage) so
+        callers can tell which happened; on a dedup, the row's `id` is the
+        *existing* memory's id, which matters to callers that link a
+        secondary record (e.g. `FactStore.add(memory_id=...)`) to whichever
+        memory ends up representing this content.
         """
         created_at = sqlite_ts()
         embed_text = self._embed_text_for(content, role, created_at, metadata)
         embedding = self.embedder.embed(embed_text)
         guard_embedding_dimension(self.storage, embedding)
+
+        if dedup_similarity and tier == dedup_scope:
+            match = self._find_dedup_match(content, embedding, dedup_scope, dedup_similarity)
+            if match is not None:
+                return self._reinforce_duplicate(match)
 
         memory = {
             "id": generate_id("mem-"),
@@ -165,7 +186,58 @@ class MemoryStore:
             "accessed_at": created_at,
         }
         self.storage.save_memory(memory)
+        memory["deduped"] = False
         return memory
+
+    def _find_dedup_match(
+        self, content: str, embedding: list[float], scope: str, threshold: float
+    ) -> dict | None:
+        """Find the best-matching active `scope`-tier memory for `content`/`embedding`,
+        if any scores >= `threshold` cosine similarity.
+
+        Candidate pool: FTS hits for `content` (limit 50) union the newest 500
+        active `scope` rows — cheap enough (one extra O(500) numpy cosine pass)
+        to run per fact insert without a second embedding call (the candidate
+        vector is already in hand from `add()`).
+        """
+        try:
+            fts_candidates = self.storage.fts_search(self.character_id, content, limit=50)
+        except Exception:
+            fts_candidates = []
+        recent = self.storage.get_memories(self.character_id, tier=scope, limit=500)
+
+        candidates: dict[str, dict] = {}
+        for m in fts_candidates + recent:
+            if m.get("tier") == scope:
+                candidates[m["id"]] = m
+        if not candidates:
+            return None
+
+        rows = list(candidates.values())
+        sims = cosine_matrix(embedding, [r.get("embedding") or [] for r in rows])
+        best_idx, best_sim = -1, -1.0
+        for i, sim in enumerate(sims):
+            if sim > best_sim:
+                best_idx, best_sim = i, sim
+        if best_idx == -1 or best_sim < threshold:
+            return None
+        return rows[best_idx]
+
+    def _reinforce_duplicate(self, existing: dict) -> dict:
+        """Bump `importance`/`metadata.dup_count`/`metadata.last_confirmed` on an
+        existing memory found to duplicate an incoming fact, and return the
+        refreshed row (with the transient `deduped: True` key set) instead of
+        inserting a new one."""
+        new_importance = min(1.0, existing.get("importance", 0.5) + 0.05)
+        self.storage.update_memory_fields(existing["id"], importance=new_importance)
+        dup_count = int((existing.get("metadata") or {}).get("dup_count", 0)) + 1
+        self.storage.update_memory_metadata(
+            existing["id"], {"dup_count": dup_count, "last_confirmed": sqlite_ts()}
+        )
+        refreshed = self.storage.get_memory(existing["id"])
+        assert refreshed is not None
+        refreshed["deduped"] = True
+        return refreshed
 
     def reembed(self, batch_size: int = 64) -> int:
         """Recompute vectors for every active memory using the current embed-text

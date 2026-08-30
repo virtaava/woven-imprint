@@ -1,0 +1,352 @@
+"""Tests for semantic dedup of fact-derived core memories (Tier 3d Task 3).
+
+Evidence (Tier 3c diagnostics, 2026-08-30): near-duplicate extracted facts dominated
+the retrieved top-20 (17.7/20 average); 78/491 active core rows in one LoCoMo
+conversation fell into 6-word-prefix paraphrase groups (e.g. "considering a career
+in counseling and mental health" vs "...or mental health work"). `MemoryStore.add`
+now accepts `dedup_similarity`/`dedup_scope`: when a fact-derived core insert's
+embedding cosine-matches an existing active row of the same tier at or above the
+threshold, no new row is written — the existing row is reinforced (importance
+bumped, `metadata.dup_count` incremented) and returned instead, with a transient
+`"deduped"` key telling the caller which happened.
+
+`FakeEmbedder` (tests/helpers.py) is bag-of-words over the first 10 words of the
+*embedded* text — with `memory.embedding_context` on (the default), that's the
+date+speaker contextualized string (`build_embed_text`), not raw `content`. Two
+identical fact statements recorded on the same day embed identically (cosine
+1.0); clearly different wording shares no vocabulary and scores 0.0.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+from eval.external.common import Conversation, Session, Turn
+from eval.external.runner import RunConfig, ingest_conversation
+from tests.helpers import FakeEmbedder, FakeLLM, make_test_engine
+from woven_imprint import clock
+from woven_imprint.engine import Engine
+from woven_imprint.memory.store import MemoryStore
+from woven_imprint.storage.sqlite import SQLiteStorage
+
+
+@pytest.fixture(autouse=True)
+def _reset_clock():
+    """`ingest_conversation` drives `clock.override()` as a plain (non-restoring)
+    call, by design (see tests/test_external_runner.py) — reset it after each
+    test here so the harness-stat test below doesn't leak a stale override
+    into later tests."""
+    yield
+    clock.override(None)
+
+
+# --- MemoryStore.add(dedup_similarity=...) — unit level ------------------------------------
+
+
+@pytest.fixture
+def store():
+    s = SQLiteStorage(":memory:")
+    s.save_character("c1", "Ada", {})
+    yield MemoryStore(s, FakeEmbedder(), "c1"), s
+    s.close()
+
+
+class TestMemoryStoreDedup:
+    def test_identical_statement_dedupes_to_one_core_row(self, store):
+        mem, _s = store
+        first = mem.add(
+            content="The visitor is considering a career in counseling and mental health.",
+            tier="core",
+            role="observation",
+            importance=0.75,
+            metadata={"source": "extraction"},
+            dedup_similarity=0.92,
+        )
+        assert first["deduped"] is False
+
+        second = mem.add(
+            content="The visitor is considering a career in counseling and mental health.",
+            tier="core",
+            role="observation",
+            importance=0.75,
+            metadata={"source": "extraction"},
+            dedup_similarity=0.92,
+        )
+
+        assert second["deduped"] is True
+        assert second["id"] == first["id"]
+        assert second["metadata"]["dup_count"] == 1
+        assert second["metadata"]["last_confirmed"]
+        assert second["importance"] == pytest.approx(0.8)  # 0.75 + 0.05
+
+        rows = mem.get_all(tier="core")
+        assert len(rows) == 1
+
+    def test_paraphrase_below_threshold_creates_two_rows(self, store):
+        mem, _s = store
+        mem.add(
+            content="alpha bravo charlie delta echo",
+            tier="core",
+            role="observation",
+            dedup_similarity=0.92,
+        )
+        result = mem.add(
+            content="foxtrot golf hotel india juliet",
+            tier="core",
+            role="observation",
+            dedup_similarity=0.92,
+        )
+
+        assert result["deduped"] is False
+        assert len(mem.get_all(tier="core")) == 2
+
+    def test_threshold_zero_disables_dedup(self, store):
+        mem, _s = store
+        mem.add(
+            content="identical wording every time",
+            tier="core",
+            role="observation",
+            dedup_similarity=0,
+        )
+        second = mem.add(
+            content="identical wording every time",
+            tier="core",
+            role="observation",
+            dedup_similarity=0,
+        )
+
+        assert second["deduped"] is False
+        assert len(mem.get_all(tier="core")) == 2
+
+    def test_dedup_default_off_when_not_requested(self, store):
+        mem, _s = store
+        mem.add(content="identical wording every time", tier="core", role="observation")
+        second = mem.add(content="identical wording every time", tier="core", role="observation")
+
+        assert second["deduped"] is False
+        assert len(mem.get_all(tier="core")) == 2
+
+    def test_dedup_never_touches_buffer_tier(self, store):
+        mem, _s = store
+        mem.add(
+            content="identical wording every time",
+            tier="buffer",
+            role="user",
+            dedup_similarity=0.92,
+        )
+        second = mem.add(
+            content="identical wording every time",
+            tier="buffer",
+            role="user",
+            dedup_similarity=0.92,
+        )
+
+        assert second["deduped"] is False
+        assert len(mem.get_all(tier="buffer")) == 2
+
+    def test_dedup_never_touches_bedrock_tier(self, store):
+        mem, _s = store
+        mem.add(
+            content="identical wording every time",
+            tier="bedrock",
+            role=None,
+            dedup_similarity=0.92,
+        )
+        second = mem.add(
+            content="identical wording every time",
+            tier="bedrock",
+            role=None,
+            dedup_similarity=0.92,
+        )
+
+        assert second["deduped"] is False
+        assert len(mem.get_all(tier="bedrock")) == 2
+
+
+# --- Wired through the fact pipeline (character.py) ------------------------------------------
+
+
+def _char(llm=None):
+    engine = make_test_engine()
+    if llm is not None:
+        engine.llm = llm
+    char = engine.create_character("Ada")
+    char.background = False
+    char.parallel = False
+    char.enforce_consistency = False
+    char.unified_assessment = True
+    return engine, char
+
+
+def _fact_rows(char) -> list[dict]:
+    """Core memories that came from fact extraction (`metadata.source ==
+    "extraction"`) — excludes session-summary core rows `end_session()` also
+    writes, which aren't part of what this feature dedupes."""
+    return [
+        m
+        for m in char.memory.get_all(tier="core")
+        if (m.get("metadata") or {}).get("source") == "extraction"
+    ]
+
+
+class TestFactPipelineDedupUnstructured:
+    def test_identical_unstructured_fact_across_sessions_dedupes(self):
+        """`FakeLLM`'s default bookkeeping response always extracts the same
+        unstructured fact statement ("A notable fact was shared", no subject/
+        predicate/object) — two sessions ingesting it produce one core row."""
+        _engine, char = _char()
+
+        char.start_session()
+        char.ingest("user", "Something happened today.", user_id="toni")
+        char.end_session()
+
+        char.start_session()
+        char.ingest("user", "Something happened today.", user_id="toni")
+        char.end_session()
+
+        core = _fact_rows(char)
+        assert len(core) == 1
+        assert core[0]["metadata"]["dup_count"] == 1
+        assert char.health()["dedup_skipped"] == 1
+
+    def test_threshold_zero_keeps_both_unstructured_facts(self):
+        from woven_imprint.config import get_config
+
+        cfg = get_config()
+        original = cfg.memory.fact_dedup_similarity
+        cfg.memory.fact_dedup_similarity = 0
+        try:
+            _engine, char = _char()
+            char.start_session()
+            char.ingest("user", "Something happened today.", user_id="toni")
+            char.end_session()
+            char.start_session()
+            char.ingest("user", "Something happened today.", user_id="toni")
+            char.end_session()
+
+            core = _fact_rows(char)
+            assert len(core) == 2
+            assert char.health()["dedup_skipped"] == 0
+        finally:
+            cfg.memory.fact_dedup_similarity = original
+
+
+class DuplicateStatementDifferentSubjectLLM(FakeLLM):
+    """Two 'bookkeeping assistant' calls return structured facts with the SAME
+    rendered statement text but a DIFFERENT (subject, predicate, object) each
+    time — modeling extraction drift where the same underlying fact gets
+    tagged differently. `FactStore`'s own (subject, predicate) supersession
+    only fires on an exact key match, so this never reaches it — it's the
+    shape `MemoryStore.add`'s semantic dedup exists to catch instead.
+    """
+
+    STATEMENT = "The visitor is considering a career in counseling and mental health."
+
+    def __init__(self):
+        super().__init__()
+        self._n = 0
+
+    def generate_json(self, messages, **kw):
+        system = messages[0].get("content", "") if messages else ""
+        if "bookkeeping assistant" in system.lower():
+            self._n += 1
+            self.call_count += 1
+            subject = "user" if self._n == 1 else "the_visitor"
+            return {
+                "emotion": {"mood": "neutral", "intensity": 0.5, "cause": ""},
+                "relationship": {"trust": 0.0},
+                "beat": None,
+                "facts": [
+                    {
+                        "statement": self.STATEMENT,
+                        "subject": subject,
+                        "predicate": "considering_career_in",
+                        "object": "counseling and mental health",
+                        "event_time": None,
+                    }
+                ],
+            }
+        return super().generate_json(messages, **kw)
+
+    def generate_json_robust(self, messages, temperature=0.3, **kw):
+        return self.generate_json(messages, temperature=temperature, **kw)
+
+
+class TestFactPipelineDedupStructured:
+    def test_near_duplicate_structured_facts_share_one_core_row(self):
+        llm = DuplicateStatementDifferentSubjectLLM()
+        _engine, char = _char(llm)
+
+        char.start_session()
+        char.ingest("user", "I might become a counselor.", user_id="toni")
+        char.end_session()
+
+        char.start_session()
+        char.ingest("user", "I'm drawn to counseling and mental health work.", user_id="toni")
+        char.end_session()
+
+        core = _fact_rows(char)
+        assert len(core) == 1
+        assert core[0]["metadata"]["dup_count"] == 1
+
+        # The structured `facts` table still gets both rows — its own
+        # (subject, predicate) supersession is a different key per call here,
+        # so it never fires; dedup only collapsed the memory side.
+        assert char.facts.count() == 2
+        f1 = char.facts.find_active("user", "considering_career_in")
+        f2 = char.facts.find_active("the_visitor", "considering_career_in")
+        assert f1 is not None and f2 is not None
+        assert f1["memory_id"] == core[0]["id"]
+        assert f2["memory_id"] == core[0]["id"]
+
+
+# --- Harness ingest stat -----------------------------------------------------------------------
+
+T0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+
+def _dedup_conversation() -> Conversation:
+    turns = [
+        Turn(speaker="Toni", role="user", text="I might become a counselor.", dia_id="d1", at=T0),
+        Turn(speaker="Ada", role="assistant", text="That sounds meaningful.", dia_id="d2", at=T0),
+        Turn(
+            speaker="Toni",
+            role="user",
+            text="I'm considering counseling and mental health work.",
+            dia_id="d3",
+            at=T0,
+        ),
+        Turn(speaker="Ada", role="assistant", text="Tell me more.", dia_id="d4", at=T0),
+    ]
+    session = Session(session_id="s1", at=T0, turns=turns)
+    return Conversation(
+        conv_id="conv-dedup-1",
+        user_name="Toni",
+        character_name="Ada",
+        sessions=[session],
+        questions=[],
+        transcript_text="",
+    )
+
+
+class TestHarnessDedupStat:
+    def test_ingest_conversation_records_dedup_skipped(self):
+        """`fact_extraction_interval` defaults to 3: 4 turns means bookkeeping's
+        `want_facts` is true on turn_count 0 and 3 — two extractions of the
+        same fixed `FakeLLM` fact statement, on the same simulated day, so the
+        second dedupes into the first."""
+        engine = Engine(db_path=":memory:", llm=FakeLLM(), embedding=FakeEmbedder())
+        conv = _dedup_conversation()
+        cfg = RunConfig(bench="locomo", mode="memory", run_id="dedup-test")
+
+        stats = ingest_conversation(conv, engine, cfg)
+
+        assert "dedup_skipped" in stats
+        assert stats["dedup_skipped"] == 1
+
+        char = engine.get_character(conv.conv_id)
+        core = _fact_rows(char)
+        assert len(core) == 1
+        assert core[0]["metadata"]["dup_count"] == 1

@@ -74,6 +74,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   To be validated live by the Tier 3d v3 benchmark re-run; revert both if v3
   contradicts.
 
+### Changed (behavior) — Tier 3d (fact dedup)
+- **Semantic dedup of fact-derived core memories** (`memory.fact_dedup_similarity`,
+  default `0.92`, `0` = off): `MemoryStore.add(..., dedup_similarity=..., dedup_scope="core")`
+  compares a fact-derived core insert's embedding (already computed — no second
+  embedding call) against active core rows (FTS hits for the statement, limit
+  50, unioned with the newest 500 active core rows; cosine via the same numpy
+  fast path retrieval uses). At or above the threshold, no new row is
+  inserted — the best-matching existing row is reinforced instead
+  (`importance` bumped `+0.05` capped at `1.0`, `metadata.dup_count`
+  incremented, `metadata.last_confirmed` stamped) and returned; every call
+  returns a memory dict with a transient `deduped: bool` key so callers can
+  tell which happened. Wired into both fact insertion paths in
+  `character.py` (`_store_facts`'s unstructured branch, `_store_structured_fact`'s
+  new-fact branch) — a deduped structured fact's `facts` table row is still
+  written (its own `(subject, predicate)` supersession logic is unchanged),
+  with `memory_id` pointing at the existing memory instead of a new one.
+  `Character.health()` now reports `dedup_skipped` (count of fact inserts
+  that deduped this session). Evidence: Tier 3c diagnostics found
+  near-duplicate extracted facts dominating the top-20 (17.7/20 average) and
+  78/491 active core rows in one LoCoMo conversation falling into
+  6-word-prefix paraphrase groups (e.g. "considering a career in counseling
+  and mental health" vs "...or mental health work"). Dedup never applies to
+  buffer/bedrock tiers. To be validated live by the Tier 3d v3 benchmark
+  re-run.
+
 ### Changed (behavior) — Tier 3c (recall: keep consolidated sources)
 - **Retrieval RRF defaults**: `weight_importance` `1.0` → `0.0`, `weight_recency`
   `1.0` → `0.1` (relevance-first ranking) — LoCoMo evidence recall@20 23.9% →

@@ -106,6 +106,7 @@ memory:
   relevance_gate: true
   relevance_semantic_topk: 100
   relevance_min_similarity: 0.000001
+  fact_dedup_similarity: 0.92
 ```
 
 | Setting | Default | Env Var | Description |
@@ -139,6 +140,7 @@ memory:
 | `relevance_gate` | `true` | — | When true and the query is non-empty, recency/importance/relationship ranking is confined to memories that are semantically similar (similarity > `relevance_min_similarity`, top `relevance_semantic_topk` of those) or keyword-matching (FTS) — see [ARCHITECTURE.md](ARCHITECTURE.md#retrieval-relevance-gate). Narrows (does not eliminate) an off-topic bedrock/core flood outranking a fresh relevant fact via recency/importance floors alone — an off-topic memory with genuine positive similarity landing in the semantic top-K can still outrank on those signals. Falls back to scoring every active memory if nothing is relevant at all. Set `false` to restore the pre-gate fusion (those signals rank every active memory unconditionally). An empty query always bypasses the gate. |
 | `relevance_semantic_topk` | `100` | — | Size of the semantic slice feeding the relevance gate's eligible set (unioned with all FTS keyword hits). Only used when `relevance_gate` is true. Raise it to let more semantically-adjacent memories compete on recency/importance; lower it to tighten the gate further. |
 | `relevance_min_similarity` | `0.000001` | — | Semantic eligibility floor for the relevance gate: a memory must score strictly above this cosine similarity to count as "semantically relevant." Guards against float32 matmul noise on real dense embeddings (typically ~1e-8) being mistaken for a genuine positive match against a `sim > 0.0` floor. Only used when `relevance_gate` is true. |
+| `fact_dedup_similarity` | `0.92` | — | Semantic dedup threshold for fact-derived core memories (`0` = off). Before inserting a fact-derived core row, `MemoryStore.add` compares its embedding against active core rows (FTS hits for the statement, limit 50, unioned with the newest 500 active core rows; cosine via the same numpy fast path retrieval uses). At or above this threshold, no new row is inserted — the existing row is reinforced instead: `importance` bumped by `0.05` (capped at `1.0`), `metadata.dup_count` incremented, `metadata.last_confirmed` stamped. The structured `facts` table row is still written either way — its own `(subject, predicate)` supersession is unaffected; a deduped fact's `memory_id` just points at the existing memory instead of a new one. Evidence: Tier 3c diagnostics found near-duplicate extracted facts dominating the retrieved top-20 (17.7/20 average) and 78/491 active core rows in one LoCoMo conversation falling into 6-word-prefix paraphrase groups (e.g. "considering a career in counseling and mental health" vs "...or mental health work"). To be validated live by the Tier 3d v3 benchmark re-run. |
 
 Semantic scoring (cosine similarity across all candidates) uses `numpy` when it's
 installed (`pip install woven-imprint[fast]`) — one matrix build + matmul per

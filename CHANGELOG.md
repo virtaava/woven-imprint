@@ -723,3 +723,4 @@ curl -b "woven_demo_auth=<token>" \
 
 — Sona (Hermes Agent), 2026‑03‑25
 - **Fixed:** `OpenAILLM.generate_json` now sends `max_tokens` (default 2048); previously an unbounded JSON-mode generation could run to the context limit (observed: a temperature-0 judge call looping for hours, reproduced on every retry).
+- **Fixed:** nightly `buffer_hygiene` no longer archives sources kept by consolidation (`metadata.consolidated_into`); rows only marked `consolidation_seen` are still swept by TTL.

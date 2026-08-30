@@ -185,6 +185,23 @@ def test_unknown_job_fails_loudly():
     assert report["jobs"]["nonexistent"]["status"] == "failed"
 
 
+def test_buffer_hygiene_keeps_consolidated_sources():
+    """Sources kept retrievable by consolidation must not be swept by TTL/importance."""
+    engine = make_test_engine()
+    char = engine.create_character("Tidy")
+    kept = char.memory.add("old kept source", tier="buffer", importance=0.3)
+    seen = char.memory.add("old seen singleton", tier="buffer", importance=0.3)
+    _age_memory(engine, kept["id"], 30)
+    _age_memory(engine, seen["id"], 30)
+    char.storage.update_memory_metadata(kept["id"], {"consolidated_into": "mem-core-1"})
+    char.storage.update_memory_metadata(seen["id"], {"consolidation_seen": True})
+
+    report = MaintenanceRunner(char).run(jobs=["buffer_hygiene"])
+    assert report["jobs"]["buffer_hygiene"]["archived"] == 1
+    active_ids = {m["id"] for m in char.memory.get_all(tier="buffer")}
+    assert kept["id"] in active_ids and seen["id"] not in active_ids
+
+
 def test_buffer_hygiene_scale_exceeds_fetch_limit():
     """Verify buffer_hygiene sweeps ALL stale rows even when total exceeds fetch limit.
 

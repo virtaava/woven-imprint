@@ -103,6 +103,10 @@ class MaintenanceRunner:
             for m in candidates
             if (m.get("created_at") or "") < cutoff_str
             and m.get("importance", 0.5) <= self.cfg.buffer_hygiene_max_importance
+            # Sources kept retrievable by consolidation (memory.consolidation_keep_sources)
+            # are exempt: archiving them would silently undo that feature. Rows only
+            # marked consolidation_seen are still swept by TTL as before.
+            and not (m.get("metadata") or {}).get("consolidated_into")
         ]
         char.storage.archive_memories_batch(stale)
         result = {"archived": len(stale)}

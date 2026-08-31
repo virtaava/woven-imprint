@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Tier 3e (chat prompt section order)
+- **Chat prompt section order restored to pre-3d (memories nearest the user message)** — the
+  Tier 3d reorder coupled render order to shedding priority and cost ~0.10 cognitive cue-linkage;
+  shedding priority (facts/memories survive) retained.
+
 ### Changed (behavior) — Tier 3e (chat sampling temperature; weekday date token configurable)
 - **Chat sampling temperature now honors `llm.temperature`** (was hardcoded `0.7`
   inside `Character.chat()`/`chat_stream()`, ignoring the config field). Default

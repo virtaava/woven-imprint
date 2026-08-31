@@ -637,22 +637,40 @@ when the memory carries `metadata.user_id` (set from `chat`/`ingest`/
 existed. Each line's date prefix also carries the weekday, e.g.
 `(2023-05-08 Mon, 3 months ago)`.
 
-**Chat-path prompt sensitivity (Tier 3d finding).** The rendering/retrieval changes above were a
-clean win on both QA-style benchmarks (LoCoMo, LongMemEval-S — see `docs/BENCHMARKS.md`) but
-*regressed* LoCoMo-Plus, which exercises `chat()`'s real product path (K=10 retrieval,
-temperature 0.7) rather than the QA harness's K=20/temperature-0 answering. The decomposition
+**Prompt assembly: two decoupled orders.** `_build_context` builds five optional sections —
+emotion, arc, relationship, facts, memories — and decides their fate with two independent
+orderings. *Shedding priority* (which sections survive a tight budget): facts, memories, emotion,
+arc, relationship — the two blocks carrying actual retrieved content get first claim on the
+budget, ahead of the softer emotion/arc/relationship framing, and memories that don't fully fit
+are halved progressively rather than dropped outright. *Render order* (the position included
+sections occupy in the assembled volatile block, independent of what survived shedding): emotion,
+arc, relationship, facts, memories — memories last, immediately before the closing/user message.
+These orders were coupled through Tier 3d (a single `optional_parts` list served both purposes)
+and decoupled again in Tier 3e once measurement showed the coupling's render-order side cost real
+chat-path accuracy — see the finding below.
+
+**Chat-path prompt sensitivity (Tier 3d finding, resolved in Tier 3e).** The rendering/retrieval
+changes in Tier 3d were a clean win on both QA-style benchmarks (LoCoMo, LongMemEval-S — see
+`docs/BENCHMARKS.md`) but *regressed* LoCoMo-Plus, which exercises `chat()`'s real product path
+(K=10 retrieval) rather than the QA harness's K=20/temperature-0 answering. The decomposition
 (seven attribution runs, `docs/BENCHMARKS.md` Tier 3d part (c)) individually exonerated the new
 embedding vectors, the RRF ranking params, fact dedup, and the 800-char content cap — reverting
 any one of them recovered none of the drop — leaving the user identity tag (a small, real ≈−2.7
-point cost) and, unconfirmed, the weekday date prefix and `_build_context`'s facts/memories-first
-section reorder as the remaining suspects, on top of `chat()`'s own temperature-0.7 sampling
-noise (≈±4 points run-to-run). The practical takeaway: a prompt-assembly change validated against
-one retrieval/answering path (K=20, temp 0, "answer only from these memories") is not
-automatically neutral on a different path through the same rendering code (K=10, temp 0.7, "reply
-in character") — the two exercise the same `_format_memories`/`_build_context` machinery under
-different sampling and context-window pressure, and can move in opposite directions from the same
-change. Shipped anyway (QA wins were decisive); chat-path recovery, with a fixed-temperature
-benchmark protocol to separate real effects from sampling noise, is the top Tier 3e follow-up.
+point cost), the weekday date prefix, and `_build_context`'s facts/memories-first section reorder
+as remaining suspects, on top of `chat()`'s own sampling noise (≈±4 points run-to-run at
+temperature 0.7). Tier 3e fixed a temperature-0.3 benchmark protocol to tame that noise (±1 point
+replica spread) and re-ran the decomposition: the weekday prefix was exonerated, and the section
+reorder was confirmed as the culprit — pre-Tier-3d render order 0.392 vs Tier 3d's reorder
+0.289/0.299, same everything else
+(`docs/superpowers/specs/2026-08-31-tier3e-plus-chat-recovery.md`). The fix is the decoupled
+render/shedding order described above, not a full revert of Tier 3d — it keeps the Tier 3d
+shedding priority (facts/memories survive) while restoring the pre-Tier-3d render order (memories
+nearest the user message) that the chat path is sensitive to. The broader takeaway stands: a
+prompt-assembly change validated against one retrieval/answering path (K=20, temp 0, "answer only
+from these memories") is not automatically neutral on a different path through the same rendering
+code (K=10, "reply in character") — the two exercise the same `_format_memories`/`_build_context`
+machinery under different context-window pressure and proximity-to-the-user-message effects, and
+can move in opposite directions from the same change.
 
 ### SillyTavern Interchange
 

@@ -313,8 +313,22 @@ def _fact_rows(char) -> list[dict]:
     ]
 
 
+@pytest.fixture()
+def dedup_enabled():
+    """The shipping default is 0.0 (opt-in) since the v3b attribution run; these tests exercise the feature."""
+    from woven_imprint.config import get_config
+
+    cfg = get_config()
+    prev = cfg.memory.fact_dedup_similarity
+    cfg.memory.fact_dedup_similarity = 0.92
+    try:
+        yield
+    finally:
+        cfg.memory.fact_dedup_similarity = prev
+
+
 class TestFactPipelineDedupUnstructured:
-    def test_identical_unstructured_fact_across_sessions_dedupes(self):
+    def test_identical_unstructured_fact_across_sessions_dedupes(self, dedup_enabled):
         """`FakeLLM`'s default bookkeeping response always extracts the same
         unstructured fact statement ("A notable fact was shared", no subject/
         predicate/object) — two sessions ingesting it produce one core row."""
@@ -397,7 +411,7 @@ class DuplicateStatementDifferentSubjectLLM(FakeLLM):
 
 
 class TestFactPipelineDedupStructured:
-    def test_near_duplicate_structured_facts_share_one_core_row(self):
+    def test_near_duplicate_structured_facts_share_one_core_row(self, dedup_enabled):
         llm = DuplicateStatementDifferentSubjectLLM()
         _engine, char = _char(llm)
 
@@ -516,7 +530,9 @@ class TestFactPipelineDedupStructured:
         assert color["memory_id"] != food["memory_id"]
         assert len(_fact_rows(char)) == 2
 
-    def test_supersession_leaves_shared_memory_active_when_other_fact_still_references_it(self):
+    def test_supersession_leaves_shared_memory_active_when_other_fact_still_references_it(
+        self, dedup_enabled
+    ):
         """When the OLD fact's memory is shared with another still-active fact
         (semantic dedup — same identical statement — links a second, unrelated
         (subject, predicate) fact to the same core memory row), superseding the
@@ -612,7 +628,7 @@ def _dedup_conversation() -> Conversation:
 
 
 class TestHarnessDedupStat:
-    def test_ingest_conversation_records_dedup_skipped(self):
+    def test_ingest_conversation_records_dedup_skipped(self, dedup_enabled):
         """`fact_extraction_interval` defaults to 3: 4 turns means bookkeeping's
         `want_facts` is true on turn_count 0 and 3 — two extractions of the
         same fixed `FakeLLM` fact statement, on the same simulated day, so the

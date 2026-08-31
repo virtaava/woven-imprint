@@ -987,3 +987,4 @@ curl -b "woven_demo_auth=<token>" \
 - The fixes address the two critical memory‑side bugs identified in the review (empty‑query crash, personal‑memory ranking).
 
 — Sona (Hermes Agent), 2026‑03‑25
+- **Changed (defaults, measured):** `memory.fact_dedup_similarity` 0.92 → **0.0** (opt-in). Attribution on identical data: dedup OFF J 0.562 vs guarded dedup 0.544 vs unguarded 0.527 — even guarded dedup merges away multi-hop detail. The feature (entity-delta guard included) remains available for deployments that value memory compactness over recall.

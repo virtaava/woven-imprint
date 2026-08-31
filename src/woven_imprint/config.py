@@ -107,7 +107,7 @@ class MemoryConfig:
     # "considering a career in counseling and mental health" vs "...or mental health
     # work"). Structured facts' own (subject, predicate) supersession is unaffected —
     # this only gates the *core-memory* insert, not the `facts` table row.
-    fact_dedup_similarity: float = 0.92
+    fact_dedup_similarity: float = 0.0
 
 
 @dataclass
@@ -461,7 +461,7 @@ memory:
   # an existing core row at/above this threshold (0 = off); reinforces the existing row
   # (importance +0.05, metadata.dup_count += 1) instead. Tier 3c found near-duplicate
   # extracted facts dominating the top-20 (17.7/20 avg; 78/491 core rows paraphrase-grouped).
-  fact_dedup_similarity: 0.92
+  fact_dedup_similarity: 0.0
 
 context:
   total_tokens: 6000

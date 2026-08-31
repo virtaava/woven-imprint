@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (behavior) — Tier 3e (chat sampling temperature; weekday date token configurable)
+- **Chat sampling temperature now honors `llm.temperature`** (was hardcoded `0.7`
+  inside `Character.chat()`/`chat_stream()`, ignoring the config field). Default
+  behavior is unchanged (`0.7`) — only takes effect when `llm.temperature` is set
+  to something else, and is read fresh on every call. Root-caused during the
+  Tier 3d decomposition of a Plus cognitive-cue regression as one source of
+  ±4-point run-to-run noise on that benchmark (`docs/superpowers/specs/2026-08-31-tier3e-plus-chat-recovery.md`).
+- **Weekday token in memory dates is now configurable** (`context.weekday_in_dates`,
+  default `true`): `_format_memories` renders `(2023-05-08 Mon, 3 months ago)` as
+  before; set to `false` to render `(2023-05-08, 3 months ago)` instead. The date
+  and relative-time phrase are unaffected either way. Added as the other
+  chat-path suspect for the same Plus regression, so it can be measured and
+  disabled without touching the rest of the date rendering.
+
 ### Changed (behavior) — Tier 3d (rendering: content cap, user identity, weekday)
 - **Per-memory content cap raised 200 → 800 chars** (`context.memory_content_max_chars`,
   `0` = unlimited) in `Character._format_memories`. The LoCoMo abstention analysis

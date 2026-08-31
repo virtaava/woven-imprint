@@ -129,6 +129,14 @@ class ContextConfig:
     # gold answer's own words removed. Raised to 800 — still bounded by the overall
     # shared context.total_tokens prompt budget (memory_tokens is not enforced yet).
     memory_content_max_chars: int = 800
+    # Include the weekday token (e.g. "Mon") in each rendered memory's date prefix
+    # (`_format_memories`): "(2023-05-08 Mon, 3 months ago)" vs "(2023-05-08, 3 months
+    # ago)" when false. The date and relative-time phrase are unaffected either way.
+    # Tier 3e (docs/superpowers/specs/2026-08-31-tier3e-plus-chat-recovery.md): the
+    # weekday token was one of two chat-path suspects for the Plus cognitive-cue
+    # regression; gated here so it can be measured and disabled without reverting
+    # the date/relative-phrase rendering it shares a line with.
+    weekday_in_dates: bool = True
 
 
 @dataclass
@@ -474,6 +482,7 @@ context:
   facts_block: true              # inject a "What you currently know about {user}" block
   facts_block_limit: 12          # max current user-facts in the block (importance desc, then newest first)
   memory_content_max_chars: 800  # per-memory content cap in the rendered prompt (0 = unlimited); was a hard-coded 200
+  weekday_in_dates: true         # include the weekday token ("Mon") in rendered memory date prefixes
 
 relationship:
   max_delta: 0.15

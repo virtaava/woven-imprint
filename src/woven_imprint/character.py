@@ -367,7 +367,7 @@ class Character:
         # 6. Generate response
         generate_started = time.perf_counter()
         try:
-            response = self.llm.generate(messages, temperature=0.7)
+            response = self.llm.generate(messages, temperature=_cfg.llm.temperature)
         except Exception as e:
             logger.error("LLM generation failed: %s", e)
             self.last_chat_metrics = {
@@ -521,7 +521,7 @@ class Character:
         generate_started = time.perf_counter()
         chunks: list[str] = []
         try:
-            for chunk in self.llm.generate_stream(messages, temperature=0.7):
+            for chunk in self.llm.generate_stream(messages, temperature=_cfg.llm.temperature):
                 chunks.append(chunk)
                 yield chunk
         except Exception as e:
@@ -1919,8 +1919,10 @@ class Character:
         Memories are tagged by provenance to mitigate prompt injection:
         user-supplied content is clearly marked so the LLM can distinguish
         it from system-generated observations. Each memory also carries the
-        date it formed, its weekday, and a relative-time phrase so the
-        character can reason about how long ago something happened.
+        date it formed and a relative-time phrase so the character can
+        reason about how long ago something happened; the weekday token
+        (e.g. ``"Mon"``) is included too unless ``context.weekday_in_dates``
+        is set to ``False``.
 
         A user-turn memory (content stored as ``"[User] ..."``) whose
         ``metadata.user_id`` is known renders as ``"[User: <user_id>]"``
@@ -1957,7 +1959,8 @@ class Character:
             if raw:
                 try:
                     dt = clock.parse_ts(raw)
-                    when = f" ({dt.date().isoformat()} {_WEEKDAYS[dt.weekday()]}, {clock.relative(dt, ref)})"
+                    weekday = f" {_WEEKDAYS[dt.weekday()]}" if ctx.weekday_in_dates else ""
+                    when = f" ({dt.date().isoformat()}{weekday}, {clock.relative(dt, ref)})"
                 except ValueError:
                     when = ""
             content = m["content"]

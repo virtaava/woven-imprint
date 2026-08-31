@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .. import clock
 from ..llm.base import LLMProvider
 from ..prompts import render
 from ..storage.sqlite import SQLiteStorage
@@ -36,12 +37,20 @@ class GrowthEngine:
         character_id: str,
         persona: PersonaModel,
         embedder=None,
+        embed_fn=None,
     ):
         self.storage = storage
         self.llm = llm
         self.character_id = character_id
         self.persona = persona
         self.embedder = embedder
+        # Optional `(content, role, created_at, metadata) -> list[float]`
+        # callable — typically `MemoryStore.embed_for`, injected by Character —
+        # so a growth-event memory gets the same contextualized, dimension-
+        # guarded vector every other write path computes. Falls back to a raw
+        # `embedder.embed(content)` (ungated) when absent, for direct/test
+        # construction that never wires it up.
+        self.embed_fn = embed_fn
 
     def detect_growth(self, min_memories: int = 20) -> list[GrowthEvent]:
         """Analyze recent experiences for potential character growth.
@@ -122,12 +131,21 @@ class GrowthEngine:
                 f"'{event.old_value}' → '{event.new_value}'. "
                 f"Reason: {event.reason}"
             )
+            created_at = clock.sqlite_ts()
+            if self.embed_fn is not None:
+                embedding = self.embed_fn(
+                    content, role="observation", created_at=created_at, metadata=None
+                )
+            elif self.embedder is not None:
+                embedding = self.embedder.embed(content)
+            else:
+                embedding = None
             growth_memory = {
                 "id": generate_id("mem-"),
                 "character_id": self.character_id,
                 "tier": "core",
                 "content": content,
-                "embedding": self.embedder.embed(content) if self.embedder else None,
+                "embedding": embedding,
                 "importance": 0.8,
                 "certainty": event.confidence,
                 "status": "active",
@@ -139,6 +157,7 @@ class GrowthEngine:
                     "old": event.old_value,
                     "new": event.new_value,
                 },
+                "created_at": created_at,
             }
             self.storage.save_memory(growth_memory)
 

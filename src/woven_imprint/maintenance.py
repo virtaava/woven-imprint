@@ -312,3 +312,17 @@ class MaintenanceRunner:
             return {"_status": "skipped", "reason": "budget exhausted", "created": 0}
         created = self.character.refresh_callbacks(budget=self.budget)
         return {"created": created}
+
+    def _job_reembed(self) -> dict:
+        """Recompute every active memory's vector with the current embed-text
+        builder (`MemoryStore.reembed` — see `memory.embedding_context`).
+
+        Opt-in only (not in `DEFAULT_JOBS`): re-embedding a whole character's
+        history is a one-off migration after flipping `embedding_context` or
+        changing the embedder/builder, not a nightly task — most nights there's
+        nothing new to re-embed, and it makes no LLM calls, so it doesn't
+        compete with `self.budget`. Run explicitly via `jobs=["reembed"]` or
+        `woven-imprint reembed <character_id>`.
+        """
+        count = self.character.memory.reembed()
+        return {"reembedded": count}

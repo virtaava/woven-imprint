@@ -63,9 +63,23 @@ class MemoryConfig:
     tier_boost_bedrock: float = 0.35
     tier_boost_core: float = 0.2
     tier_boost_buffer: float = 0.0
-    rrf_k: int = 60
+    # All memories (not just buffer-tier) are embedded with date+speaker context (see
+    # memory/store.py::build_embed_text) instead of raw content —
+    # e.g. "[2023-05-08] User: caroline: I adopted a cat" instead of
+    # "[User] I adopted a cat". `false` restores the pre-Tier-3d exact-content
+    # embedding. Existing DBs mix old (raw) and new (contextualized) vectors
+    # until `woven-imprint reembed <character_id>` (or the opt-in `reembed`
+    # maintenance job) is run — see CHANGELOG.
+    embedding_context: bool = True
+    # rrf_k 120 (was 60) and weight_keyword 2.0 (was 1.0) are tuned for
+    # contextualized docs (embedding_context: true) — offline LoCoMo ranking
+    # experiments (ranking_experiments_report.md section (b), 2026-08-30)
+    # measured evidence recall@20 54.7% at this combination vs 50.8% on the
+    # pre-Tier-3d baseline (raw content, rrf_k 60, weight_keyword 1.0). To be
+    # validated live by the v3 benchmark re-run; revert both if v3 contradicts.
+    rrf_k: int = 120
     weight_semantic: float = 1.0
-    weight_keyword: float = 1.0
+    weight_keyword: float = 2.0
     # recency/importance ranking inside the relevance gate dilutes relevance;
     # LoCoMo evidence recall@20 23.9%->50.8% with both at 0 (ranking_experiments
     # 2026-08-30). weight_recency kept at a small 0.1 (not 0): the (a) sweep found
@@ -82,6 +96,18 @@ class MemoryConfig:
     relevance_gate: bool = True  # gate recency/importance/relationship ranking to relevant memories
     relevance_semantic_topk: int = 100  # semantic cutoff feeding the relevance gate
     relevance_min_similarity: float = 1e-6  # semantic eligibility floor; above float32 matmul noise
+    # Semantic dedup of fact-derived core memories (0 = off): before inserting a
+    # fact-derived core row, MemoryStore.add compares its embedding against active
+    # core rows (FTS hits for the statement ∪ newest 500 core rows); at or above this
+    # cosine similarity, no new row is inserted — the existing one is reinforced
+    # instead (importance +0.05 capped at 1.0, metadata.dup_count += 1,
+    # metadata.last_confirmed stamped). Evidence: Tier 3c diagnostics found
+    # near-duplicate extracted facts dominating the top-20 (17.7/20 avg; 78/491 active
+    # core rows in conv-26 fell into 6-word-prefix paraphrase groups, e.g.
+    # "considering a career in counseling and mental health" vs "...or mental health
+    # work"). Structured facts' own (subject, predicate) supersession is unaffected —
+    # this only gates the *core-memory* insert, not the `facts` table row.
+    fact_dedup_similarity: float = 0.0
 
 
 @dataclass
@@ -97,6 +123,12 @@ class ContextConfig:
     facts_block_limit: int = 12
     pinned_block: bool = True  # always include pinned memories in the prompt (see MemoryStore.pin)
     pinned_limit: int = 10  # max pinned memories rendered in the "Things you always remember" block
+    # Per-memory content cap in _format_memories (0 = unlimited). Was a hard-coded 200; the
+    # LoCoMo abstention analysis (eval/external/runs/diagnostics/abstain/locomo-mem-v2d/
+    # recommendation.md, 2026-08-30) found 133/251 evidence lines cut by that cap, 23 with the
+    # gold answer's own words removed. Raised to 800 — still bounded by the overall
+    # shared context.total_tokens prompt budget (memory_tokens is not enforced yet).
+    memory_content_max_chars: int = 800
 
 
 @dataclass
@@ -400,9 +432,18 @@ memory:
   tier_boost_bedrock: 0.35
   tier_boost_core: 0.2
   tier_boost_buffer: 0.0
-  rrf_k: 60
+  # buffer memories are embedded with date+speaker context (see build_embed_text
+  # in memory/store.py) instead of raw content; false = pre-Tier-3d raw-content
+  # embedding. Existing DBs need `woven-imprint reembed <character_id>` after a
+  # flag flip (or after an upgrade) to bring old vectors in line with new writes.
+  embedding_context: true
+  # rrf_k 120 / weight_keyword 2.0 are tuned for contextualized docs (above):
+  # offline LoCoMo ranking experiments measured evidence recall@20 54.7% at this
+  # combination vs 50.8% on the pre-Tier-3d baseline (rrf_k 60, weight_keyword 1.0,
+  # raw content) — ranking_experiments_report.md section (b), 2026-08-30.
+  rrf_k: 120
   weight_semantic: 1.0
-  weight_keyword: 1.0
+  weight_keyword: 2.0
   # recency/importance ranking inside the relevance gate dilutes relevance;
   # LoCoMo evidence recall@20 23.9%->50.8% with both at 0 (ranking_experiments 2026-08-30).
   # weight_recency kept at a small 0.1 (not 0): costs ~2 pts recall@20 (48.7 vs 50.8) but
@@ -416,6 +457,11 @@ memory:
   # relevance_gate: true           # false = legacy fusion (recency/importance rank ALL candidates)
   # relevance_semantic_topk: 100   # semantic cutoff feeding the relevance gate
   # relevance_min_similarity: 0.000001  # semantic eligibility floor; above float32 matmul noise
+  # fact_dedup_similarity: skip inserting a fact-derived core memory when it cosine-matches
+  # an existing core row at/above this threshold (0 = off); reinforces the existing row
+  # (importance +0.05, metadata.dup_count += 1) instead. Tier 3c found near-duplicate
+  # extracted facts dominating the top-20 (17.7/20 avg; 78/491 core rows paraphrase-grouped).
+  fact_dedup_similarity: 0.0
 
 context:
   total_tokens: 6000
@@ -427,6 +473,7 @@ context:
   include_date: true
   facts_block: true              # inject a "What you currently know about {user}" block
   facts_block_limit: 12          # max current user-facts in the block (importance desc, then newest first)
+  memory_content_max_chars: 800  # per-memory content cap in the rendered prompt (0 = unlimited); was a hard-coded 200
 
 relationship:
   max_delta: 0.15

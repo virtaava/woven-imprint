@@ -18,7 +18,7 @@ def test_format_memories_has_date_and_relative():
     with clock.override(T0):
         mems = char.retriever.retrieve("harbor lamp", limit=5)
         text = char._format_memories(mems)
-    assert "(2026-08-04, 3 weeks ago)" in text
+    assert "(2026-08-04 Tue, 3 weeks ago)" in text
     assert "harbor lamp" in text
 
 

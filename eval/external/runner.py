@@ -282,13 +282,20 @@ def ingest_conversation(conv: Conversation, engine: Engine, cfg: "RunConfig") ->
 
     elapsed = time.perf_counter() - started
     calls_after = llm.calls if isinstance(llm, _CountingLLM) else 0
-    return {
+    stats = {
         "turns": turns,
         "sessions": len(sessions),
         "llm_calls": calls_after - calls_before,
         "seconds": elapsed,
         "pair_turns": bool(cfg.pair_turns),
     }
+    # Tier 3d fact dedup: record how many fact-derived core inserts this
+    # ingest deduped, if the counter exists (optional — older Character
+    # builds won't have it; keep this harness change cheap/non-breaking).
+    dedup_skipped = getattr(char, "_dedup_skipped", None)
+    if dedup_skipped is not None:
+        stats["dedup_skipped"] = dedup_skipped
+    return stats
 
 
 def answer_question(conv: Conversation, char, q: Question, cfg: "RunConfig", llm) -> dict:

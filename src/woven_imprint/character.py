@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 import time
+import unicodedata
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -28,6 +30,26 @@ from .prompts import render
 from .relationship.model import RelationshipModel
 from .storage.sqlite import SQLiteStorage
 from .utils.text import generate_id
+
+
+_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")  # locale-independent
+
+
+def _safe_tag(value: object, limit: int = 40) -> str:
+    """Sanitize a user-controlled value for use inside a ``[User: …]`` prompt tag.
+
+    Control characters, newlines and square brackets are removed so an attacker-chosen
+    ``user_id`` cannot close the tag or forge additional memory lines; long values are cut.
+
+    NFKC-normalized first so lookalike characters that decompose to ASCII
+    ``[``/``]`` under compatibility normalization (e.g. fullwidth brackets
+    ``［``/``］``) are caught by the bracket filter too, instead of
+    slipping through as "printable, not literally '[' or ']'".
+    """
+    text = unicodedata.normalize("NFKC", str(value))
+    text = "".join(ch for ch in text if ch.isprintable() and ch not in "[]")
+    text = " ".join(text.split())
+    return text[:limit] or "unknown"
 
 
 class Character:
@@ -61,15 +83,36 @@ class Character:
         _cfg = get_config()
 
         # Sub-systems
-        self.memory = MemoryStore(storage, embedder, char_id)
-        self.facts = FactStore(storage, char_id, embedder=embedder)
+        self.memory = MemoryStore(storage, embedder, char_id, character_name=persona.name)
+        self.facts = FactStore(storage, char_id, embedder=embedder, embed_fn=self.memory.embed_for)
         self.memory.facts = self.facts
         self.retriever = MemoryRetriever(storage, embedder, char_id)
-        self.belief = BeliefReviser(storage, char_id, embedder=embedder)
+        self.belief = BeliefReviser(
+            storage, char_id, embedder=embedder, embed_fn=self.memory.embed_for
+        )
         self.relationships = RelationshipModel(storage, char_id)
+        # NOT wired to `embed_fn=self.memory.embed_for` here (unlike facts/
+        # belief/growth below) — deliberate deviation from the fix-wave spec,
+        # see CHANGELOG "Deviations". `ConsolidationEngine` supports it
+        # (tested directly against the class), but wiring it through Character
+        # measurably regressed `eval/bench_longhorizon.py`'s
+        # `contradiction_supersession`/`relevance_gate_global_rank` checks
+        # (10/12, root-caused, not fixed): a backdated `created_at` on a
+        # consolidated summary can exactly tie an existing core memory's
+        # timestamp, and `get_memories`' `rowid DESC` tie-break then depends
+        # on insertion order — contextualizing the summary's embedding text
+        # doesn't touch that ordering directly, but it changes clustering's
+        # LLM-call cadence relative to that day's other maintenance jobs
+        # sharing the same run budget, which shifts *which* day a given
+        # cluster's summary lands on and therefore its rowid. Left on the raw
+        # (dimension-guarded, non-contextualized) embed path pending a fix to
+        # the benchmark's timestamp-tie sensitivity, not a correctness defect
+        # in `embed_for` itself.
         self.consolidator = ConsolidationEngine(storage, llm, embedder, char_id)
         self.consistency = ConsistencyChecker(llm, persona, config=_cfg.character)
-        self.growth = GrowthEngine(storage, llm, char_id, persona, embedder=embedder)
+        self.growth = GrowthEngine(
+            storage, llm, char_id, persona, embedder=embedder, embed_fn=self.memory.embed_for
+        )
         self.emotion_engine = EmotionEngine(llm)
         self.arc_tracker = ArcTracker(llm)
         self.assessor = TurnAssessor(llm)
@@ -112,6 +155,10 @@ class Character:
         # degradation visible. Plain dict; worker thread + GIL, matches the
         # existing counter precedent in BackgroundWorker.
         self._health_counters: dict[str, dict] = {}
+        # Fact-derived core memories skipped as near-duplicates of an existing
+        # core row (`memory.fact_dedup_similarity`, Tier 3d) — see
+        # `_store_facts`/`_store_structured_fact`. Surfaced via `health()`.
+        self._dedup_skipped: int = 0
 
         # Restore persisted transient state (C3)
         self._restore_state()
@@ -230,6 +277,7 @@ class Character:
         return {
             "subsystems": {k: dict(v) for k, v in self._health_counters.items()},
             "worker": worker,
+            "dedup_skipped": self._dedup_skipped,
             "generated_at": clock.now().isoformat(),
         }
 
@@ -238,7 +286,9 @@ class Character:
 
         Args:
             message: The user's message.
-            user_id: Optional user identifier for relationship tracking.
+            user_id: Optional user identifier for relationship tracking. Also stamped as
+                `metadata.user_id` on the stored user-turn memory, so `_format_memories`
+                can render `"[User: <user_id>]"` instead of the anonymous `"[User]"` tag.
 
         Returns:
             The character's response.
@@ -266,6 +316,7 @@ class Character:
             role="user",
             session_id=self._session_id,
             importance=0.5,
+            metadata=({"user_id": user_id} if user_id else None),
         )
         metrics["store_user_memory_ms"] = round(
             (time.perf_counter() - store_user_started) * 1000.0, 2
@@ -419,7 +470,9 @@ class Character:
 
         Args:
             message: The user's message.
-            user_id: Optional user identifier for relationship tracking.
+            user_id: Optional user identifier for relationship tracking. Also stamped as
+                `metadata.user_id` on the stored user-turn memory, so `_format_memories`
+                can render `"[User: <user_id>]"` instead of the anonymous `"[User]"` tag.
 
         Yields:
             Response text chunks, in order.
@@ -444,6 +497,7 @@ class Character:
             role="user",
             session_id=self._session_id,
             importance=0.5,
+            metadata=({"user_id": user_id} if user_id else None),
         )
 
         # 2. Retrieve relevant memories
@@ -586,7 +640,9 @@ class Character:
         Args:
             role: ``"user"`` or ``"assistant"`` — who said it.
             content: The message text.
-            user_id: Optional user identifier for relationship tracking.
+            user_id: Optional user identifier for relationship tracking. Also stamped as
+                `metadata.user_id` on the stored user-turn memory, so `_format_memories`
+                can render `"[User: <user_id>]"` instead of the anonymous `"[User]"` tag.
         """
         if role not in ("user", "assistant"):
             raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
@@ -614,6 +670,7 @@ class Character:
             role=mem_role,
             session_id=self._session_id,
             importance=0.5,
+            metadata=({"user_id": user_id} if (role == "user" and user_id) else None),
         )
 
         # Subsystem updates — fact extraction + relationship assessment.
@@ -678,7 +735,9 @@ class Character:
         Args:
             user_message: What the user said.
             response: What the character said in reply.
-            user_id: Optional user identifier for relationship tracking.
+            user_id: Optional user identifier for relationship tracking. Also stamped as
+                `metadata.user_id` on the stored user-turn memory, so `_format_memories`
+                can render `"[User: <user_id>]"` instead of the anonymous `"[User]"` tag.
         """
         if not self._session_id:
             self.start_session()
@@ -705,6 +764,7 @@ class Character:
             role="user",
             session_id=self._session_id,
             importance=0.5,
+            metadata=({"user_id": user_id} if user_id else None),
         )
         self.memory.add(
             content=f"[{self.name}] {response}",
@@ -1296,18 +1356,24 @@ class Character:
         memory_text = self._format_memories(memories)
 
         # Add optional components, tracking size
+        # Order matches the docstring's shedding priority (facts, memories,
+        # emotion, arc, relationship): when budget is tight, the loop below
+        # spends what's left in this order, so facts/memories — the two
+        # blocks with actual retrieved content — get first claim on the
+        # remaining budget, ahead of the softer emotion/arc/relationship
+        # framing.
         optional_parts = []
+        facts_text = self._format_facts_block(user_id, pinned_ids)
+        if facts_text:
+            optional_parts.append(("facts", f"\n\n{facts_text}"))
+        if memory_text:
+            optional_parts.append(("memories", f"\n\nYour relevant memories:\n{memory_text}"))
         if emotion_desc:
             optional_parts.append(("emotion", f"\n\n{emotion_desc}"))
         if arc_desc:
             optional_parts.append(("arc", f"\n\n{arc_desc}"))
         if rel_context:
             optional_parts.append(("relationship", f"\n\n{rel_context}"))
-        facts_text = self._format_facts_block(user_id, pinned_ids)
-        if facts_text:
-            optional_parts.append(("facts", f"\n\n{facts_text}"))
-        if memory_text:
-            optional_parts.append(("memories", f"\n\nYour relevant memories:\n{memory_text}"))
 
         # Calculate base size (system prompt + user message + date line +
         # pinned-memory block — these are always kept, so they count toward
@@ -1348,12 +1414,20 @@ class Character:
                         volatile += part
                         remaining -= len(part)
                     elif name == "memories" and remaining > 200:
-                        # Partial memories — include as many as fit
-                        truncated = self._format_memories(memories[: max(1, len(memories) // 2)])
-                        mem_part = f"\n\nYour relevant memories:\n{truncated}"
-                        if len(mem_part) <= remaining:
-                            volatile += mem_part
-                            remaining -= len(mem_part)
+                        # Partial memories — progressively halve the list
+                        # until the rendered block fits `remaining`, or only
+                        # one memory is left to try.
+                        shrinking = memories
+                        while shrinking:
+                            truncated = self._format_memories(shrinking)
+                            mem_part = f"\n\nYour relevant memories:\n{truncated}"
+                            if len(mem_part) <= remaining:
+                                volatile += mem_part
+                                remaining -= len(mem_part)
+                                break
+                            if len(shrinking) == 1:
+                                break
+                            shrinking = shrinking[: max(1, len(shrinking) // 2)]
 
                 # If STILL over after shedding optional parts, trim conversation
                 total = len(system_prompt) + len(volatile) + history_size + len(user_message)
@@ -1457,14 +1531,19 @@ class Character:
             # Only store as new memory if it didn't contradict something
             # (contradict() already creates the replacement)
             if not contradictions:
-                self.memory.add(
+                from .config import get_config
+
+                mem = self.memory.add(
                     content=stmt,
                     tier="core",
                     role="observation",
                     session_id=session_id,
                     importance=importance,
                     metadata={"source": "extraction", "user_id": user_id},
+                    dedup_similarity=get_config().memory.fact_dedup_similarity,
                 )
+                if mem.get("deduped"):
+                    self._dedup_skipped += 1
 
     def _store_structured_fact(
         self,
@@ -1482,6 +1561,7 @@ class Character:
         stays current and the new fact is filed straight into history,
         superseded by the old one as of the old fact's valid_from.
         """
+        from .config import get_config
         from .memory.facts import _norm_time, normalize_object
 
         old = self.facts.find_active(fact["subject"], fact["predicate"])
@@ -1498,6 +1578,13 @@ class Character:
         meta = {"source": "extraction", "user_id": user_id}
         if old and old.get("memory_id") and not backdated:
             meta["contradicts"] = old["memory_id"]
+        # Entity-delta dedup guard: require the fact's OBJECT tokens to appear
+        # in a dedup candidate's content — otherwise a bag-of-words (or
+        # boilerplate-heavy) embedding can score two updates to the same
+        # (subject, predicate) with a genuinely different object as a
+        # near-identical cosine match on shared preamble text, and dedup
+        # would silently swallow the value change instead of recording it.
+        object_tokens = [w for w in re.findall(r"\w+", str(fact["object"]).lower()) if len(w) >= 2]
         mem = self.memory.add(
             content=fact["statement"],
             tier="core",
@@ -1505,7 +1592,33 @@ class Character:
             session_id=session_id,
             importance=importance,
             metadata=meta,
+            dedup_similarity=get_config().memory.fact_dedup_similarity,
+            dedup_require_tokens=object_tokens or None,
         )
+        if (
+            not backdated
+            and old
+            and old.get("memory_id")
+            and mem.get("deduped")
+            and mem["id"] == old["memory_id"]
+        ):
+            # The dedup match is the very memory this supersession is about to
+            # mark `contradicted` below (near-identical statement text under the
+            # embedder, different object) — linking the new fact to it would
+            # leave the fact pointing at a contradicted memory. Force a fresh
+            # row instead of reinforcing the soon-to-be-superseded one.
+            mem = self.memory.add(
+                content=fact["statement"],
+                tier="core",
+                role="observation",
+                session_id=session_id,
+                importance=importance,
+                metadata=meta,
+                dedup_similarity=0,
+            )
+        deduped = bool(mem.get("deduped"))
+        if deduped:
+            self._dedup_skipped += 1
         new = self.facts.add(
             subject=fact["subject"],
             predicate=fact["predicate"],
@@ -1513,24 +1626,45 @@ class Character:
             statement=fact["statement"],
             event_time=fact.get("event_time"),
             importance=importance,
+            # Deduped: this fact's statement matched an existing core memory's
+            # embedding — link the fact row to that EXISTING memory rather than
+            # one that was never inserted (mem["id"] is already the existing
+            # id in that case; see MemoryStore.add's dedup_similarity contract).
             memory_id=mem["id"],
             session_id=session_id,
             user_id=user_id,
         )
-        mem["metadata"]["fact_id"] = new["id"]
-        if backdated:
-            # Filed straight into history behind the still-current fact: mark
-            # the memory row as historical and lower its certainty rather than
-            # letting it read as a fresh, fully-certain observation.
-            mem["metadata"]["historical"] = True
-            mem["certainty"] = 0.5
-        self.storage.save_memory(mem)
+        if not deduped:
+            # New memory row: tag it with the fact id and persist. (A deduped
+            # `mem` is an EXISTING row already updated in place by
+            # `MemoryStore.add` — dup_count/importance/last_confirmed — so it
+            # is not re-saved here; it can't carry a single `fact_id` anyway
+            # once more than one structured fact links to it.)
+            mem["metadata"]["fact_id"] = new["id"]
+            if backdated:
+                # Filed straight into history behind the still-current fact: mark
+                # the memory row as historical and lower its certainty rather than
+                # letting it read as a fresh, fully-certain observation.
+                mem["metadata"]["historical"] = True
+                mem["certainty"] = 0.5
+            self.storage.save_memory(mem)
+        # Supersession bookkeeping on the structured `facts` table runs
+        # regardless of whether the memory side was deduped — "own
+        # supersession logic unchanged" (Tier 3d spec).
         if old:
             if backdated:
                 self.facts.expire(new["id"], valid_to=old["valid_from"], superseded_by=old["id"])
             else:
                 self.facts.expire(old["id"], valid_to=new["valid_from"], superseded_by=new["id"])
-                if old.get("memory_id"):
+                if old.get("memory_id") and (
+                    self.storage.count_active_facts_for_memory(old["memory_id"]) == 0
+                ):
+                    # Only mark the old memory contradicted once no other active
+                    # fact still references it — semantic dedup can link more
+                    # than one structured fact to the same memory row (see
+                    # `MemoryStore.add`'s `dedup_similarity` contract), and
+                    # expiring THIS fact must not pull that shared memory out
+                    # from under a sibling fact that's still current.
                     self.storage.update_memory_status(
                         old["memory_id"], "contradicted", certainty=0.0
                     )
@@ -1785,11 +1919,30 @@ class Character:
         Memories are tagged by provenance to mitigate prompt injection:
         user-supplied content is clearly marked so the LLM can distinguish
         it from system-generated observations. Each memory also carries the
-        date it formed (and a relative-time phrase) so the character can
-        reason about how long ago something happened.
+        date it formed, its weekday, and a relative-time phrase so the
+        character can reason about how long ago something happened.
+
+        A user-turn memory (content stored as ``"[User] ..."``) whose
+        ``metadata.user_id`` is known renders as ``"[User: <user_id>]"``
+        instead of the anonymous ``"[User]"`` tag; character turns
+        (``"[<name>] ..."``) are never rewritten. Rows written before this
+        identity tag existed carry no ``metadata.user_id`` and so still
+        render as the plain ``"[User]"`` tag — that's expected, not a bug;
+        there is no migration of old rows. Stored ``content`` is never
+        modified by this rewrite or by the length cap below — both are
+        display-only, applied fresh on every render.
+
+        Each line's displayed content is capped at
+        ``context.memory_content_max_chars`` characters (default 800; ``0``
+        means unlimited) — still bounded by the overall
+        shared ``context.total_tokens`` prompt budget (``memory_tokens`` is currently not enforced).
         """
         if not memories:
             return ""
+        from .config import get_config
+
+        ctx = get_config().context
+        content_cap = ctx.memory_content_max_chars
         ref = now or clock.now()
         lines = [
             "(The following are your character's memories, each with the date it formed. "
@@ -1804,10 +1957,16 @@ class Character:
             if raw:
                 try:
                     dt = clock.parse_ts(raw)
-                    when = f" ({dt.date().isoformat()}, {clock.relative(dt, ref)})"
+                    when = f" ({dt.date().isoformat()} {_WEEKDAYS[dt.weekday()]}, {clock.relative(dt, ref)})"
                 except ValueError:
                     when = ""
-            lines.append(f"- {tier_tag}{when}{cert_tag} {m['content'][:200]}")
+            content = m["content"]
+            user_id = (m.get("metadata") or {}).get("user_id")
+            if user_id and content.startswith("[User] "):
+                content = f"[User: {_safe_tag(user_id)}] " + content[len("[User] ") :]
+            if content_cap > 0:
+                content = content[:content_cap]
+            lines.append(f"- {tier_tag}{when}{cert_tag} {content}")
         return "\n".join(lines)
 
 

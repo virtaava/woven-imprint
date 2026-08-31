@@ -76,24 +76,24 @@ Measured with the local brain (Qwen3.5-35B-A3B-FP8, thinking off) as both the an
 
 ### `locomo:memory`
 
-- Run id: `locomo-mem-v2d` | Timestamp: 2026-08-30T07:31:23.833365+00:00
+- Run id: `locomo-mem-v3b` | Timestamp: 2026-08-31T00:30:46.485213+00:00
 - Judge version: 2
-- Overall J (categories 1-4 / non-abstain): 53.6% (n=1986)
-- Mean token-F1: 0.286
-- Adversarial accuracy (category 5): 84.1%
+- Overall J (categories 1-4 / non-abstain): 56.2% (n=1986)
+- Mean token-F1: 0.309
+- Adversarial accuracy (category 5): 89.9%
 - Abstain accuracy (`_abs`): n/a
-- Mean prompt tokens (est.): 1106
+- Mean prompt tokens (est.): 1199
 
 | category | n | J | token-F1 |
 |---|---|---|---|
-| 1 | 282 | 35.5% | 0.228 |
-| 2 | 321 | 50.2% | 0.186 |
-| 3 | 96 | 21.9% | 0.098 |
-| 4 | 841 | 64.7% | 0.366 |
+| 1 | 282 | 30.5% | 0.204 |
+| 2 | 321 | 51.1% | 0.197 |
+| 3 | 96 | 20.8% | 0.109 |
+| 4 | 841 | 70.9% | 0.409 |
 
 | category (abstention rule) | n | accuracy |
 |---|---|---|
-| 5 | 446 | 84.1% |
+| 5 | 446 | 89.9% |
 
 ### `locomo_plus:fullcontext`
 
@@ -123,48 +123,48 @@ Measured with the local brain (Qwen3.5-35B-A3B-FP8, thinking off) as both the an
 
 ### `locomo_plus:memory`
 
-- Run id: `plus-mem-v2d` | Timestamp: 2026-08-30T08:54:02.790480+00:00
-- Cognitive accuracy overall: 42.1% (n=401)
-- Mean prompt tokens (est.): 1163
+- Run id: `plus-mem-v3b` | Timestamp: 2026-08-31T13:03:22.977525+00:00
+- Cognitive accuracy overall: 26.9% (n=401)
+- Mean prompt tokens (est.): 1186
 
 | relation_type | n | cognitive accuracy |
 |---|---|---|
-| causal | 101 | 49.5% |
-| goal | 100 | 34.0% |
-| state | 100 | 41.0% |
-| value | 100 | 44.0% |
+| causal | 101 | 35.6% |
+| goal | 100 | 18.0% |
+| state | 100 | 30.0% |
+| value | 100 | 24.0% |
 
 | time_gap (top buckets) | n | cognitive accuracy |
 |---|---|---|
-| two months later | 59 | 39.0% |
-| three months later | 56 | 37.5% |
-| one month later | 44 | 40.9% |
-| six months later | 33 | 36.4% |
-| four months later | 26 | 42.3% |
-| six weeks later | 25 | 40.0% |
+| two months later | 59 | 15.3% |
+| three months later | 56 | 21.4% |
+| one month later | 44 | 27.3% |
+| six months later | 33 | 15.2% |
+| four months later | 26 | 15.4% |
+| six weeks later | 25 | 20.0% |
 | one week later | 13 | 53.8% |
-| about one month later | 11 | 72.7% |
-| several months later | 11 | 63.6% |
+| about one month later | 11 | 45.5% |
+| several months later | 11 | 72.7% |
 | two weeks later | 10 | 20.0% |
 
 ### `longmemeval_s:memory`
 
-- Run id: `lme-s-50-v1` | Timestamp: 2026-08-29T08:55:04.083758+00:00
+- Run id: `lme-s-50-v3b` | Timestamp: 2026-08-31T13:03:24.113200+00:00
 - Judge version: 2
-- Overall J (categories 1-4 / non-abstain): 39.6% (n=50)
-- Mean token-F1: 0.242
+- Overall J (categories 1-4 / non-abstain): 54.2% (n=50)
+- Mean token-F1: 0.223
 - Adversarial accuracy (category 5): n/a
 - Abstain accuracy (`_abs`): 100.0%
-- Mean prompt tokens (est.): 1211
+- Mean prompt tokens (est.): 2538
 
 | category | n | J | token-F1 |
 |---|---|---|---|
-| knowledge-update | 8 | 75.0% | 0.303 |
-| multi-session | 9 | 11.1% | 0.044 |
-| single-session-assistant | 8 | 37.5% | 0.184 |
-| single-session-preference | 8 | 0.0% | 0.096 |
-| single-session-user | 7 | 85.7% | 0.690 |
-| temporal-reasoning | 8 | 37.5% | 0.216 |
+| knowledge-update | 8 | 87.5% | 0.256 |
+| multi-session | 9 | 22.2% | 0.036 |
+| single-session-assistant | 8 | 50.0% | 0.224 |
+| single-session-preference | 8 | 25.0% | 0.087 |
+| single-session-user | 7 | 100.0% | 0.587 |
+| temporal-reasoning | 8 | 50.0% | 0.213 |
 
 | category (abstention rule) | n | accuracy |
 |---|---|---|

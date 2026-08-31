@@ -6,6 +6,7 @@ import json
 import sqlite3
 import struct
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -389,6 +390,43 @@ class SQLiteStorage:
             rows = self._conn.execute(q, params).fetchall()
             return [self._row_to_memory(r) for r in rows]
 
+    def iter_memory_rows_for_reembed(
+        self, character_id: str, page: int = 500
+    ) -> Iterator[list[dict]]:
+        """Yield pages of up to `page` active memory rows for `character_id`,
+        each row a plain dict with only `id`/`content`/`role`/`created_at`/
+        `metadata` — the `embedding` column is never selected, so no vector
+        is ever materialized by this path.
+
+        Used by `MemoryStore.reembed()` to stream a full history without
+        loading every row (embeddings included) into memory at once, the way
+        `get_memories(..., limit=None)` does. Paged by rowid — keyset
+        pagination (`WHERE rowid > <last id seen>`), not `OFFSET` — so a
+        page's cost doesn't grow with how far into the table it is.
+        """
+        last_rowid = 0
+        while True:
+            with self._lock:
+                rows = self._conn.execute(
+                    """SELECT rowid, id, content, role, created_at, metadata FROM memories
+                       WHERE character_id = ? AND status = 'active' AND rowid > ?
+                       ORDER BY rowid ASC LIMIT ?""",
+                    (character_id, last_rowid, page),
+                ).fetchall()
+            if not rows:
+                return
+            last_rowid = rows[-1]["rowid"]
+            yield [
+                {
+                    "id": r["id"],
+                    "content": r["content"],
+                    "role": r["role"],
+                    "created_at": r["created_at"],
+                    "metadata": json.loads(r["metadata"] or "{}"),
+                }
+                for r in rows
+            ]
+
     def get_memory(self, memory_id: str) -> dict | None:
         with self._lock:
             row = self._conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
@@ -450,6 +488,12 @@ class SQLiteStorage:
                 raise ValueError("content changes require a new embedding")
             sets += ["content = ?", "embedding = ?"]
             params += [content, _serialize_embedding(embedding)]
+        elif embedding is not None:
+            # Embedding-only update (no content change) — e.g. MemoryStore.reembed()
+            # recomputing a vector from the current embed-text builder without
+            # touching the stored content.
+            sets.append("embedding = ?")
+            params.append(_serialize_embedding(embedding))
         if importance is not None:
             sets.append("importance = ?")
             params.append(max(0.0, min(1.0, float(importance))))
@@ -529,6 +573,22 @@ class SQLiteStorage:
             self._conn.executemany(
                 "UPDATE memories SET accessed_at = ? WHERE id = ?",
                 [(stamp, mid) for mid in memory_ids],
+            )
+            self._commit()
+
+    def update_memory_embeddings_batch(self, pairs: list[tuple[str, list[float]]]) -> None:
+        """Update just the `embedding` column for multiple memories in one transaction.
+
+        Trivial batch variant of `update_memory_fields(id, embedding=...)` for
+        `MemoryStore.reembed()` — one `executemany` per chunk instead of one
+        UPDATE per row. `pairs` is `[(memory_id, embedding_vector), ...]`.
+        """
+        if not pairs:
+            return
+        with self._lock:
+            self._conn.executemany(
+                "UPDATE memories SET embedding = ? WHERE id = ?",
+                [(_serialize_embedding(vec), mid) for mid, vec in pairs],
             )
             self._commit()
 
@@ -744,6 +804,20 @@ class SQLiteStorage:
         with self._lock:
             return self._conn.execute(q, (character_id,)).fetchone()[0]
 
+    def count_active_facts_for_memory(self, memory_id: str) -> int:
+        """Count facts still referencing `memory_id` that are active — `valid_to
+        IS NULL` and not `metadata.retracted` — used to guard against archiving
+        a memory shared by more than one fact (semantic dedup can link two
+        facts to the same row) when only one of them is being retracted."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM facts WHERE memory_id = ? AND valid_to IS NULL "
+                "AND (json_extract(metadata, '$.retracted') IS NULL "
+                "OR json_extract(metadata, '$.retracted') = 0)",
+                (memory_id,),
+            ).fetchone()
+        return row[0]
+
     def update_fact_fields(
         self,
         fact_id: str,
@@ -753,7 +827,12 @@ class SQLiteStorage:
         certainty: float | None = None,
         importance: float | None = None,
         metadata: dict | None = None,
+        memory_id: str | None = None,
     ) -> None:
+        """`memory_id` re-links the fact to a different memory row — used by
+        `FactStore.edit()`'s shared-row guard, which relinks an edited fact to a
+        freshly created memory instead of rewriting a row still referenced by
+        another active fact."""
         sets: list[str] = []
         params: list[Any] = []
         if object is not None:
@@ -771,6 +850,9 @@ class SQLiteStorage:
         if metadata is not None:
             sets.append("metadata = ?")
             params.append(json.dumps(metadata))
+        if memory_id is not None:
+            sets.append("memory_id = ?")
+            params.append(memory_id)
         if not sets:
             return
         params.append(fact_id)

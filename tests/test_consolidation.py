@@ -219,7 +219,11 @@ def test_consolidate_dimension_mismatch_raises_and_writes_nothing(consolidation_
         char.memory.add(f"the lake was calm on day {i}", tier="buffer")
     # DB now has embedding_dimensions=50 on file (from helpers.FakeEmbedder via memory.add).
     assert engine.storage.meta_get("embedding_dimensions") == "50"
-
+    # `Character` does NOT wire `embed_fn` for consolidation by default (see
+    # the deviation note next to `self.consolidator = ConsolidationEngine(...)`
+    # in character.py and CHANGELOG "Deviations") — this exercises that raw,
+    # dimension-guarded fallback path.
+    assert char.consolidator.embed_fn is None
     char.consolidator.embedder = _MismatchedEmbedder()
 
     with pytest.raises(ValueError, match="[Ee]mbedding dimension mismatch"):
@@ -252,6 +256,27 @@ def test_maintenance_job_consolidate_reports_failure_on_dimension_mismatch(conso
     for m in core:
         if m.get("embedding"):
             assert len(m["embedding"]) == 50
+
+
+def test_consolidate_dimension_mismatch_via_embed_fn_also_raises(consolidation_setup):
+    """`ConsolidationEngine` supports an injected `embed_fn` (see
+    tests/test_embed_for.py) even though `Character` doesn't wire it by
+    default — its dimension guard (via `embed_for`) must fire the same way
+    the raw fallback's does when the *store's* embedder gets swapped."""
+    from woven_imprint.memory.consolidation import ConsolidationEngine
+
+    engine, char = consolidation_setup
+    for i in range(15):
+        char.memory.add(f"the lake was calm on day {i}", tier="buffer")
+    assert engine.storage.meta_get("embedding_dimensions") == "50"
+    char.consolidator = ConsolidationEngine(
+        char.storage, char.llm, char.memory.embedder, char.id, embed_fn=char.memory.embed_for
+    )
+
+    char.memory.embedder = _MismatchedEmbedder()
+
+    with pytest.raises(ValueError, match="[Ee]mbedding dimension mismatch"):
+        char.consolidator.consolidate()
 
 
 class _EmptySummaryLLM(FakeLLM):

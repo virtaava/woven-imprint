@@ -7,6 +7,228 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (behavior) — Tier 3d (rendering: content cap, user identity, weekday)
+- **Per-memory content cap raised 200 → 800 chars** (`context.memory_content_max_chars`,
+  `0` = unlimited) in `Character._format_memories`. The LoCoMo abstention analysis
+  (`eval/external/runs/diagnostics/abstain/locomo-mem-v2d/recommendation.md`,
+  2026-08-30) found 133/251 WRONG-but-evidence-in-block cases had at least one
+  evidence memory cut by the old hard-coded 200-char slice, 23 of them with the
+  gold answer's own words falling after the cut. Behavior: prompts now carry
+  longer memory lines by default — up to 800 chars each — within the existing
+  shared `context.total_tokens` prompt budget (`memory_tokens` is not enforced yet — follow-up).
+- **User-turn memories carry `metadata.user_id`** when `user_id` is passed to
+  `chat()`/`chat_stream()`/`ingest()`/`ingest_exchange()`; `_format_memories`
+  renders the leading tag as `[User: <user_id>]` instead of the anonymous
+  `[User]` when known. Stored `content` is unchanged (still `"[User] ..."`) —
+  no migration — so memories written before this change (and calls made
+  without a `user_id`) keep rendering as the plain `[User]` tag.
+- **Weekday added to the rendered date prefix**: `(2023-05-08, 3 months ago)`
+  → `(2023-05-08 Mon, 3 months ago)`.
+
+### Changed (behavior) — Tier 3d (embedding context + reembed)
+- **All memories are embedded with date+speaker context** (`memory.embedding_context`,
+  default `true`): a memory's *vector* is now computed from
+  `MemoryStore.build_embed_text(...)` instead of raw `content` — e.g.
+  `"[2023-05-08] User: caroline: I adopted a cat"` (user row with a known
+  `user_id`), `"[2023-05-08] User: I adopted a cat"` (user row, no `user_id`),
+  `"[2023-05-08] Ada: Hey Caroline!"` (character row), or `"[2023-05-08]
+  Caroline has a cat named Max."` (everything else — facts, summaries,
+  reflections, consolidations, events — content unchanged, date-prefixed
+  only). Stored `content` is never touched — this is embedding-only. Ported
+  from the offline ranking experiment's winning template
+  (`eval/external/runs/diagnostics/ranking/ranking_experiments_report.md`
+  section (c)), with two fixes flagged there as worth doing before shipping:
+  the pre-existing `"[User] "`/`"[<name>] "` bracket tag is stripped before
+  the speaker is injected (that template embedded the speaker name twice),
+  and no nomic `search_document:`/`search_query:` prefix is added (prefixes
+  measured harmful on raw content in the same sweep). Set `embedding_context:
+  false` to restore the exact pre-Tier-3d behavior.
+  **Behavior change for existing databases**: memories written before this
+  change (or before a future re-run of `reembed`) keep their old raw-content
+  vector — a DB ends up with a mix of old and new vectors until re-embedded,
+  which still retrieves, just less consistently. Run `woven-imprint reembed
+  <character_id> [--batch N]` (or the maintenance job below) to bring every
+  active memory's vector in line with the current builder.
+- **`MemoryStore.reembed(batch_size=64) -> int`**: recomputes every active
+  memory's vector with the current embed-text builder, via `embed_batch` on
+  the store's own embedder (so a `CachedEmbedder` wrapper still dedupes
+  identical embed texts across the run). Idempotent — a second call
+  recomputes the same vectors from the same stored content/config. Only the
+  `embedding` column changes; `content`/`metadata`/tier are untouched.
+- **`reembed` maintenance job** (opt-in — **not** in `MaintenanceRunner.DEFAULT_JOBS`):
+  runs `MemoryStore.reembed()` for a character, reported as
+  `{"reembedded": <count>}`. Re-embedding a whole history is a one-off
+  migration (after flipping `embedding_context`, changing the embedder, or
+  upgrading a database), not a nightly task, and it makes no LLM calls, so it
+  doesn't compete with the maintenance budget. Run it via `jobs=["reembed"]`.
+- **`woven-imprint reembed <character_id> [--batch N]` CLI command**: prints
+  the count of memories re-embedded.
+- **Retrieval RRF defaults tuned for contextualized docs**: `rrf_k` `60` →
+  `120`, `weight_keyword` `1.0` → `2.0`. Offline LoCoMo ranking experiments on
+  contextualized docs (`ranking_experiments_report.md` section (b),
+  2026-08-30) found `rrf_k=120` the best cell (recall@20 51.9% vs 49.4% at
+  `60`), and the keyword-weight sweep at that cell found `weight_keyword=2.0`
+  → evidence recall@20 54.7% vs the pre-Tier-3d raw-content baseline (`rrf_k`
+  `60`, `weight_keyword` `1.0`) at 50.8% — a trade-off, not a strict
+  improvement: recall@50 dips slightly (63.6% vs 65.1%) at `weight_keyword=2.0`.
+  **Validated live**: `locomo-mem-v3r` (answer-only revert of both params on `v3`'s DBs) scored
+  0.531 vs. `v3`'s 0.527 on the same DBs — reverting doesn't help, so both are kept at their new
+  values (see `docs/BENCHMARKS.md` Tier 3d part (a)).
+
+### Changed (behavior) — Tier 3d (fact dedup)
+- **Semantic dedup of fact-derived core memories** (`memory.fact_dedup_similarity`,
+  default `0.92`, `0` = off): `MemoryStore.add(..., dedup_similarity=..., dedup_scope="core")`
+  compares a fact-derived core insert's embedding (already computed — no second
+  embedding call) against active core rows (FTS hits for the statement, limit
+  50, unioned with the newest 500 active core rows; cosine via the same numpy
+  fast path retrieval uses). At or above the threshold, no new row is
+  inserted — the best-matching existing row is reinforced instead
+  (`importance` bumped `+0.05` capped at `1.0`, `metadata.dup_count`
+  incremented, `metadata.last_confirmed` stamped) and returned; every call
+  returns a memory dict with a transient `deduped: bool` key so callers can
+  tell which happened. Wired into both fact insertion paths in
+  `character.py` (`_store_facts`'s unstructured branch, `_store_structured_fact`'s
+  new-fact branch) — a deduped structured fact's `facts` table row is still
+  written (its own `(subject, predicate)` supersession logic is unchanged),
+  with `memory_id` pointing at the existing memory instead of a new one.
+  `Character.health()` now reports `dedup_skipped` (count of fact inserts
+  that deduped this session). Evidence: Tier 3c diagnostics found
+  near-duplicate extracted facts dominating the top-20 (17.7/20 average) and
+  78/491 active core rows in one LoCoMo conversation falling into
+  6-word-prefix paraphrase groups (e.g. "considering a career in counseling
+  and mental health" vs "...or mental health work"). Dedup never applies to
+  buffer/bedrock tiers. **Validated live and reverted to off by default** — see
+  "Changed (defaults, measured) — Tier 3d (fact dedup default flip)" below: even the
+  entity-delta-guarded version costs LoCoMo recall via multi-hop questions.
+
+### Fixed — Tier 3d (fact dedup follow-ups, T3 review)
+- Retracting one of several facts that share a deduped memory no longer
+  archives the shared memory. `FactStore.retract()` now archives the linked
+  memory only when `SQLiteStorage.count_active_facts_for_memory(memory_id)`
+  (new helper) is `0` — i.e. no other active, non-retracted fact still
+  references it. Semantic dedup can link more than one structured fact to the
+  same core memory row (see above); retracting one of them used to pull the
+  memory out from under the others.
+- `_store_structured_fact` no longer lets a new fact's dedup match land on
+  the very memory (subject, predicate) supersession is about to mark
+  `contradicted`: when `MemoryStore.add`'s dedup match is `old["memory_id"]`,
+  it re-adds with `dedup_similarity=0` to force a fresh memory row instead of
+  reinforcing the soon-to-be-superseded one, so the new fact never ends up
+  pointing at a contradicted memory.
+
+### Fixed — Tier 3d (final code review fix wave)
+- **Entity-delta dedup guard**: `MemoryStore.add(..., dedup_require_tokens=...)`
+  — a new optional param on the existing `dedup_similarity`/`dedup_scope`
+  semantic-dedup path (see "fact dedup" above). When given, `_find_dedup_match`
+  drops any candidate whose stored `content` is missing so much as one of
+  these tokens (case-insensitive substring match), *before* the cosine
+  comparison — regardless of how high that candidate's similarity scores.
+  `_store_structured_fact` passes the incoming fact's `object` tokens (its
+  words, lowercased, length >= 2): a bag-of-words (or boilerplate-heavy)
+  embedding can score two updates to the same `(subject, predicate)` with a
+  genuinely different `object` as a near-identical — even exact 1.0 — cosine
+  match when most of the sentence is shared preamble and the differing word
+  falls outside a fixed-window embedder's counted prefix; without this guard
+  that shape of update silently deduped into the old row (reinforcing it)
+  instead of being recorded as a new fact. Restating the *same* object is
+  unaffected — its own token is present in the candidate, so the guard lets
+  the legitimate dedup through. Unstructured fact dedup (`_store_facts`'s
+  plain-string branch) is unchanged (no `object` to derive tokens from).
+- **`_build_context` shedding order + progressive halving**: the sheddable
+  block order now matches the method's own docstring —
+  facts → memories → emotion → arc → relationship — instead of
+  emotion/arc/relationship being appended ahead of facts/memories, so a tight
+  budget spends what's left on retrieved content first. The single
+  once-only "halve the memory list, try again" fallback is now a loop:
+  halves the sheddable memories list repeatedly until the rendered block
+  fits the remaining budget or exactly one memory is left to try (previously
+  a list that still didn't fit after one halving was dropped entirely rather
+  than shrunk further). Long-horizon bench (`eval/bench_longhorizon.py`)
+  re-verified 12/12 after this change.
+- **`MemoryStore.embed_for(content, role, created_at, metadata) -> list[float]`**:
+  wraps `_embed_text_for` (the same contextualization `add()`/`reembed()` use)
+  + the store's embedder + `guard_embedding_dimension`, as the one seam every
+  memory-writing subsystem that persists a vector outside `add()`/`edit()`
+  itself should go through. Wired into `BeliefReviser.contradict()` and
+  `GrowthEngine.apply_growth()` (both previously embedded raw content with
+  **no** dimension guard at all — a swapped embedder could silently write a
+  mixed-dimension vector via either path) and `FactStore.edit()` (previously
+  embedded raw `statement` text, guarded, when an `embedder` was passed —
+  now prefers an injected `embed_fn`, typically `char.memory.embed_for`,
+  falling back to the raw+guarded path when absent, documented on
+  `FactStore.__init__`). `ConsolidationEngine` also gained `embed_fn` support
+  and its own tests, but `Character` does **not** wire it up by default — see
+  "Deviations" below.
+- **Streaming `reembed`**: `SQLiteStorage.iter_memory_rows_for_reembed(character_id,
+  page=500)` yields pages of active memory rows (`id`/`content`/`role`/
+  `created_at`/`metadata` only — the `embedding` column is never selected),
+  paged by rowid (keyset, not `OFFSET`). `MemoryStore.reembed()` now streams
+  these pages instead of loading every active row — vectors included — via
+  `get_memories(..., limit=None)` up front, so re-embedding a history far
+  larger than fits comfortably in memory no longer needs to. Each page is
+  still embedded in one `embed_batch` call (batch size ties to `page`), and
+  `reembed()` now asserts the returned vector count matches the page size.
+- **Shared-row guards, part 2**: `_store_structured_fact`'s supersession only
+  marks the old fact's linked memory `contradicted` when
+  `count_active_facts_for_memory(old_memory_id)` is `0` **after** the old
+  fact is expired — if semantic dedup has linked another still-active fact to
+  that same memory row, it's left `active` instead of being pulled out from
+  under that sibling fact (mirrors the `FactStore.retract()` guard already
+  shipped). `FactStore.edit()`: a content change on a memory referenced by
+  more than one active fact no longer rewrites that shared row — it creates
+  a fresh memory carrying the edited fact's new content (copying the old
+  row's tier/role/session/importance/certainty) and relinks the edited fact
+  to it, leaving the shared row exactly as the other fact(s) still need it.
+- **`_safe_tag` NFKC-normalizes** its input before filtering brackets/control
+  characters — a fullwidth bracket (`［`/`］`) NFKC-decomposes to ASCII
+  `[`/`]` and was previously let through as "printable, not literally `[` or
+  `]`," reopening the identity-tag-forging hole the bracket filter exists to
+  close.
+
+**Deviations**: `ConsolidationEngine.embed_fn` (above) is implemented and unit-
+tested, but `Character.__init__` does not wire it to `char.memory.embed_for`
+the way it does for `FactStore`/`BeliefReviser`/`GrowthEngine`. Wiring it
+measurably regressed two `eval/bench_longhorizon.py` checks
+(`contradiction_supersession`, `relevance_gate_global_rank`, 12/12 → 10/12,
+root-caused but not fixed): a consolidated summary's `created_at` is
+backdated to its cluster's latest source memory, which can land on the exact
+same timestamp as an unrelated core memory; `get_memories`' `ORDER BY
+created_at DESC, rowid DESC` then breaks that tie by insertion order, and
+contextualizing the summary's embedding text shifts *which day* a given
+cluster gets summarized on (via its interaction with per-run LLM-call
+budget sharing across maintenance jobs) without changing final cluster
+membership or row counts — which shifts that tie-breaking rowid. Left on the
+pre-fix-wave raw (still dimension-guarded) embed path pending a fix to the
+benchmark's timestamp-tie sensitivity itself.
+
+### Changed (defaults, measured) — Tier 3d (fact dedup default flip)
+- **`memory.fact_dedup_similarity` default `0.92` → `0.0` (opt-in)**. Attribution on identical
+  LoCoMo attribution DBs: dedup OFF (`locomo-mem-v3b`) J **0.562** vs. guarded dedup
+  (`locomo-mem-v3c`, entity-delta guard applied) **0.544** vs. unguarded dedup
+  (`locomo-mem-v3`) **0.527** — even the guarded version of dedup costs recall by merging
+  near-duplicate facts that a multi-hop question needs kept distinct. The feature (entity-delta
+  guard included) is fully implemented and tested; it remains available, opt-in, for deployments
+  that value memory compactness over recall. See `docs/BENCHMARKS.md`
+  (Tier 3d, part (a)) for the full attribution table.
+
+### Results — Tier 3d (2026-08-30/31)
+- **LoCoMo memory-mode J 0.536 → 0.562** (`locomo-mem-v2d` → `locomo-mem-v3b`, shipped
+  defaults: `embedding_context=true`, `rrf_k=120`/`weight_keyword=2.0`,
+  `memory_content_max_chars=800`, user identity tag + weekday, `fact_dedup_similarity=0.0`);
+  full-context baseline unchanged at 0.696.
+- **LongMemEval-S (50-Q) J 0.396 → 0.542** (+14.6 points; first re-run since Tier 3b), same
+  shipped defaults, `lme-s-50-v3b`.
+- **LoCoMo-Plus cognitive J 0.421 → 0.269 — a regression**, decomposed across seven attribution
+  runs: vectors, ranking params, fact dedup, and the 800-char cap are each individually
+  exonerated (recovering none of the drop when reverted); the identity tag costs a real but
+  small ≈−2.7 points; the remaining ≈−0.08 to −0.10 real chat-path effect is attributed to the
+  weekday date prefix and/or `_build_context`'s section reorder, on top of ≈±4 points of
+  `char.chat()`'s own temperature-0.7 sampling noise. Shipped anyway (ruling: both QA benchmarks
+  win decisively); full decomposition table and ruling in `docs/BENCHMARKS.md` Tier 3d part (c).
+  Tier 3e's top follow-up is Plus chat-path recovery, fixed-temperature protocol first.
+- Diagnostics: evidence recall@20 49.6% → 65.3% (embedding context validated live); abstain-with-
+  evidence speaker-ambiguous cases 0 (identity tag validated live).
+
 ### Changed (behavior) — Tier 3c (recall: keep consolidated sources)
 - **Retrieval RRF defaults**: `weight_importance` `1.0` → `0.0`, `weight_recency`
   `1.0` → `0.1` (relevance-first ranking) — LoCoMo evidence recall@20 23.9% →

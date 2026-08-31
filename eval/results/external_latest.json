@@ -73,13 +73,13 @@
     "judge_versions": "2"
   },
   "locomo:memory": {
-    "run_id": "locomo-mem-v2d",
+    "run_id": "locomo-mem-v3b",
     "bench": "locomo",
     "mode": "memory",
     "model": "Qwen/Qwen3.5-35B-A3B-FP8",
     "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
     "embedding": "nomic-embed-text",
-    "timestamp": "2026-08-30T07:31:23.833365+00:00",
+    "timestamp": "2026-08-31T00:30:46.485213+00:00",
     "config": {
       "k": 20,
       "fact_extraction_interval": 1,
@@ -98,55 +98,53 @@
       "max_questions": null,
       "shard": null,
       "overrides": [
-        "memory.weight_recency=0.1",
-        "memory.weight_importance=0.0",
-        "memory.weight_relationship=0.0"
+        "memory.fact_dedup_similarity=0"
       ]
     },
     "summary": {
       "n_questions": 1986,
-      "overall_j": 0.5363636363636364,
-      "overall_f1": 0.28630765754542303,
+      "overall_j": 0.5623376623376624,
+      "overall_f1": 0.30877892467075385,
       "per_category": {
         "2": {
           "n": 321,
-          "j": 0.5015576323987538,
-          "f1": 0.18560857650366044
+          "j": 0.5109034267912772,
+          "f1": 0.19691949062482308
         },
         "3": {
           "n": 96,
-          "j": 0.21875,
-          "f1": 0.09842882678921056
+          "j": 0.20833333333333334,
+          "f1": 0.10921532062642951
         },
         "1": {
           "n": 282,
-          "j": 0.3546099290780142,
-          "f1": 0.22786594703405336
+          "j": 0.3049645390070922,
+          "f1": 0.2038179127210262
         },
         "4": {
           "n": 841,
-          "j": 0.6468489892984542,
-          "f1": 0.36578605841487466
+          "j": 0.7086801426872771,
+          "f1": 0.40944954260990063
         }
       },
       "rule_scored": {
         "5": {
           "n": 446,
-          "accuracy": 0.8408071748878924
+          "accuracy": 0.899103139013453
         }
       },
-      "adversarial_accuracy": 0.8408071748878924,
+      "adversarial_accuracy": 0.899103139013453,
       "abstain_accuracy": null,
-      "mean_prompt_tokens_est": 1106.4315206445117,
-      "n_unparsed": 1
+      "mean_prompt_tokens_est": 1198.7573011077543,
+      "n_unparsed": 0
     },
     "ingest_totals": {
       "turns": 5882,
       "sessions": 272,
-      "llm_calls": 6434,
-      "seconds": 89518.81614425778
+      "llm_calls": 6265,
+      "seconds": 100131.85766953137
     },
-    "records_file": "external_locomo-mem-v2d.json",
+    "records_file": "external_locomo-mem-v3b.json",
     "n_conversations": 1986,
     "judge_versions": "2"
   },
@@ -400,22 +398,18 @@
     "judge_versions": "2"
   },
   "locomo_plus:memory": {
-    "run_id": "plus-mem-v2d",
+    "run_id": "plus-mem-v3b",
     "bench": "locomo_plus",
     "mode": "memory",
     "model": "Qwen/Qwen3.5-35B-A3B-FP8",
     "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
     "embedding": "nomic-embed-text",
-    "timestamp": "2026-08-30T08:54:02.790480+00:00",
+    "timestamp": "2026-08-31T13:03:22.977525+00:00",
     "config": {
       "limit_conversations": null,
       "shard": null,
-      "overrides": [
-        "memory.weight_recency=0.1",
-        "memory.weight_importance=0.0",
-        "memory.weight_relationship=0.0"
-      ],
-      "reuse_run": "locomo-mem-v2d",
+      "overrides": [],
+      "reuse_run": "locomo-mem-v3b",
       "temperature": {
         "judge": 0.0,
         "fullcontext_response": 0.3
@@ -423,23 +417,23 @@
     },
     "summary": {
       "n_probes": 401,
-      "cognitive_accuracy": 0.42144638403990026,
+      "cognitive_accuracy": 0.26932668329177056,
       "per_relation_type": {
         "causal": {
           "n": 101,
-          "cognitive_accuracy": 0.49504950495049505
+          "cognitive_accuracy": 0.3564356435643564
         },
         "state": {
           "n": 100,
-          "cognitive_accuracy": 0.41
+          "cognitive_accuracy": 0.3
         },
         "goal": {
           "n": 100,
-          "cognitive_accuracy": 0.34
+          "cognitive_accuracy": 0.18
         },
         "value": {
           "n": 100,
-          "cognitive_accuracy": 0.44
+          "cognitive_accuracy": 0.24
         }
       },
       "per_time_gap": {
@@ -453,27 +447,27 @@
         },
         "about one month later": {
           "n": 11,
-          "cognitive_accuracy": 0.7272727272727273
+          "cognitive_accuracy": 0.45454545454545453
         },
         "about five months later": {
           "n": 3,
-          "cognitive_accuracy": 0.3333333333333333
+          "cognitive_accuracy": 0.6666666666666666
         },
         "about six months later": {
           "n": 3,
-          "cognitive_accuracy": 0.6666666666666666
+          "cognitive_accuracy": 0.3333333333333333
         },
         "about one week later": {
           "n": 4,
-          "cognitive_accuracy": 0.75
+          "cognitive_accuracy": 1.0
         },
         "two months later": {
           "n": 59,
-          "cognitive_accuracy": 0.3898305084745763
+          "cognitive_accuracy": 0.15254237288135594
         },
         "six months later": {
           "n": 33,
-          "cognitive_accuracy": 0.36363636363636365
+          "cognitive_accuracy": 0.15151515151515152
         },
         "around seven months later": {
           "n": 1,
@@ -481,31 +475,31 @@
         },
         "one month later": {
           "n": 44,
-          "cognitive_accuracy": 0.4090909090909091
+          "cognitive_accuracy": 0.2727272727272727
         },
         "six weeks later": {
           "n": 25,
-          "cognitive_accuracy": 0.4
+          "cognitive_accuracy": 0.2
         },
         "three months later": {
           "n": 56,
-          "cognitive_accuracy": 0.375
+          "cognitive_accuracy": 0.21428571428571427
         },
         "around four months later": {
           "n": 3,
-          "cognitive_accuracy": 0.0
+          "cognitive_accuracy": 0.3333333333333333
         },
         "four months later": {
           "n": 26,
-          "cognitive_accuracy": 0.4230769230769231
+          "cognitive_accuracy": 0.15384615384615385
         },
         "three weeks later": {
           "n": 10,
-          "cognitive_accuracy": 0.5
+          "cognitive_accuracy": 0.3
         },
         "nine months later": {
           "n": 6,
-          "cognitive_accuracy": 0.3333333333333333
+          "cognitive_accuracy": 0.16666666666666666
         },
         "eight months later": {
           "n": 6,
@@ -513,23 +507,23 @@
         },
         "five months later": {
           "n": 7,
-          "cognitive_accuracy": 0.2857142857142857
+          "cognitive_accuracy": 0.14285714285714285
         },
         "around six weeks later": {
           "n": 4,
-          "cognitive_accuracy": 0.75
+          "cognitive_accuracy": 1.0
         },
         "about three weeks later": {
           "n": 9,
-          "cognitive_accuracy": 0.5555555555555556
+          "cognitive_accuracy": 0.6666666666666666
         },
         "several months later": {
           "n": 11,
-          "cognitive_accuracy": 0.6363636363636364
+          "cognitive_accuracy": 0.7272727272727273
         },
         "one year later": {
           "n": 5,
-          "cognitive_accuracy": 0.2
+          "cognitive_accuracy": 0.4
         },
         "about seven months later": {
           "n": 1,
@@ -537,19 +531,19 @@
         },
         "about three months later": {
           "n": 5,
-          "cognitive_accuracy": 0.6
+          "cognitive_accuracy": 0.0
         },
         "around eight months later": {
           "n": 1,
-          "cognitive_accuracy": 1.0
+          "cognitive_accuracy": 0.0
         },
         "about six weeks later": {
           "n": 7,
-          "cognitive_accuracy": 0.42857142857142855
+          "cognitive_accuracy": 0.2857142857142857
         },
         "about two weeks later": {
           "n": 3,
-          "cognitive_accuracy": 0.6666666666666666
+          "cognitive_accuracy": 0.3333333333333333
         },
         "seven months later": {
           "n": 4,
@@ -561,11 +555,11 @@
         },
         "around five months later": {
           "n": 1,
-          "cognitive_accuracy": 0.0
+          "cognitive_accuracy": 1.0
         },
         "around six months later": {
           "n": 5,
-          "cognitive_accuracy": 0.6
+          "cognitive_accuracy": 0.2
         },
         "about eight months later": {
           "n": 3,
@@ -577,11 +571,11 @@
         },
         "about eight weeks later": {
           "n": 1,
-          "cognitive_accuracy": 1.0
+          "cognitive_accuracy": 0.0
         },
         "about two months later": {
           "n": 1,
-          "cognitive_accuracy": 1.0
+          "cognitive_accuracy": 0.0
         },
         "about four months later": {
           "n": 1,
@@ -589,7 +583,7 @@
         },
         "a year after": {
           "n": 2,
-          "cognitive_accuracy": 0.0
+          "cognitive_accuracy": 0.5
         },
         "roughly three months later": {
           "n": 1,
@@ -617,7 +611,7 @@
         },
         "around one week after the birth": {
           "n": 1,
-          "cognitive_accuracy": 1.0
+          "cognitive_accuracy": 0.0
         },
         "a couple of months later": {
           "n": 1,
@@ -633,34 +627,34 @@
         },
         "a few weeks later": {
           "n": 1,
-          "cognitive_accuracy": 1.0
+          "cognitive_accuracy": 0.0
         },
         "around three months later": {
           "n": 2,
-          "cognitive_accuracy": 0.5
+          "cognitive_accuracy": 0.0
         },
         "around three weeks later": {
           "n": 1,
-          "cognitive_accuracy": 1.0
+          "cognitive_accuracy": 0.0
         }
       },
-      "mean_prompt_tokens_est": 1162.9551122194514,
-      "mean_seconds": 56.756655970819416,
+      "mean_prompt_tokens_est": 1185.6658354114713,
+      "mean_seconds": 124.59199066780987,
       "mean_llm_calls": 5.324189526184538,
-      "n_unparsed": 1
+      "n_unparsed": 0
     },
-    "records_file": "external_plus-mem-v2d.json",
+    "records_file": "external_plus-mem-v3b.json",
     "n_probes": 401,
     "judge_versions": "2"
   },
   "longmemeval_s:memory": {
-    "run_id": "lme-s-50-v1",
+    "run_id": "lme-s-50-v3b",
     "bench": "longmemeval_s",
     "mode": "memory",
     "model": "Qwen/Qwen3.5-35B-A3B-FP8",
     "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
     "embedding": "nomic-embed-text",
-    "timestamp": "2026-08-29T08:55:04.083758+00:00",
+    "timestamp": "2026-08-31T13:03:24.113200+00:00",
     "config": {
       "k": 20,
       "fact_extraction_interval": 1,
@@ -677,42 +671,43 @@
       "seed": 7,
       "max_sessions": null,
       "max_questions": null,
-      "shard": null
+      "shard": null,
+      "overrides": []
     },
     "summary": {
       "n_questions": 50,
-      "overall_j": 0.3958333333333333,
-      "overall_f1": 0.24223470889522233,
+      "overall_j": 0.5416666666666666,
+      "overall_f1": 0.22260142659332502,
       "per_category": {
         "multi-session": {
           "n": 9,
-          "j": 0.1111111111111111,
-          "f1": 0.044444444444444446
+          "j": 0.2222222222222222,
+          "f1": 0.03607503607503607
         },
         "single-session-assistant": {
           "n": 8,
-          "j": 0.375,
-          "f1": 0.1842948717948718
+          "j": 0.5,
+          "f1": 0.22443667443667445
         },
         "single-session-preference": {
           "n": 8,
-          "j": 0.0,
-          "f1": 0.09635905257213309
+          "j": 0.25,
+          "f1": 0.0869042818115546
         },
         "single-session-user": {
           "n": 7,
-          "j": 0.8571428571428571,
-          "f1": 0.6904761904761905
+          "j": 1.0,
+          "f1": 0.5873015873015872
         },
         "temporal-reasoning": {
           "n": 8,
-          "j": 0.375,
-          "f1": 0.21590909090909088
+          "j": 0.5,
+          "f1": 0.21343607373019138
         },
         "knowledge-update": {
           "n": 8,
-          "j": 0.75,
-          "f1": 0.3026785714285714
+          "j": 0.875,
+          "f1": 0.2563582251082251
         }
       },
       "rule_scored": {
@@ -727,16 +722,16 @@
       },
       "adversarial_accuracy": null,
       "abstain_accuracy": 1.0,
-      "mean_prompt_tokens_est": 1211.34,
+      "mean_prompt_tokens_est": 2538.08,
       "n_unparsed": 0
     },
     "ingest_totals": {
       "turns": 24639,
       "sessions": 2380,
-      "llm_calls": 19506,
-      "seconds": 517360.7949899682
+      "llm_calls": 17021,
+      "seconds": 426536.76139363647
     },
-    "records_file": "external_lme-s-50-v1.json",
+    "records_file": "external_lme-s-50-v3b.json",
     "n_conversations": 50,
     "judge_versions": "2"
   }

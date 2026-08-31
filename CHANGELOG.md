@@ -71,8 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   → evidence recall@20 54.7% vs the pre-Tier-3d raw-content baseline (`rrf_k`
   `60`, `weight_keyword` `1.0`) at 50.8% — a trade-off, not a strict
   improvement: recall@50 dips slightly (63.6% vs 65.1%) at `weight_keyword=2.0`.
-  To be validated live by the Tier 3d v3 benchmark re-run; revert both if v3
-  contradicts.
+  **Validated live**: `locomo-mem-v3r` (answer-only revert of both params on `v3`'s DBs) scored
+  0.531 vs. `v3`'s 0.527 on the same DBs — reverting doesn't help, so both are kept at their new
+  values (see `docs/BENCHMARKS.md` Tier 3d part (a)).
 
 ### Changed (behavior) — Tier 3d (fact dedup)
 - **Semantic dedup of fact-derived core memories** (`memory.fact_dedup_similarity`,
@@ -96,8 +97,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   78/491 active core rows in one LoCoMo conversation falling into
   6-word-prefix paraphrase groups (e.g. "considering a career in counseling
   and mental health" vs "...or mental health work"). Dedup never applies to
-  buffer/bedrock tiers. To be validated live by the Tier 3d v3 benchmark
-  re-run.
+  buffer/bedrock tiers. **Validated live and reverted to off by default** — see
+  "Changed (defaults, measured) — Tier 3d (fact dedup default flip)" below: even the
+  entity-delta-guarded version costs LoCoMo recall via multi-hop questions.
 
 ### Fixed — Tier 3d (fact dedup follow-ups, T3 review)
 - Retracting one of several facts that share a deduped memory no longer
@@ -198,6 +200,34 @@ budget sharing across maintenance jobs) without changing final cluster
 membership or row counts — which shifts that tie-breaking rowid. Left on the
 pre-fix-wave raw (still dimension-guarded) embed path pending a fix to the
 benchmark's timestamp-tie sensitivity itself.
+
+### Changed (defaults, measured) — Tier 3d (fact dedup default flip)
+- **`memory.fact_dedup_similarity` default `0.92` → `0.0` (opt-in)**. Attribution on identical
+  LoCoMo attribution DBs: dedup OFF (`locomo-mem-v3b`) J **0.562** vs. guarded dedup
+  (`locomo-mem-v3c`, entity-delta guard applied) **0.544** vs. unguarded dedup
+  (`locomo-mem-v3`) **0.527** — even the guarded version of dedup costs recall by merging
+  near-duplicate facts that a multi-hop question needs kept distinct. The feature (entity-delta
+  guard included) is fully implemented and tested; it remains available, opt-in, for deployments
+  that value memory compactness over recall. See `docs/BENCHMARKS.md`
+  (Tier 3d, part (a)) for the full attribution table.
+
+### Results — Tier 3d (2026-08-30/31)
+- **LoCoMo memory-mode J 0.536 → 0.562** (`locomo-mem-v2d` → `locomo-mem-v3b`, shipped
+  defaults: `embedding_context=true`, `rrf_k=120`/`weight_keyword=2.0`,
+  `memory_content_max_chars=800`, user identity tag + weekday, `fact_dedup_similarity=0.0`);
+  full-context baseline unchanged at 0.696.
+- **LongMemEval-S (50-Q) J 0.396 → 0.542** (+14.6 points; first re-run since Tier 3b), same
+  shipped defaults, `lme-s-50-v3b`.
+- **LoCoMo-Plus cognitive J 0.421 → 0.269 — a regression**, decomposed across seven attribution
+  runs: vectors, ranking params, fact dedup, and the 800-char cap are each individually
+  exonerated (recovering none of the drop when reverted); the identity tag costs a real but
+  small ≈−2.7 points; the remaining ≈−0.08 to −0.10 real chat-path effect is attributed to the
+  weekday date prefix and/or `_build_context`'s section reorder, on top of ≈±4 points of
+  `char.chat()`'s own temperature-0.7 sampling noise. Shipped anyway (ruling: both QA benchmarks
+  win decisively); full decomposition table and ruling in `docs/BENCHMARKS.md` Tier 3d part (c).
+  Tier 3e's top follow-up is Plus chat-path recovery, fixed-temperature protocol first.
+- Diagnostics: evidence recall@20 49.6% → 65.3% (embedding context validated live); abstain-with-
+  evidence speaker-ambiguous cases 0 (identity tag validated live).
 
 ### Changed (behavior) — Tier 3c (recall: keep consolidated sources)
 - **Retrieval RRF defaults**: `weight_importance` `1.0` → `0.0`, `weight_recency`
@@ -987,4 +1017,3 @@ curl -b "woven_demo_auth=<token>" \
 - The fixes address the two critical memory‑side bugs identified in the review (empty‑query crash, personal‑memory ranking).
 
 — Sona (Hermes Agent), 2026‑03‑25
-- **Changed (defaults, measured):** `memory.fact_dedup_similarity` 0.92 → **0.0** (opt-in). Attribution on identical data: dedup OFF J 0.562 vs guarded dedup 0.544 vs unguarded 0.527 — even guarded dedup merges away multi-hop detail. The feature (entity-delta guard included) remains available for deployments that value memory compactness over recall.

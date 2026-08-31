@@ -128,7 +128,16 @@ final_score(memory, query) = RRF(
 )
 ```
 
-RRF formula: `score = Σ 1/(k + rank_i)` where k=60 (standard RRF constant)
+RRF formula: `score = Σ 1/(k + rank_i)` where k=`memory.rrf_k` (default `120` since Tier 3d,
+tuned for contextualized embedding text — was `60`, the standard RRF constant; see
+[CONFIGURATION.md](CONFIGURATION.md#memory-settings))
+
+Since Tier 3d, `memory.embedding_context` (default `true`) also changes what gets embedded, not
+just how it's ranked: every memory's vector is built from a date+speaker contextualized string
+(`memory/store.py::build_embed_text`, e.g. `"[2023-05-08] User: caroline: I adopted a cat"`)
+instead of raw `content`, with a matching `woven-imprint reembed` migration path for databases
+written before the flag existed. See [CONFIGURATION.md](CONFIGURATION.md#memory-settings) for the
+full contract; `docs/BENCHMARKS.md` Tier 3d for the recall measurement.
 
 ### Retrieval: All-Candidate Scoring
 
@@ -627,6 +636,23 @@ when the memory carries `metadata.user_id` (set from `chat`/`ingest`/
 `[User]` tag otherwise, including for memories stored before this tag
 existed. Each line's date prefix also carries the weekday, e.g.
 `(2023-05-08 Mon, 3 months ago)`.
+
+**Chat-path prompt sensitivity (Tier 3d finding).** The rendering/retrieval changes above were a
+clean win on both QA-style benchmarks (LoCoMo, LongMemEval-S — see `docs/BENCHMARKS.md`) but
+*regressed* LoCoMo-Plus, which exercises `chat()`'s real product path (K=10 retrieval,
+temperature 0.7) rather than the QA harness's K=20/temperature-0 answering. The decomposition
+(seven attribution runs, `docs/BENCHMARKS.md` Tier 3d part (c)) individually exonerated the new
+embedding vectors, the RRF ranking params, fact dedup, and the 800-char content cap — reverting
+any one of them recovered none of the drop — leaving the user identity tag (a small, real ≈−2.7
+point cost) and, unconfirmed, the weekday date prefix and `_build_context`'s facts/memories-first
+section reorder as the remaining suspects, on top of `chat()`'s own temperature-0.7 sampling
+noise (≈±4 points run-to-run). The practical takeaway: a prompt-assembly change validated against
+one retrieval/answering path (K=20, temp 0, "answer only from these memories") is not
+automatically neutral on a different path through the same rendering code (K=10, temp 0.7, "reply
+in character") — the two exercise the same `_format_memories`/`_build_context` machinery under
+different sampling and context-window pressure, and can move in opposite directions from the same
+change. Shipped anyway (QA wins were decisive); chat-path recovery, with a fixed-temperature
+benchmark protocol to separate real effects from sampling noise, is the top Tier 3e follow-up.
 
 ### SillyTavern Interchange
 

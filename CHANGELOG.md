@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Results — Tier 3f (2026-09-01)
+- Multi-hop second-pass retrieval measured on the v3b DBs: overall J 0.564 vs 0.562, multi-hop +0.018, adversarial −0.022 — below the pre-registered default-flip bar; ships **opt-in** (`retrieval_second_pass=0`). Details in docs/BENCHMARKS.md.
+
 ### Added — Tier 3f (multi-hop second-pass retrieval, off by default)
 - **`memory.retrieval_second_pass` (default `0` = off)**: after the first RRF fusion in
   `MemoryRetriever.retrieve`, an optional expansion stage takes the top `N` fused hits as

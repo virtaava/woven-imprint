@@ -1020,6 +1020,37 @@ mechanics that suite checks.
 # D2: identical command, --run-id plus-t3eD2 (replica)
 ```
 
+## Tier 3f: multi-hop second-pass retrieval — measured, shipped opt-in (2026-09-01)
+
+The v3 abstain analysis attributed 127/317 retrieved-but-wrong answers to multi-hop
+questions whose evidence set only partially reached the top-K block. Tier 3f adds a
+query-time expansion (`memory.retrieval_second_pass`, **default 0/off**): the top-N fused
+hits seed a salient-term FTS pull plus a mean-seed-vector gate widening, and the pool is
+re-fused — one extra FTS query, zero extra embedding calls. (A review caught and fixed a
+bug where the pre-joined `" OR "` separator itself became a search term matching the word
+"or" corpus-wide; the first measurement run was discarded as void.)
+
+Measured answer-only on the `locomo-mem-v3b` DBs (`--reuse-ingest`, `--set
+memory.retrieval_second_pass=5`, run `locomo-t3fA`):
+
+| metric | second pass ON | v3b baseline |
+|---|---:|---:|
+| Overall J | 0.564 | 0.562 |
+| multi-hop (cat 1) | 0.323 | 0.305 |
+| temporal (cat 2) | 0.520 | 0.511 |
+| open-domain (cat 3) | 0.240 | 0.208 |
+| single-hop (cat 4) | 0.699 | 0.709 |
+| adversarial abstention | 0.877 | 0.899 |
+
+The pre-registered bar for flipping the default (multi-hop ≥ +0.05 with nothing down) was
+not met: multi-hop gained +0.018 while single-hop (−0.010) and adversarial abstention
+(−0.022) slipped. The default therefore stays **0**; the feature is available for
+deployments that value multi-hop recall over abstention precision. Interpretation:
+term-adjacency expansion only reaches missing evidence that shares surface terms with the
+evidence already found — most multi-hop gaps need semantic bridging (a future
+LLM-guided second query or entity linking, out of scope here). Headline numbers are
+unchanged (`locomo:memory` remains `locomo-mem-v3b`).
+
 ## Caveats
 
 - **Local 35B judge ≠ GPT-4o.** These numbers are judged by the same local Qwen3.5-35B-A3B-FP8

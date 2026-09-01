@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Results — Tier 3f (2026-09-01)
+- Multi-hop second-pass retrieval measured on the v3b DBs: overall J 0.564 vs 0.562, multi-hop +0.018, adversarial −0.022 — below the pre-registered default-flip bar; ships **opt-in** (`retrieval_second_pass=0`). Details in docs/BENCHMARKS.md.
+
+### Added — Tier 3f (multi-hop second-pass retrieval, off by default)
+- **`memory.retrieval_second_pass` (default `0` = off)**: after the first RRF fusion in
+  `MemoryRetriever.retrieve`, an optional expansion stage takes the top `N` fused hits as
+  "seeds," extracts salient terms from their content (`_salient_terms`: capitalized tokens,
+  digit-bearing tokens, lowercase words >= 5 chars minus a small stopword set), and runs
+  exactly one additional `fts_search` call to pull in co-dependent evidence the first pass
+  missed because it shares terms with what WAS found rather than with the original query
+  (e.g. a follow-up memory naming a pet only the seed memory introduced). A mean-of-the-seeds'
+  stored embedding vectors (pure Python/numpy, zero embedder calls) additionally widens
+  relevance-gate eligibility; the candidate pool and keyword/semantic lists are widened and
+  re-fused with the same weights, then truncated to the caller's `limit` as before. Cost bound:
+  at most one extra `fts_search` and zero `embedder.embed` calls per `retrieve()` call.
+  Motivated by the v3 abstain-with-evidence diagnostics: LoCoMo cat-1 (multi-hop) J 0.305 vs
+  single-hop 0.709 — 127/317 `c_multi_hop` cases were retrieved-but-wrong because the gold
+  needs 2+ evidence turns and only part of the set reached the top-K block. **Shipped off by
+  default pending live measurement** (spec:
+  `docs/superpowers/specs/2026-09-01-tier3f-multihop-second-pass.md`; the off path is
+  byte-identical to today's ranking — this task adds the mechanism only, the default-flip
+  ruling is a separate step once locomo/Plus re-answer results are in).
+
 ### Fixed — Tier 3e (chat prompt section order)
 - **Chat prompt section order restored to pre-3d (memories nearest the user message)** — the
   Tier 3d reorder coupled render order to shedding priority and cost ~0.10 cognitive cue-linkage;

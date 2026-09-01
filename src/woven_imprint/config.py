@@ -108,6 +108,19 @@ class MemoryConfig:
     # work"). Structured facts' own (subject, predicate) supersession is unaffected —
     # this only gates the *core-memory* insert, not the `facts` table row.
     fact_dedup_similarity: float = 0.0
+    # Tier 3f (docs/superpowers/specs/2026-09-01-tier3f-multihop-second-pass.md):
+    # multi-hop second-pass expansion (0 = off). When > 0, after the first RRF
+    # fusion, the top `retrieval_second_pass` fused hits become "seeds": salient
+    # terms (capitalized tokens, digits, long lowercase words) are pulled from
+    # their content and used for exactly one extra `fts_search` call, plus a
+    # zero-cost semantic widening using the mean of the seeds' already-stored
+    # embedding vectors (no embedder call — the vectors are already in hand).
+    # This surfaces co-dependent evidence the first pass missed because it shares
+    # terms with what WAS found, not with the original query (LoCoMo cat-1
+    # multi-hop J 0.305 vs single-hop 0.709, v3b diagnostics). See
+    # `MemoryRetriever.retrieve` for the widen-and-re-fuse implementation. Off by
+    # default pending live measurement (controller ruling pending Task 2/3).
+    retrieval_second_pass: int = 0
 
 
 @dataclass
@@ -470,6 +483,8 @@ memory:
   # (importance +0.05, metadata.dup_count += 1) instead. Tier 3c found near-duplicate
   # extracted facts dominating the top-20 (17.7/20 avg; 78/491 core rows paraphrase-grouped).
   fact_dedup_similarity: 0.0
+  # retrieval_second_pass: 0       # >0 = number of top fused hits to expand from (multi-hop
+  # second pass); one extra fts_search + zero embed calls per retrieve. Off by default.
 
 context:
   total_tokens: 6000

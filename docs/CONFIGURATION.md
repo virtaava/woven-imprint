@@ -59,7 +59,7 @@ llm:
 | `base_url` | `null` | `WOVEN_IMPRINT_BASE_URL` | Custom base URL for the provider. Use for vLLM, llama.cpp, LiteLLM, Azure endpoints, or a Gemma edge adapter bridge. |
 | `embedding_base_url` | `null` | `WOVEN_IMPRINT_EMBEDDING_BASE_URL` | Custom base URL for the **embedding** provider (applies when `embedding_provider: openai`). Overrides `base_url` for embedding calls only — use when chat and embeddings are served by two different OpenAI-compatible endpoints (e.g. vLLM for chat, llama.cpp for embeddings). `null` = embeddings fall back to `base_url`. The `ollama` embedding provider uses `ollama_host` instead. |
 | `num_ctx` | `8192` | `WOVEN_IMPRINT_NUM_CTX` | Context window size passed to Ollama. Higher = more conversation history but more VRAM. Most models support 4096-131072. |
-| `temperature` | `0.7` | — | Sampling temperature for character responses. Lower = more deterministic, higher = more creative. |
+| `temperature` | `0.7` | — | Sampling temperature for character responses (`Character.chat()`/`chat_stream()`). Lower = more deterministic, higher = more creative. Read fresh on every call — changing it takes effect on the next `chat()`/`chat_stream()`, no restart needed. Was hardcoded to `0.7` inside `chat()`/`chat_stream()` prior to Tier 3e (the field existed but was ignored); now honored, same default. |
 | `temperature_json` | `0.3` | — | Temperature for JSON generation (fact extraction, relationship assessment). Lower for more reliable structured output. |
 | `max_tokens` | `2048` | — | Maximum tokens per LLM response. |
 | `timeout` | `120` | — | Seconds to wait for an LLM response before timing out. Increase if using large models on slow hardware. |
@@ -168,6 +168,7 @@ context:
   pinned_block: true       # always include pinned memories in the prompt (see MemoryStore.pin)
   pinned_limit: 10         # max pinned memories rendered in the "Things you always remember" block
   memory_content_max_chars: 800  # per-memory content cap in rendered prompt lines (0 = unlimited)
+  weekday_in_dates: true    # include the weekday token ("Mon") in rendered memory date prefixes
 ```
 
 | Setting | Default | Description |
@@ -178,12 +179,13 @@ context:
 | `conversation_tokens` | `3000` | Budget for recent conversation history (sliding window). |
 | `reserve_tokens` | `500` | Reserved for safety margin. |
 | `max_turns` | `20` | Maximum conversation turns kept in the sliding window. Older turns are compressed into a summary. |
-| `include_date` | `true` | Prefix the volatile context block with `Today is {weekday}, {YYYY-MM-DD}.` (from `woven_imprint.clock`). Retrieved memory lines are always rendered with their date, weekday, and a relative phrase (`2026-05-03 Sun, 3 weeks ago`) regardless of this setting — disabling it only removes the "Today is ..." line. |
+| `include_date` | `true` | Prefix the volatile context block with `Today is {weekday}, {YYYY-MM-DD}.` (from `woven_imprint.clock`). Retrieved memory lines are always rendered with their date and a relative phrase (`2026-05-03, 3 weeks ago`, or `2026-05-03 Sun, 3 weeks ago` with `weekday_in_dates` on) regardless of this setting — disabling it only removes the "Today is ..." line. |
 | `facts_block` | `true` | Inject a "What you currently know about {user}" block into the volatile context, built from the character's structured facts (`Character.facts`). Superseded facts show as `(since YYYY-MM-DD, previously: X)`. A short "Things you have said about yourself" block follows when self-facts exist. Set to `false` to disable the block entirely (e.g. to save tokens or when structured facts aren't in use). |
 | `facts_block_limit` | `12` | Maximum number of current user-facts included in the block, ordered by highest importance first, then by `recorded_at` **descending** (newest-recorded first) on ties, so the cap drops the oldest facts rather than the newest. Self-facts are capped separately at 5 and are not affected by this setting. |
 | `pinned_block` | `true` | Render a "Things you always remember:" block into the volatile system prompt from memories pinned via `MemoryStore.pin()` (`Character.memory.pin`). Unlike other volatile content, this block counts toward the non-sheddable base and is never dropped by the token budget; pinned memories are also excluded from the ordinary retrieved-memories list so they don't appear twice. Set `false` to disable the block entirely — pins still exist (and can still be listed via `pinned()`/`GET /api/memory/pinned`), but they're no longer rendered specially and can appear in the ordinary memories list like any other memory. |
 | `pinned_limit` | `10` | Maximum number of pinned memories rendered in the "Things you always remember" block, oldest-pinned-first. Has no effect on how many memories can be pinned — only on how many are shown in the prompt. |
 | `memory_content_max_chars` | `800` | Maximum characters of a memory's `content` shown per line in the rendered memories block (`Character._format_memories`); `0` = unlimited. Was a hard-coded `200` — the LoCoMo abstention analysis (`eval/external/runs/diagnostics/abstain/locomo-mem-v2d/recommendation.md`) found 133/251 evidence lines cut by that cap, 23 with the gold answer's own words removed. Applies only to the rendered prompt line; stored `content` is never truncated, and this cap is still bounded by the overall `total_tokens` prompt budget (`memory_tokens` itself is not enforced per-section — see above). |
+| `weekday_in_dates` | `true` | Include the weekday token (e.g. `Mon`) in each rendered memory's date prefix: `(2023-05-08 Mon, 3 months ago)`. Set `false` to render `(2023-05-08, 3 months ago)` instead — the date and relative-time phrase are unaffected either way. Added in Tier 3e as one of two suspects for a chat-path regression on the LoCoMo-Plus cognitive-cue benchmark; see `docs/BENCHMARKS.md`. |
 
 When the total exceeds the budget, the system degrades gracefully:
 1. Compresses conversation history

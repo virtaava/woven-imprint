@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Tier 3e (chat prompt section order)
+- **Chat prompt section order restored to pre-3d (memories nearest the user message)** — the
+  Tier 3d reorder coupled render order to shedding priority and cost ~0.10 cognitive cue-linkage;
+  shedding priority (facts/memories survive) retained.
+
+### Changed (behavior) — Tier 3e (chat sampling temperature; weekday date token configurable)
+- **Chat sampling temperature now honors `llm.temperature`** (was hardcoded `0.7`
+  inside `Character.chat()`/`chat_stream()`, ignoring the config field). Default
+  behavior is unchanged (`0.7`) — only takes effect when `llm.temperature` is set
+  to something else, and is read fresh on every call. Root-caused during the
+  Tier 3d decomposition of a Plus cognitive-cue regression as one source of
+  ±4-point run-to-run noise on that benchmark (`docs/superpowers/specs/2026-08-31-tier3e-plus-chat-recovery.md`).
+- **Weekday token in memory dates is now configurable** (`context.weekday_in_dates`,
+  default `true`): `_format_memories` renders `(2023-05-08 Mon, 3 months ago)` as
+  before; set to `false` to render `(2023-05-08, 3 months ago)` instead. The date
+  and relative-time phrase are unaffected either way. Added as the other
+  chat-path suspect for the same Plus regression, so it can be measured and
+  disabled without touching the rest of the date rendering.
+
+### Results — Tier 3e (2026-09-01)
+- **LoCoMo-Plus cognitive J 0.269 → 0.356 recovered** (a six-run elimination chain — `A`/`A2`
+  noise-reduced baseline 0.289/0.299, `B` weekday-off 0.282 exonerated the weekday token, `C`
+  scratch section-order revert 0.392 confirmed the Tier 3d `_build_context` reorder as the
+  culprit, `D`/`D2` on the shipped decoupling fix 0.354/0.359) — root-caused to the reorder
+  coupling render order to shedding priority; fixed by decoupling them (pre-3d render order,
+  Tier 3d's shedding priority kept). **Protocol change**: LoCoMo-Plus memory-mode benchmark runs
+  now pin `llm.temperature=0.3` (was the product's unpinned `0.7` default), which the chain's
+  `A`/`A2` replica pair shows tamed run-to-run noise from ±4 points to ±1; the remaining gap to
+  the old-code historical `0.421` is attributed to that number being one favorable draw at
+  temperature 0.7 plus residual spread, not an unfixed deficit. LoCoMo (0.562) and
+  LongMemEval-S (0.542) are unchanged — this tier's fix is chat-path-only and doesn't touch the
+  QA answering path; the deterministic Long Horizon suite stayed 12/12. Full elimination table
+  and conclusion in `docs/BENCHMARKS.md`
+  (Tier 3e: the chat-path regression, root-caused and fixed).
+
 ### Changed (behavior) — Tier 3d (rendering: content cap, user identity, weekday)
 - **Per-memory content cap raised 200 → 800 chars** (`context.memory_content_max_chars`,
   `0` = unlimited) in `Character._format_memories`. The LoCoMo abstention analysis

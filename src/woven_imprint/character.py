@@ -367,7 +367,7 @@ class Character:
         # 6. Generate response
         generate_started = time.perf_counter()
         try:
-            response = self.llm.generate(messages, temperature=0.7)
+            response = self.llm.generate(messages, temperature=_cfg.llm.temperature)
         except Exception as e:
             logger.error("LLM generation failed: %s", e)
             self.last_chat_metrics = {
@@ -521,7 +521,7 @@ class Character:
         generate_started = time.perf_counter()
         chunks: list[str] = []
         try:
-            for chunk in self.llm.generate_stream(messages, temperature=0.7):
+            for chunk in self.llm.generate_stream(messages, temperature=_cfg.llm.temperature):
                 chunks.append(chunk)
                 yield chunk
         except Exception as e:
@@ -1309,13 +1309,31 @@ class Character:
     ) -> list[dict[str, str]]:
         """Build the full message list within the context budget.
 
-        Priority order for shedding when context is tight:
+        Two orders govern this method, and they are deliberately different:
+
+        Shedding priority (which sections survive a tight budget):
         1. Always keep: persona core (name, backstory, personality)
         2. Always keep: current user message
         3. Keep if room: recent conversation history
         4. Keep if room: retrieved memories (reduce count if needed)
         5. Keep if room: emotional state, arc, relationship description
         6. Compress conversation if still over budget
+
+        Render order (the position sections end up at in the assembled
+        volatile block, regardless of what survived shedding): emotion, arc,
+        relationship, then facts, then memories last — immediately before
+        the closing/user message. This is the pre-Tier-3d order. Tier 3d
+        (68519fd) reordered a single `optional_parts` list to serve both
+        purposes at once, which put facts/memories first in the *render*
+        order too. Measurement (2026-09-01, plus-t3eA/A2/B/C) showed that
+        render-order change cost ~0.10 cognitive cue-linkage on the chat
+        path (0.392 old render order vs 0.289 new, same shedding behavior
+        otherwise): chat replies key heavily on what sits nearest the end
+        of the prompt, so retrieved memories landing away from the user
+        message hurt the model's ability to link them to the current turn.
+        The fix decouples the two: shedding still decides inclusion in
+        priority order (facts/memories claim budget first), but the
+        included parts are assembled in the fixed render order above.
         """
         from .config import get_config
 
@@ -1355,13 +1373,14 @@ class Character:
 
         memory_text = self._format_memories(memories)
 
-        # Add optional components, tracking size
-        # Order matches the docstring's shedding priority (facts, memories,
+        # Add optional components, tracking size.
+        # `optional_parts` order is the SHEDDING priority (facts, memories,
         # emotion, arc, relationship): when budget is tight, the loop below
         # spends what's left in this order, so facts/memories — the two
         # blocks with actual retrieved content — get first claim on the
         # remaining budget, ahead of the softer emotion/arc/relationship
-        # framing.
+        # framing. This is deliberately NOT the render order — see
+        # `_RENDER_ORDER` below and the docstring.
         optional_parts = []
         facts_text = self._format_facts_block(user_id, pinned_ids)
         if facts_text:
@@ -1374,6 +1393,12 @@ class Character:
             optional_parts.append(("arc", f"\n\n{arc_desc}"))
         if rel_context:
             optional_parts.append(("relationship", f"\n\n{rel_context}"))
+
+        # Render order (pre-Tier-3d): emotion, arc, relationship, facts,
+        # memories — memories last, nearest the user message. Decoupled from
+        # the shedding-priority order above; see docstring.
+        _RENDER_ORDER = ("emotion", "arc", "relationship", "facts", "memories")
+        included_parts: dict[str, str] = {}
 
         # Calculate base size (system prompt + user message + date line +
         # pinned-memory block — these are always kept, so they count toward
@@ -1390,8 +1415,7 @@ class Character:
 
         if total <= budget_chars:
             # Everything fits — include all
-            for _, part in optional_parts:
-                volatile += part
+            included_parts = dict(optional_parts)
         else:
             # Need to shed. Try compression first.
             self._context.compress(self.llm)
@@ -1401,17 +1425,17 @@ class Character:
 
             if total <= budget_chars:
                 # Fits after compression
-                for _, part in optional_parts:
-                    volatile += part
+                included_parts = dict(optional_parts)
             else:
-                # Still too large — add optional parts by priority until budget.
+                # Still too large — decide inclusion by shedding priority
+                # (`optional_parts` order) until budget runs out.
                 # `base_size` alone (persona + pinned block + user message) can
                 # already exceed a very small budget; clamp so `remaining` never
                 # goes negative and silently permits a "fits" part.
                 remaining = max(0, budget_chars - base_size - history_size)
                 for name, part in optional_parts:
                     if len(part) <= remaining:
-                        volatile += part
+                        included_parts[name] = part
                         remaining -= len(part)
                     elif name == "memories" and remaining > 200:
                         # Partial memories — progressively halve the list
@@ -1422,7 +1446,7 @@ class Character:
                             truncated = self._format_memories(shrinking)
                             mem_part = f"\n\nYour relevant memories:\n{truncated}"
                             if len(mem_part) <= remaining:
-                                volatile += mem_part
+                                included_parts["memories"] = mem_part
                                 remaining -= len(mem_part)
                                 break
                             if len(shrinking) == 1:
@@ -1430,10 +1454,23 @@ class Character:
                             shrinking = shrinking[: max(1, len(shrinking) // 2)]
 
                 # If STILL over after shedding optional parts, trim conversation
-                total = len(system_prompt) + len(volatile) + history_size + len(user_message)
+                included_size = sum(len(p) for p in included_parts.values())
+                total = (
+                    len(system_prompt)
+                    + len(volatile)
+                    + included_size
+                    + history_size
+                    + len(user_message)
+                )
                 if total > budget_chars and len(history) > 0:
                     self._context.compress(self.llm)
                     history = self._context.get_messages()
+
+        # Assemble the included parts in the fixed RENDER order (decoupled
+        # from the shedding-priority order used above to decide inclusion).
+        for name in _RENDER_ORDER:
+            if name in included_parts:
+                volatile += included_parts[name]
 
         # Assemble final message list: stable prefix first, volatile second
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
@@ -1919,8 +1956,10 @@ class Character:
         Memories are tagged by provenance to mitigate prompt injection:
         user-supplied content is clearly marked so the LLM can distinguish
         it from system-generated observations. Each memory also carries the
-        date it formed, its weekday, and a relative-time phrase so the
-        character can reason about how long ago something happened.
+        date it formed and a relative-time phrase so the character can
+        reason about how long ago something happened; the weekday token
+        (e.g. ``"Mon"``) is included too unless ``context.weekday_in_dates``
+        is set to ``False``.
 
         A user-turn memory (content stored as ``"[User] ..."``) whose
         ``metadata.user_id`` is known renders as ``"[User: <user_id>]"``
@@ -1957,7 +1996,8 @@ class Character:
             if raw:
                 try:
                     dt = clock.parse_ts(raw)
-                    when = f" ({dt.date().isoformat()} {_WEEKDAYS[dt.weekday()]}, {clock.relative(dt, ref)})"
+                    weekday = f" {_WEEKDAYS[dt.weekday()]}" if ctx.weekday_in_dates else ""
+                    when = f" ({dt.date().isoformat()}{weekday}, {clock.relative(dt, ref)})"
                 except ValueError:
                     when = ""
             content = m["content"]

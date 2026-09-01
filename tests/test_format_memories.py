@@ -117,6 +117,22 @@ def test_weekday_and_relative_phrase_both_present():
     assert "(2026-08-04 Tue, 3 weeks ago)" in text
 
 
+def test_weekday_in_dates_defaults_to_true():
+    assert get_config().context.weekday_in_dates is True
+
+
+def test_weekday_omitted_when_weekday_in_dates_false(monkeypatch):
+    _, char = _char()
+    monkeypatch.setattr(get_config().context, "weekday_in_dates", False)
+    with clock.override(T0 - timedelta(days=21)):
+        char.memory.add("The visitor fixed the harbor lamp.", tier="core")
+    with clock.override(T0):
+        mems = char.retriever.retrieve("harbor lamp", limit=5)
+        text = char._format_memories(mems)
+    assert "(2026-08-04, 3 weeks ago)" in text
+    assert "Tue" not in text
+
+
 # --- chat()/ingest()/ingest_exchange() store metadata.user_id -------------
 
 
@@ -213,3 +229,41 @@ def test_weekday_is_locale_independent():
     from woven_imprint.character import _WEEKDAYS
 
     assert _WEEKDAYS == ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+# --- chat() sampling temperature honors llm.temperature --------------------
+#
+# Tier 3e: chat()/chat_stream() used to sample at a hardcoded temperature 0.7,
+# ignoring the long-standing `llm.temperature` config field. FakeLLM.generate
+# doesn't record the kwargs it was called with, so these spy on it in-test
+# rather than changing the shared fake for every other test.
+
+
+def test_chat_samples_at_default_temperature_0_7(monkeypatch):
+    _, char = _char()
+    assert get_config().llm.temperature == 0.7
+    seen = {}
+    orig_generate = char.llm.generate
+
+    def spy_generate(messages, **kw):
+        seen.update(kw)
+        return orig_generate(messages, **kw)
+
+    monkeypatch.setattr(char.llm, "generate", spy_generate)
+    char.chat("hi")
+    assert seen.get("temperature") == 0.7
+
+
+def test_chat_samples_at_configured_temperature(monkeypatch):
+    _, char = _char()
+    monkeypatch.setattr(get_config().llm, "temperature", 0.31)
+    seen = {}
+    orig_generate = char.llm.generate
+
+    def spy_generate(messages, **kw):
+        seen.update(kw)
+        return orig_generate(messages, **kw)
+
+    monkeypatch.setattr(char.llm, "generate", spy_generate)
+    char.chat("hi")
+    assert seen.get("temperature") == 0.31

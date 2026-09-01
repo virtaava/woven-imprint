@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 
 from .. import clock
 from ..embedding.base import EmbeddingProvider
@@ -16,6 +17,94 @@ except ImportError:  # pragma: no cover
     _np = None
 
 logger = logging.getLogger(__name__)
+
+# Small stopword set for `_salient_terms` (Tier 3f second-pass expansion) — common
+# words that are long enough (>=5 chars) to otherwise pass the "salient" filter but
+# carry no real topical signal. Not exhaustive; a heuristic gate, not an NLP pass.
+_SALIENT_STOPWORDS = frozenset(
+    {
+        "about",
+        "after",
+        "again",
+        "along",
+        "always",
+        "another",
+        "around",
+        "because",
+        "before",
+        "being",
+        "between",
+        "could",
+        "doesn't",
+        "during",
+        "either",
+        "enough",
+        "every",
+        "first",
+        "found",
+        "great",
+        "having",
+        "however",
+        "little",
+        "maybe",
+        "might",
+        "never",
+        "often",
+        "other",
+        "people",
+        "perhaps",
+        "place",
+        "really",
+        "should",
+        "since",
+        "still",
+        "their",
+        "there",
+        "these",
+        "thing",
+        "think",
+        "those",
+        "through",
+        "today",
+        "under",
+        "until",
+        "using",
+        "where",
+        "which",
+        "while",
+        "whose",
+        "would",
+        "years",
+    }
+)
+
+
+def _salient_terms(text: str, limit: int = 16) -> list[str]:
+    """Extract salient terms from memory content for Tier 3f second-pass expansion.
+
+    Pure heuristic, no LLM: capitalized tokens (proper nouns — naive, not
+    sentence-position-aware, which is fine here), tokens containing a digit
+    (dates/numbers/ids), and lowercase words of length >= 5 not in the small
+    `_SALIENT_STOPWORDS` set. Deduped case-insensitively (first occurrence
+    wins), capped at `limit` terms. Only `[A-Za-z0-9]` characters ever make it
+    into a term, so FTS5 special characters (quotes, `*`, `:`, `-`, ...) can't
+    leak into the query built from these terms.
+    """
+    terms: list[str] = []
+    seen: set[str] = set()
+    for word in re.findall(r"[A-Za-z0-9]+", text):
+        key = word.lower()
+        if key in seen:
+            continue
+        has_digit = any(c.isdigit() for c in word)
+        is_capitalized = word[0].isupper()
+        is_long_lowercase = not is_capitalized and len(word) >= 5 and key not in _SALIENT_STOPWORDS
+        if has_digit or is_capitalized or is_long_lowercase:
+            seen.add(key)
+            terms.append(word)
+            if len(terms) >= limit:
+                break
+    return terms
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -291,6 +380,145 @@ class MemoryRetriever:
 
         # Fuse with weighted RRF
         fused = reciprocal_rank_fusion(ranked_lists, k=mem_cfg.rrf_k, weights=weights)
+
+        # ── Tier 3f: multi-hop second-pass expansion (off by default) ──────────
+        # When `retrieval_second_pass` (N) > 0, take the top-N fused hits as
+        # "seeds" and look for co-dependent evidence that the first pass missed
+        # because it shares terms with a SEED, not with the original query
+        # (e.g. "Rocket the beagle" showing up only once the seed "Caroline
+        # adopted a beagle named Rocket" narrows the search). Cost bound: at
+        # most one extra `fts_search` call and zero embedder calls — the
+        # "semantic" side of the widening reuses vectors already stored on the
+        # seeds and candidates, meaned in pure Python/numpy.
+        #
+        # This block runs entirely after the original fusion above and never
+        # touches its inputs, so `retrieval_second_pass=0` (the default)
+        # leaves `fused` byte-identical to today's ranking.
+        if mem_cfg.retrieval_second_pass > 0 and query.strip() and fused:
+            n = mem_cfg.retrieval_second_pass
+            seeds = [memory_map[mid] for mid, _ in fused[:n] if mid in memory_map]
+            if seeds:
+                combined_text = " ".join(s.get("content", "") for s in seeds)
+                terms = _salient_terms(combined_text)
+                try:
+                    second_fts = self.storage.fts_search(
+                        self.character_id, " OR ".join(terms), limit=50
+                    )
+                except Exception:
+                    second_fts = []
+
+                # Widen the candidate pool with any genuinely new rows found via
+                # the seed-term FTS pull (their vectors arrive on the row dicts —
+                # no separate embedding fetch needed).
+                new_rows = [m for m in second_fts if m["id"] not in memory_map]
+                for m in new_rows:
+                    memory_map[m["id"]] = m
+                if new_rows:
+                    all_memories = all_memories + new_rows
+                    all_memories.sort(key=lambda m: m.get("rowid", 0))
+
+                # Strategy 1 (semantic), recomputed against the ORIGINAL query
+                # embedding over the widened pool — no new embed call; the new
+                # rows' vectors came back on the fts_search rows themselves.
+                embedded2 = [m for m in all_memories if m.get("embedding")]
+                sims2 = cosine_matrix(query_embedding, [m["embedding"] for m in embedded2])
+                semantic_scores2 = list(zip((m["id"] for m in embedded2), sims2))
+                semantic_scores2.sort(key=lambda x: x[1], reverse=True)
+                semantic_ranked2 = [mid for mid, _ in semantic_scores2]
+
+                # Strategy 2 (keyword): extend with the second-pass FTS hits so
+                # they carry a real (if weak) keyword-fusion contribution — this
+                # is how co-dependent evidence found only via seed terms (not
+                # the original query) earns rank credit and gate eligibility.
+                already_keyword = set(keyword_ranked)
+                keyword_ranked2 = keyword_ranked + [
+                    m["id"] for m in second_fts if m["id"] not in already_keyword
+                ]
+
+                # Mean-of-seeds vector widens gate eligibility only — it is NOT
+                # a new RRF-weighted list, so ranking itself stays anchored to
+                # the original query's semantic/keyword signals above. Pure
+                # Python mean over already-stored vectors; no embedder call.
+                seed_vectors = [s["embedding"] for s in seeds if s.get("embedding")]
+                mean_eligible: set[str] = set()
+                if seed_vectors:
+                    dims = len(seed_vectors[0])
+                    if all(len(v) == dims for v in seed_vectors):
+                        mean_vector = [
+                            sum(v[i] for v in seed_vectors) / len(seed_vectors) for i in range(dims)
+                        ]
+                        mean_sims = cosine_matrix(mean_vector, [m["embedding"] for m in embedded2])
+                        mean_scores = list(zip((m["id"] for m in embedded2), mean_sims))
+                        mean_scores.sort(key=lambda x: x[1], reverse=True)
+                        mean_eligible = {
+                            mid
+                            for mid, sim in mean_scores[: mem_cfg.relevance_semantic_topk]
+                            if sim > mem_cfg.relevance_min_similarity
+                        }
+
+                # Re-derive the gate-eligible pool (widened) and re-run
+                # strategies 3-5 over it — same weights/gate semantics as the
+                # first pass, just over the widened candidates.
+                gated2 = all_memories
+                if mem_cfg.relevance_gate:
+                    semantically_relevant2 = [
+                        mid
+                        for mid, sim in semantic_scores2
+                        if sim > mem_cfg.relevance_min_similarity
+                    ]
+                    eligible2 = (
+                        set(semantically_relevant2[: mem_cfg.relevance_semantic_topk])
+                        | set(keyword_ranked2)
+                        | mean_eligible
+                    )
+                    if eligible2:
+                        gated2 = [m for m in all_memories if m["id"] in eligible2]
+
+                recency_scores2 = [
+                    (m["id"], _recency_score(m, m.get("tier", "buffer")), m.get("rowid", 0))
+                    for m in gated2
+                ]
+                recency_scores2.sort(key=lambda x: (-x[1], x[2]))
+                recency_ranked2 = [mid for mid, _, _ in recency_scores2]
+
+                ranked_lists2 = [semantic_ranked2, keyword_ranked2, recency_ranked2]
+                weights2 = [
+                    mem_cfg.weight_semantic,
+                    mem_cfg.weight_keyword,
+                    mem_cfg.weight_recency,
+                ]
+
+                if mem_cfg.weight_importance > 0:
+                    importance_scores2 = []
+                    for m in gated2:
+                        base = m.get("importance", 0.5) * m.get("certainty", 1.0)
+                        boost = _get_tier_boosts().get(m.get("tier", "buffer"), 0.0)
+                        if relationship_target:
+                            meta = m.get("metadata", {})
+                            if meta.get("user_id") == relationship_target:
+                                base += 0.2
+                        importance_scores2.append((m["id"], base + boost, m.get("rowid", 0)))
+                    importance_scores2.sort(key=lambda x: (-x[1], -x[2]))
+                    ranked_lists2.append([mid for mid, _, _ in importance_scores2])
+                    weights2.append(mem_cfg.weight_importance)
+
+                if relationship_target and mem_cfg.weight_relationship > 0:
+                    rel_scores2 = []
+                    target_lower = relationship_target.lower()
+                    for m in gated2:
+                        content_lower = m["content"].lower()
+                        meta = m.get("metadata", {})
+                        involves_target = (
+                            target_lower in content_lower
+                            or meta.get("target_id") == relationship_target
+                        )
+                        if involves_target:
+                            rel_scores2.append((m["id"], 1.0, m.get("rowid", 0)))
+                    rel_scores2.sort(key=lambda x: (-x[1], -x[2]))
+                    ranked_lists2.append([mid for mid, _, _ in rel_scores2])
+                    weights2.append(mem_cfg.weight_relationship)
+
+                fused = reciprocal_rank_fusion(ranked_lists2, k=mem_cfg.rrf_k, weights=weights2)
 
         # Return top-N memories
         results = []

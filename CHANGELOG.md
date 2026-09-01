@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Tier 3g (relative-date hints and photo-caption lines, default on pending measurement)
+- **`context.resolve_relative_dates` (default `true`)**: when a retrieved memory's content
+  contains a closed-set relative-time phrase (case-insensitive: `yesterday`, `tomorrow`,
+  `tonight`, `last night`, `this morning`, `last`/`next week`, `last`/`next weekend`,
+  `last`/`next month`, `last`/`next year`, `last`/`next <weekday>`), `Character._format_memories`
+  now appends the resolved absolute date(s) inside the date prefix's parens, computed from
+  that memory's own `created_at` (pure `datetime`, no LLM call): `(2023-05-08 Mon, 3 months
+  ago; "tomorrow"→2023-05-09, "last Saturday"→2023-05-06)`. Month/year phrases render as
+  `YYYY-MM`/`YYYY`; week starts Monday; `last`/`next <weekday>` are strictly earlier/later
+  (never "today"); `last weekend`/`next weekend` render the Saturday of the Sat-Sun pair
+  before/after the memory's own Mon-Sun week. At most 3 hints per line, first distinct
+  occurrences, in order of appearance. Word-boundaried so "lastly"/"nextdoor" never match.
+  `false` renders today's format byte-identical. New module-level helper
+  `character._relative_date_hints(content, created)`.
+- **`context.photo_caption_line` (default `true`)**: when content contains a
+  `"(shared a photo: X)"` parenthetical (the LoCoMo ingest convention —
+  `eval/external/locomo.py::_turn_text`), it's stripped from the main rendered line and
+  rendered as its own indented continuation line instead: `- (date…) [User: name] Went
+  hiking with the kids! \n    [photo] a mountain trail at sunrise` (multiple photos →
+  multiple `[photo]` lines). `false` leaves it inline, byte-identical to today's format.
+  New module-level helper `character._split_photo_captions(content)`.
+- Both transforms apply *after* the existing `memory_content_max_chars` cap (RULING: the
+  cap governs stored content only — hints and `[photo]` lines are display-only additions
+  layered on top and are never themselves truncated). With both flags off,
+  `_format_memories` is byte-identical to pre-Tier-3g output (proven in
+  `tests/test_photo_caption_line.py::test_both_flags_off_byte_identical_to_current_master_format`
+  on a mixed fixture exercising identity-tag rewrite, weekday token, and cap together).
+  Motivated by the v3 abstain-with-evidence diagnostics: `b_relative_time` (55/317) and
+  `f_photo_caption` (54/317) failures where the model must combine a relative phrase with
+  the line's own formed date, or find the answer inside the photo aside, and often doesn't.
+  **Defaults are provisional pending the `locomo-t3gA` answer-only measurement on the v3b
+  DBs** (pre-registered bar in
+  `docs/superpowers/specs/2026-09-01-tier3g-relative-time-photo-render.md`) — the controller
+  may flip either or both to `false` and ship opt-in if the bar isn't met, same discipline
+  as Tier 3f.
+
 ### Results — Tier 3f (2026-09-01)
 - Multi-hop second-pass retrieval measured on the v3b DBs: overall J 0.564 vs 0.562, multi-hop +0.018, adversarial −0.022 — below the pre-registered default-flip bar; ships **opt-in** (`retrieval_second_pass=0`). Details in docs/BENCHMARKS.md.
 

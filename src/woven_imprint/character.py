@@ -7,7 +7,7 @@ import re
 import time
 import unicodedata
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import clock
@@ -50,6 +50,128 @@ def _safe_tag(value: object, limit: int = 40) -> str:
     text = "".join(ch for ch in text if ch.isprintable() and ch not in "[]")
     text = " ".join(text.split())
     return text[:limit] or "unknown"
+
+
+_WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_WEEKDAY_INDEX = {name.lower(): idx for idx, name in enumerate(_WEEKDAY_NAMES)}
+
+# Closed set of relative-time phrases (Tier 3g spec). Word-boundaried and case-insensitive
+# so "lastly"/"nextdoor" never match, and "last week"/"next week" never match inside
+# "last weekend"/"next weekend" (the boundary after "week" fails inside "weekend" since
+# both neighboring characters are word characters).
+_RELATIVE_PHRASE_RE = re.compile(
+    r"\b(?:yesterday|tomorrow|tonight|last night|this morning|"
+    r"last weekend|next weekend|last week|next week|"
+    r"last month|next month|last year|next year|"
+    r"last (?:" + "|".join(_WEEKDAY_NAMES) + r")|"
+    r"next (?:" + "|".join(_WEEKDAY_NAMES) + r"))\b",
+    re.IGNORECASE,
+)
+
+# Ingest convention (eval/external/locomo.py::_turn_text): "{text} (shared a photo:
+# {caption})" — non-greedy to the first ")" so a pathological nested-paren caption
+# can't make this hang (RULING: undefined but must terminate, per spec).
+_PHOTO_CAPTION_RE = re.compile(r" ?\(shared a photo: (.*?)\)")
+
+
+def _resolve_relative_phrase(phrase: str, created: datetime) -> str | None:
+    """Resolve one matched relative-time phrase to an absolute date string,
+    anchored on `created` (the memory's own creation time). Pure `datetime`."""
+    key = phrase.lower()
+    d = created.date()
+    if key == "yesterday":
+        return (d - timedelta(days=1)).isoformat()
+    if key == "tomorrow":
+        return (d + timedelta(days=1)).isoformat()
+    if key in ("tonight", "this morning"):
+        return d.isoformat()
+    if key == "last night":
+        return (d - timedelta(days=1)).isoformat()
+    if key == "last week":
+        return (d - timedelta(days=7)).isoformat()
+    if key == "next week":
+        return (d + timedelta(days=7)).isoformat()
+    if key in ("last weekend", "next weekend"):
+        # Week starts Monday. "last weekend"/"next weekend" are always relative to
+        # the Sat-Sun pair belonging to `created`'s own Mon-Sun week — the pair
+        # immediately before/after it — rendered as the Saturday.
+        week_start = d - timedelta(days=d.weekday())
+        this_weekend_sat = week_start + timedelta(days=5)
+        sat = (
+            this_weekend_sat - timedelta(days=7)
+            if key == "last weekend"
+            else this_weekend_sat + timedelta(days=7)
+        )
+        return sat.isoformat()
+    if key in ("last month", "next month"):
+        delta = -1 if key == "last month" else 1
+        total = d.month - 1 + delta
+        year = d.year + total // 12
+        month = total % 12 + 1
+        return f"{year:04d}-{month:02d}"
+    if key == "last year":
+        return f"{d.year - 1:04d}"
+    if key == "next year":
+        return f"{d.year + 1:04d}"
+    direction, _, weekday_name = key.partition(" ")
+    target = _WEEKDAY_INDEX.get(weekday_name)
+    if target is None:
+        return None
+    if direction == "last":
+        delta_days = (d.weekday() - target) % 7 or 7
+        return (d - timedelta(days=delta_days)).isoformat()
+    if direction == "next":
+        delta_days = (target - d.weekday()) % 7 or 7
+        return (d + timedelta(days=delta_days)).isoformat()
+    return None
+
+
+def _relative_date_hints(content: str, created: datetime) -> str:
+    """Find the closed set of relative-time phrases in `content` and resolve each
+    to an absolute date anchored on `created` (the memory's own creation time).
+
+    Returns "" when none are found, else ``'; "phrase"→YYYY-MM-DD, "phrase2"→...'``
+    (at most 3 hints, first distinct occurrences, in order of appearance). Month
+    hints render as ``YYYY-MM``, year hints as ``YYYY``. Pure `datetime`, no LLM.
+    """
+    hits: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for m in _RELATIVE_PHRASE_RE.finditer(content):
+        phrase = m.group(0)
+        key = phrase.lower()
+        if key in seen:
+            continue
+        resolved = _resolve_relative_phrase(key, created)
+        if resolved is None:
+            continue
+        seen.add(key)
+        hits.append((phrase, resolved))
+        if len(hits) >= 3:
+            break
+    if not hits:
+        return ""
+    return "; " + ", ".join(f'"{phrase}"→{resolved}' for phrase, resolved in hits)
+
+
+def _split_photo_captions(content: str) -> tuple[str, list[str]]:
+    """Extract every ``(shared a photo: X)`` parenthetical (the ingest convention —
+    see `eval/external/locomo.py::_turn_text`) from `content`.
+
+    Returns the cleaned main text (whitespace-collapsed at the removal points) and
+    the list of captions in order of appearance. The parenthetical may end the
+    string or sit mid-text; a caption never contains nested parens in practice,
+    but non-greedy matching means a pathological one won't hang — it just yields
+    an undefined (not infinite) split.
+    """
+    captions: list[str] = []
+
+    def _take(m: re.Match) -> str:
+        captions.append(m.group(1))
+        return ""
+
+    cleaned = _PHOTO_CAPTION_RE.sub(_take, content)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+    return cleaned, captions
 
 
 class Character:
@@ -1975,6 +2097,17 @@ class Character:
         ``context.memory_content_max_chars`` characters (default 800; ``0``
         means unlimited) — still bounded by the overall
         shared ``context.total_tokens`` prompt budget (``memory_tokens`` is currently not enforced).
+
+        Tier 3g adds two more display-only transforms, applied after the cap so
+        neither ever gets truncated: when ``context.resolve_relative_dates`` is
+        true (default), a closed set of relative-time phrases found in the
+        content (e.g. "last Saturday") gets absolute dates appended inside the
+        date prefix's parens (see `_relative_date_hints`); when
+        ``context.photo_caption_line`` is true (default), a
+        ``"(shared a photo: X)"`` parenthetical (the ingest convention) is
+        stripped from the main line and rendered as its own indented
+        ``"    [photo] X"`` continuation line instead (see
+        `_split_photo_captions`). Both false reproduces today's format exactly.
         """
         if not memories:
             return ""
@@ -1991,22 +2124,29 @@ class Character:
             tier_tag = f"[{m['tier']}]" if m["tier"] != "buffer" else ""
             certainty = m.get("certainty", 1.0)
             cert_tag = " (uncertain)" if certainty < 0.5 else ""
-            when = ""
-            raw = m.get("created_at")
-            if raw:
-                try:
-                    dt = clock.parse_ts(raw)
-                    weekday = f" {_WEEKDAYS[dt.weekday()]}" if ctx.weekday_in_dates else ""
-                    when = f" ({dt.date().isoformat()}{weekday}, {clock.relative(dt, ref)})"
-                except ValueError:
-                    when = ""
             content = m["content"]
             user_id = (m.get("metadata") or {}).get("user_id")
             if user_id and content.startswith("[User] "):
                 content = f"[User: {_safe_tag(user_id)}] " + content[len("[User] ") :]
             if content_cap > 0:
                 content = content[:content_cap]
-            lines.append(f"- {tier_tag}{when}{cert_tag} {content}")
+            captions: list[str] = []
+            if ctx.photo_caption_line:
+                content, captions = _split_photo_captions(content)
+            when = ""
+            raw = m.get("created_at")
+            if raw:
+                try:
+                    dt = clock.parse_ts(raw)
+                    weekday = f" {_WEEKDAYS[dt.weekday()]}" if ctx.weekday_in_dates else ""
+                    hints = _relative_date_hints(content, dt) if ctx.resolve_relative_dates else ""
+                    when = f" ({dt.date().isoformat()}{weekday}, {clock.relative(dt, ref)}{hints})"
+                except ValueError:
+                    when = ""
+            line = f"- {tier_tag}{when}{cert_tag} {content}"
+            for caption in captions:
+                line += f"\n    [photo] {caption}"
+            lines.append(line)
         return "\n".join(lines)
 
 

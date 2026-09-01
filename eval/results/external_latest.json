@@ -73,13 +73,13 @@
     "judge_versions": "2"
   },
   "locomo:memory": {
-    "run_id": "locomo-mem-v3b",
+    "run_id": "locomo-t3gA",
     "bench": "locomo",
     "mode": "memory",
     "model": "Qwen/Qwen3.5-35B-A3B-FP8",
     "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
     "embedding": "nomic-embed-text",
-    "timestamp": "2026-08-31T00:30:46.485213+00:00",
+    "timestamp": "2026-09-01T07:46:17.606423+00:00",
     "config": {
       "k": 20,
       "fact_extraction_interval": 1,
@@ -97,45 +97,43 @@
       "max_sessions": null,
       "max_questions": null,
       "shard": null,
-      "overrides": [
-        "memory.fact_dedup_similarity=0"
-      ]
+      "overrides": []
     },
     "summary": {
       "n_questions": 1986,
-      "overall_j": 0.5623376623376624,
-      "overall_f1": 0.30877892467075385,
+      "overall_j": 0.5714285714285714,
+      "overall_f1": 0.30556381847419495,
       "per_category": {
         "2": {
           "n": 321,
-          "j": 0.5109034267912772,
-          "f1": 0.19691949062482308
+          "j": 0.573208722741433,
+          "f1": 0.20985978775973274
         },
         "3": {
           "n": 96,
-          "j": 0.20833333333333334,
-          "f1": 0.10921532062642951
+          "j": 0.23958333333333334,
+          "f1": 0.09099389998219805
         },
         "1": {
           "n": 282,
-          "j": 0.3049645390070922,
-          "f1": 0.2038179127210262
+          "j": 0.2872340425531915,
+          "f1": 0.2090971379969996
         },
         "4": {
           "n": 841,
-          "j": 0.7086801426872771,
-          "f1": 0.40944954260990063
+          "j": 0.703923900118906,
+          "f1": 0.3989327957977901
         }
       },
       "rule_scored": {
         "5": {
           "n": 446,
-          "accuracy": 0.899103139013453
+          "accuracy": 0.8946188340807175
         }
       },
-      "adversarial_accuracy": 0.899103139013453,
+      "adversarial_accuracy": 0.8946188340807175,
       "abstain_accuracy": null,
-      "mean_prompt_tokens_est": 1198.7573011077543,
+      "mean_prompt_tokens_est": 1205.9471299093655,
       "n_unparsed": 0
     },
     "ingest_totals": {
@@ -144,7 +142,7 @@
       "llm_calls": 6265,
       "seconds": 100131.85766953137
     },
-    "records_file": "external_locomo-mem-v3b.json",
+    "records_file": "external_locomo-t3gA.json",
     "n_conversations": 1986,
     "judge_versions": "2"
   },

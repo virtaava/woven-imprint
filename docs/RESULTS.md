@@ -76,24 +76,24 @@ Measured with the local brain (Qwen3.5-35B-A3B-FP8, thinking off) as both the an
 
 ### `locomo:memory`
 
-- Run id: `locomo-mem-v3b` | Timestamp: 2026-08-31T00:30:46.485213+00:00
+- Run id: `locomo-t3gA` | Timestamp: 2026-09-01T07:46:17.606423+00:00
 - Judge version: 2
-- Overall J (categories 1-4 / non-abstain): 56.2% (n=1986)
-- Mean token-F1: 0.309
-- Adversarial accuracy (category 5): 89.9%
+- Overall J (categories 1-4 / non-abstain): 57.1% (n=1986)
+- Mean token-F1: 0.306
+- Adversarial accuracy (category 5): 89.5%
 - Abstain accuracy (`_abs`): n/a
-- Mean prompt tokens (est.): 1199
+- Mean prompt tokens (est.): 1206
 
 | category | n | J | token-F1 |
 |---|---|---|---|
-| 1 | 282 | 30.5% | 0.204 |
-| 2 | 321 | 51.1% | 0.197 |
-| 3 | 96 | 20.8% | 0.109 |
-| 4 | 841 | 70.9% | 0.409 |
+| 1 | 282 | 28.7% | 0.209 |
+| 2 | 321 | 57.3% | 0.210 |
+| 3 | 96 | 24.0% | 0.091 |
+| 4 | 841 | 70.4% | 0.399 |
 
 | category (abstention rule) | n | accuracy |
 |---|---|---|
-| 5 | 446 | 89.9% |
+| 5 | 446 | 89.5% |
 
 ### `locomo_plus:fullcontext`
 

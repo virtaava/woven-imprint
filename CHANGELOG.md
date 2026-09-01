@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Results — Tier 3g (2026-09-01)
+- Relative-date hints + photo-caption lines measured on the v3b DBs: LoCoMo J 0.562 → **0.571**, temporal +6.2 points — pre-registered bar met, defaults ship on. New LoCoMo headline.
+
 ### Added — Tier 3g (relative-date hints and photo-caption lines, default on pending measurement)
 - **`context.resolve_relative_dates` (default `true`)**: when a retrieved memory's content
   contains a closed-set relative-time phrase (case-insensitive: `yesterday`, `tomorrow`,

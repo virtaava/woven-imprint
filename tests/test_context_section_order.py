@@ -81,10 +81,32 @@ def test_shedding_priority_keeps_facts_and_memories_under_pressure():
     engine, char = _char()
     memories, rel_context = _make_all_sections_present(char)
 
-    # Small enough that not everything fits, large enough that facts +
-    # memories (the priority sections) still do.
-    char._context.budget.total = 115  # -> 460 chars
-
+    # Derive the budget from actual part sizes so unrelated boilerplate
+    # changes can't flip this test (review 2026-09-01). We want: base +
+    # facts + memories fit, and the leftover slack is smaller than the
+    # smallest soft section (emotion/arc/relationship), so none of them fits.
+    facts_part = "\n\n" + char._format_facts_block("toni", set())
+    mems_part = "\n\nYour relevant memories:\n" + char._format_memories(memories)
+    emotion_part = "\n\n" + char.emotion.describe()
+    arc_part = "\n\n" + char.arc.describe()
+    rel_part = "\n\n" + rel_context
+    # Base = everything the builder always keeps: probe with an over-generous
+    # budget and subtract the optional parts we know are present.
+    char._context.budget.total = 100_000
+    probe = char._build_context("hi", memories, rel_context, user_id="toni")
+    probe_volatile = next((m["content"] for m in probe[1:] if m["role"] == "system"), "")
+    base_len = len(probe_volatile) - sum(
+        len(x) for x in (facts_part, mems_part, emotion_part, arc_part, rel_part)
+    )
+    min_soft = min(len(emotion_part), len(arc_part), len(rel_part))
+    slack = max(4, min_soft - 8)
+    # _build_context also counts the system prompt and user message toward
+    # base size; measure that overhead from the probe's budget math instead of
+    # guessing: give exactly enough for volatile-side content + slack, scaled.
+    sys_len = len(probe[0]["content"]) if probe and probe[0]["role"] == "system" else 0
+    user_len = len("hi")
+    budget_chars = sys_len + user_len + base_len + len(facts_part) + len(mems_part) + slack
+    char._context.budget.total = budget_chars // 4
     messages = char._build_context("hi", memories, rel_context, user_id="toni")
     volatile = next((m["content"] for m in messages[1:] if m["role"] == "system"), "")
 

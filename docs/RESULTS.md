@@ -123,29 +123,29 @@ Measured with the local brain (Qwen3.5-35B-A3B-FP8, thinking off) as both the an
 
 ### `locomo_plus:memory`
 
-- Run id: `plus-mem-v3b` | Timestamp: 2026-08-31T13:03:22.977525+00:00
-- Cognitive accuracy overall: 26.9% (n=401)
-- Mean prompt tokens (est.): 1186
+- Run id: `plus-t3eD` | Timestamp: 2026-09-01T00:03:29.102326+00:00
+- Cognitive accuracy overall: 35.4% (n=401)
+- Mean prompt tokens (est.): 1233
 
 | relation_type | n | cognitive accuracy |
 |---|---|---|
-| causal | 101 | 35.6% |
-| goal | 100 | 18.0% |
-| state | 100 | 30.0% |
-| value | 100 | 24.0% |
+| causal | 101 | 43.6% |
+| goal | 100 | 24.0% |
+| state | 100 | 38.0% |
+| value | 100 | 36.0% |
 
 | time_gap (top buckets) | n | cognitive accuracy |
 |---|---|---|
-| two months later | 59 | 15.3% |
-| three months later | 56 | 21.4% |
-| one month later | 44 | 27.3% |
-| six months later | 33 | 15.2% |
-| four months later | 26 | 15.4% |
+| two months later | 59 | 27.1% |
+| three months later | 56 | 33.9% |
+| one month later | 44 | 36.4% |
+| six months later | 33 | 33.3% |
+| four months later | 26 | 23.1% |
 | six weeks later | 25 | 20.0% |
-| one week later | 13 | 53.8% |
-| about one month later | 11 | 45.5% |
-| several months later | 11 | 72.7% |
-| two weeks later | 10 | 20.0% |
+| one week later | 13 | 76.9% |
+| about one month later | 11 | 36.4% |
+| several months later | 11 | 54.5% |
+| two weeks later | 10 | 40.0% |
 
 ### `longmemeval_s:memory`
 

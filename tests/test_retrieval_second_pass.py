@@ -273,3 +273,51 @@ class TestSalientTerms:
 
     def test_empty_text_returns_empty(self):
         assert _salient_terms("") == []
+
+
+def test_second_pass_fts_query_carries_no_or_literal(setup, monkeypatch):
+    """The literal token "OR" must never reach fts_search — the storage layer
+    tokenizes and ORs terms itself, so a pre-joined "OR" became a search term
+    matching the common word "or" corpus-wide (review 2026-09-01)."""
+    import re
+
+    storage, embedder, retriever, cfg = setup
+    _split_evidence_store(storage, embedder)
+    seen_queries: list[str] = []
+    real_fts = storage.fts_search
+
+    def spy(character_id, query, **kw):
+        seen_queries.append(query)
+        return real_fts(character_id, query, **kw)
+
+    monkeypatch.setattr(storage, "fts_search", spy)
+    cfg.retrieval_second_pass = 1
+    retriever.retrieve("What pet did Caroline adopt?", limit=5)
+    assert len(seen_queries) >= 2, "expected first-pass + second-pass FTS calls"
+    assert not re.search(r"\bOR\b", seen_queries[-1]), seen_queries[-1]
+
+
+def test_decoys_sharing_only_the_word_or_stay_out(setup):
+    """Regression for the reproduced review case: high-importance decoys whose
+    only overlap with the seeds is the word "or" must not enter the top-K."""
+    storage, embedder, retriever, cfg = setup
+    _split_evidence_store(storage, embedder)
+    for i in range(20):
+        _add(
+            storage,
+            embedder,
+            f"Tax filings or paperwork or receipts batch {i} needs sorting.",
+            importance=0.95,
+            tier="bedrock",
+        )
+    cfg.retrieval_second_pass = 1
+    results = retriever.retrieve("What pet did Caroline adopt?", limit=5)
+    # The split evidence pair must own the top two slots, and no decoy may
+    # score competitively with real evidence (with the OR bug, decoys scored
+    # within ~5% of the genuine hits; fixed, they sit at distractor level and
+    # can only fill otherwise-empty tail slots).
+    assert "Caroline adopted" in results[0]["content"]
+    assert "Rocket the beagle" in results[1]["content"]
+    b_score = results[1]["_retrieval_score"]
+    decoy_scores = [m["_retrieval_score"] for m in results if "Tax filings" in m["content"]]
+    assert all(d < b_score * 0.5 for d in decoy_scores), (b_score, decoy_scores)

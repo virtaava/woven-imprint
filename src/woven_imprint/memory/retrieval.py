@@ -401,8 +401,11 @@ class MemoryRetriever:
                 combined_text = " ".join(s.get("content", "") for s in seeds)
                 terms = _salient_terms(combined_text)
                 try:
+                    # fts_search tokenizes on \w+ and ORs the tokens itself;
+                    # pre-joining with a literal " OR " made "OR" a search term
+                    # matching the word "or" corpus-wide (review 2026-09-01).
                     second_fts = self.storage.fts_search(
-                        self.character_id, " OR ".join(terms), limit=50
+                        self.character_id, " ".join(terms), limit=50
                     )
                 except Exception:
                     second_fts = []

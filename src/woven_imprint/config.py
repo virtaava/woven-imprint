@@ -150,6 +150,26 @@ class ContextConfig:
     # regression; gated here so it can be measured and disabled without reverting
     # the date/relative-phrase rendering it shares a line with.
     weekday_in_dates: bool = True
+    # Append resolved absolute dates for a closed set of relative-time phrases found
+    # in a memory's content (e.g. "last Saturday", "next month"), computed from that
+    # memory's own created_at (`Character._format_memories` /
+    # `character._relative_date_hints`): "(2023-05-08 Mon, 3 months ago; "tomorrow"
+    # →2023-05-09)". Tier 3g (docs/superpowers/specs/
+    # 2026-09-01-tier3g-relative-time-photo-render.md): the v3 abstain-with-evidence
+    # analysis found b_relative_time questions (55/317) failing because the evidence
+    # line states a relative phrase and the model must combine it with the line's own
+    # formed date, and often doesn't. Pure datetime, no LLM. Default is PROVISIONAL
+    # pending the locomo-t3gA measurement (pre-registered bar in the spec) — the
+    # controller may flip it to False and ship opt-in if the bar isn't met.
+    resolve_relative_dates: bool = True
+    # Render a "(shared a photo: X)" parenthetical (the LoCoMo ingest convention —
+    # see eval/external/locomo.py::_turn_text) as its own indented "    [photo] X"
+    # continuation line instead of leaving it as an inline aside on the main content
+    # line (`character._split_photo_captions`). Tier 3g: the v3 abstain-with-evidence
+    # analysis found f_photo_caption questions (54/317) failing because the answer
+    # sits inside that parenthetical and gets skipped. Default is PROVISIONAL pending
+    # the same locomo-t3gA measurement as resolve_relative_dates above.
+    photo_caption_line: bool = True
 
 
 @dataclass
@@ -498,6 +518,14 @@ context:
   facts_block_limit: 12          # max current user-facts in the block (importance desc, then newest first)
   memory_content_max_chars: 800  # per-memory content cap in the rendered prompt (0 = unlimited); was a hard-coded 200
   weekday_in_dates: true         # include the weekday token ("Mon") in rendered memory date prefixes
+  # resolve_relative_dates: append absolute dates for closed-set relative phrases ("last
+  # Saturday", "next month", ...) found in memory content, e.g. "(2023-05-08 Mon, 3
+  # months ago; "tomorrow"→2023-05-09)". Tier 3g, default provisional pending measurement.
+  resolve_relative_dates: true
+  # photo_caption_line: render a "(shared a photo: X)" parenthetical as its own indented
+  # "    [photo] X" continuation line instead of an inline aside. Tier 3g, default
+  # provisional pending measurement.
+  photo_caption_line: true
 
 relationship:
   max_delta: 0.15

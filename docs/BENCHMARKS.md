@@ -1051,6 +1051,33 @@ evidence already found — most multi-hop gaps need semantic bridging (a future
 LLM-guided second query or entity linking, out of scope here). Headline numbers are
 unchanged (`locomo:memory` remains `locomo-mem-v3b`).
 
+## Tier 3g: relative-date hints and photo-caption lines — shipped on (2026-09-01)
+
+The last two large abstain-analysis categories were rendering problems: evidence lines
+carrying unresolved relative-time phrases ("last Saturday" — 55 cases) and answers buried
+in a "(shared a photo: …)" parenthetical (54 cases). Tier 3g renders both properly:
+relative phrases from a closed regex set get absolute-date hints computed from the
+memory's own formed date (`(2023-05-08 Mon, 3 months ago; "tomorrow"→2023-05-09)`;
+`context.resolve_relative_dates`), and photo captions become indented `[photo]`
+continuation lines (`context.photo_caption_line`). No LLM involved; both flags default on.
+
+Measured answer-only on the `locomo-mem-v3b` DBs (run `locomo-t3gA`, code 6e7c5a0; a
+post-measurement fix wave 50146b8 tightened caption edge cases absent from this corpus):
+
+| metric | Tier 3g ON | v3b baseline |
+|---|---:|---:|
+| Overall J | **0.571** | 0.562 |
+| temporal (cat 2) | **0.573** | 0.511 |
+| open-domain (cat 3) | 0.240 | 0.208 |
+| multi-hop (cat 1) | 0.287 | 0.305 |
+| single-hop (cat 4) | 0.704 | 0.709 |
+| adversarial abstention | 0.895 | 0.899 |
+
+The pre-registered bar (overall ≥ 0.557 AND cat-2 ≥ +0.02 or cat-4 ≥ +0.015) was met with
+room to spare — temporal gained +6.2 points, precisely the failure mode the hints target.
+Multi-hop's −1.8 sits inside the measured replica spread. `locomo:memory` now points at
+`locomo-t3gA` (J 0.571 is the headline).
+
 ## Caveats
 
 - **Local 35B judge ≠ GPT-4o.** These numbers are judged by the same local Qwen3.5-35B-A3B-FP8

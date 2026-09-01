@@ -14,3 +14,6 @@
 
 ## Constraints
 Branch `feat/tier3g-relative-time-photo-render` off master f30ce64. Green suite/bench; regex-only, no LLM; never touch experiments/, kotlin/.
+
+## Amendments (2026-09-01 rulings)
+Task 1 implementation (6e7c5a0) deviated from the closed set above in three rulings, all accepted and now normative: `"on <weekday>"` is excluded from the closed set entirely (it's tense-ambiguous — "on Saturday" can mean the most recent or the upcoming one without further tense analysis of the surrounding sentence, so it's left unresolved rather than guessed); `"last week"`/`"next week"` resolve as a flat ±7 days from the memory's own `created_at` (not "the corresponding day in the adjacent Mon–Sun week", which would give the same answer for a Monday-created memory anyway); and `"next weekend"` resolves to the Saturday of the *following* week's Sat–Sun pair, symmetric with `"last weekend"` resolving to the Saturday of the *preceding* week's pair — both always relative to the Mon–Sun week containing `created_at`, never to the calendar days nearest today.

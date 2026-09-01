@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from tests.helpers import make_test_engine
 from woven_imprint import clock
-from woven_imprint.character import _split_photo_captions
+from woven_imprint.character import _WEEKDAYS, _split_photo_captions
 from woven_imprint.config import get_config
 
 T0 = datetime(2026, 8, 25, 10, 0, tzinfo=timezone.utc)
@@ -74,10 +74,39 @@ def test_multiple_captions_in_order():
 
 
 def test_nested_parens_does_not_hang():
-    # Not expected in practice, but must terminate rather than loop.
-    text, captions = _split_photo_captions("weird (shared a photo: a dog (playing)) ok")
-    assert captions  # some caption was captured
-    assert "ok" in text or text  # terminates with a usable string
+    # Balanced-paren extension (review fix): the caption regex consumes balanced
+    # inner parens up to the MATCHING close, not just the first ")".
+    text, captions = _split_photo_captions("weird (shared a photo: a dog (small)) ok")
+    assert captions == ["a dog (small)"]
+    assert text == "weird ok"
+    assert ")" not in text  # no dangling close-paren left behind
+
+
+def test_no_caption_content_with_irregular_whitespace_is_byte_identical():
+    # Review fix: whitespace must never be touched when there is no caption to
+    # remove — no global collapse, no strip.
+    original = "Hello   world,  how are   you?  "
+    text, captions = _split_photo_captions(original)
+    assert text == original
+    assert captions == []
+
+
+def test_splice_collapses_only_the_doubled_space_at_the_removal_point():
+    # Two spaces sit before the caption in the source text; removing the caption
+    # (which itself eats one adjacent space) must collapse the leftover doubled
+    # space exactly at that splice, while other unrelated multi-space runs in the
+    # surrounding text are left completely untouched.
+    text, captions = _split_photo_captions(
+        "Hi   there (shared a photo: cat) and  also lots  of   space."
+    )
+    assert captions == ["cat"]
+    assert text == "Hi   there and  also lots  of   space."
+
+
+def test_splice_boundary_double_space_from_both_sides_collapses_to_one():
+    text, captions = _split_photo_captions("a  (shared a photo: cat) b")
+    assert captions == ["cat"]
+    assert text == "a b"
 
 
 # --- wiring into _format_memories ------------------------------------------
@@ -184,3 +213,59 @@ def test_both_flags_off_byte_identical_to_current_master_format():
     finally:
         cfg.resolve_relative_dates = old_relative
         cfg.photo_caption_line = old_photo
+
+
+# --- flag independence (review fix) ----------------------------------------
+
+
+def test_resolve_relative_dates_alone_renders_hint_without_photo_flag(monkeypatch):
+    _, char = _char()
+    monkeypatch.setattr(get_config().context, "resolve_relative_dates", True)
+    monkeypatch.setattr(get_config().context, "photo_caption_line", False)
+    m = _mem("[User] See you tomorrow!", created_at=clock.sqlite_ts(T0))
+    with clock.override(T0):
+        text = char._format_memories([m])
+    assert "→" in text
+    assert "[photo]" not in text
+
+
+def test_photo_flag_alone_renders_photo_line_without_hint(monkeypatch):
+    _, char = _char()
+    monkeypatch.setattr(get_config().context, "resolve_relative_dates", False)
+    monkeypatch.setattr(get_config().context, "photo_caption_line", True)
+    m = _mem(
+        "[User] See you tomorrow! (shared a photo: a cat)",
+        created_at=clock.sqlite_ts(T0),
+    )
+    with clock.override(T0):
+        text = char._format_memories([m])
+    assert "→" not in text
+    assert "    [photo] a cat" in text
+    assert "(shared a photo:" not in text
+
+
+def test_combined_relative_phrase_photo_identity_weekday_and_truncating_cap(monkeypatch):
+    """Both flags on together, with a user_id identity rewrite, the default
+    weekday token, and a cap tight enough to actually truncate trailing filler
+    — proving the relative-date hint and the photo line both survive intact
+    even though the cap runs first (per the `_format_memories` docstring:
+    the two Tier 3g transforms apply to already-capped content but their own
+    output is never itself truncated)."""
+    _, char = _char()
+    raw = "[User] I'll see you tomorrow! (shared a photo: a cat)"
+    filler = " and then some trailing filler text that must be cut off entirely."
+    content = raw + filler
+    rewritten_prefix = "[User: caroline] " + raw[len("[User] ") :]
+    cap = len(rewritten_prefix)
+    monkeypatch.setattr(get_config().context, "memory_content_max_chars", cap)
+    monkeypatch.setattr(get_config().context, "resolve_relative_dates", True)
+    monkeypatch.setattr(get_config().context, "photo_caption_line", True)
+    m = _mem(content, metadata={"user_id": "caroline"}, created_at=clock.sqlite_ts(T0))
+    with clock.override(T0):
+        text = char._format_memories([m])
+    assert "[User: caroline]" in text
+    assert "    [photo] a cat" in text
+    assert "(shared a photo:" not in text
+    assert "→" in text
+    assert "trailing filler" not in text
+    assert any(day in text for day in _WEEKDAYS)

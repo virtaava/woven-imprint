@@ -69,9 +69,16 @@ _RELATIVE_PHRASE_RE = re.compile(
 )
 
 # Ingest convention (eval/external/locomo.py::_turn_text): "{text} (shared a photo:
-# {caption})" — non-greedy to the first ")" so a pathological nested-paren caption
-# can't make this hang (RULING: undefined but must terminate, per spec).
-_PHOTO_CAPTION_RE = re.compile(r" ?\(shared a photo: (.*?)\)")
+# {caption})". Only the opening delimiter (incl. one optional leading space) is a
+# fixed regex; the matching close paren is found by a bounded manual scan below so
+# a caption with its own balanced parens — "a dog (small)" — round-trips exactly
+# (review fix) while a pathological/unterminated one still can't hang.
+_PHOTO_CAPTION_START_RE = re.compile(r" ?\(shared a photo: ")
+
+# Cap on how many extra characters the balanced-paren scan will walk past the
+# first ")" while looking for the true matching close — bounds the scan on a
+# pathological caption instead of walking to the end of a huge string.
+_PHOTO_CAPTION_EXTENSION_CAP = 200
 
 
 def _resolve_relative_phrase(phrase: str, created: datetime) -> str | None:
@@ -157,20 +164,59 @@ def _split_photo_captions(content: str) -> tuple[str, list[str]]:
     """Extract every ``(shared a photo: X)`` parenthetical (the ingest convention —
     see `eval/external/locomo.py::_turn_text`) from `content`.
 
-    Returns the cleaned main text (whitespace-collapsed at the removal points) and
-    the list of captions in order of appearance. The parenthetical may end the
-    string or sit mid-text; a caption never contains nested parens in practice,
-    but non-greedy matching means a pathological one won't hang — it just yields
-    an undefined (not infinite) split.
+    Returns the cleaned main text and the list of captions in order of
+    appearance. When `content` has no caption at all, it is returned
+    byte-identical — nothing here ever touches whitespace it isn't removing.
+    When one or more captions are found, whitespace is fixed up ONLY at the
+    exact splice point where each parenthetical was cut out (a leftover
+    doubled space where both the kept text before and after the removal
+    happen to end/start with a space); any other whitespace elsewhere in the
+    string — however irregular — is left exactly as it was.
+
+    A caption's own parens are balanced: after the opening delimiter, the
+    text up to the first ``)`` is taken as a first guess, and if it contains
+    more ``(`` than ``)`` the scan keeps walking forward to the next ``)``
+    (folding the skipped span into the caption) until balanced, end-of-string,
+    or `_PHOTO_CAPTION_EXTENSION_CAP` extra characters have been walked —
+    whichever comes first — so a pathological caption can't hang this.
     """
     captions: list[str] = []
-
-    def _take(m: re.Match) -> str:
-        captions.append(m.group(1))
-        return ""
-
-    cleaned = _PHOTO_CAPTION_RE.sub(_take, content)
-    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+    spans: list[tuple[int, int]] = []
+    n = len(content)
+    pos = 0
+    for m in _PHOTO_CAPTION_START_RE.finditer(content):
+        start = m.start()
+        if start < pos:
+            continue  # inside a previously-extended match — not a new caption
+        cap_start = m.end()
+        close = content.find(")", cap_start)
+        if close == -1:
+            continue  # no close paren at all — not well-formed, leave as text
+        caption = content[cap_start:close]
+        extended = 0
+        while caption.count("(") > caption.count(")") and extended < _PHOTO_CAPTION_EXTENSION_CAP:
+            nxt = content.find(")", close + 1)
+            if nxt == -1:
+                break
+            addition = content[close:nxt]  # folds the previous ")" into the caption
+            caption += addition
+            extended += len(addition)
+            close = nxt
+        end = close + 1
+        captions.append(caption)
+        spans.append((start, end))
+        pos = end
+    if not spans:
+        return content, []
+    parts = [content[: spans[0][0]]]
+    for i, (start, end) in enumerate(spans):
+        next_start = spans[i + 1][0] if i + 1 < len(spans) else n
+        parts.append(content[end:next_start])
+    cleaned = parts[0]
+    for part in parts[1:]:
+        if cleaned.endswith(" ") and part.startswith(" "):
+            part = part[1:]
+        cleaned += part
     return cleaned, captions
 
 

@@ -93,8 +93,10 @@ day; LongMemEval-S: the dataset's `question_date` — the prompt is assembled ex
 product's real prompt-assembly path builds it: pinned block (`char._format_pinned_block()`) +
 facts block (`char._format_facts_block(user_id, pinned_ids)`) + up to K dated memories from
 `char.retriever.retrieve(question, limit=K, relationship_target=user_id)` (K = 20 for all runs
-through Tier 3i; **K = 60 from Tier 3j on** — chosen by the pre-registered rule over the
-measured K-curve, see the [Tier 3j section](#tier-3j-the-retrieval-depth-curve-k-sweep-2026-09-02);
+through Tier 3i; K = 60 for Tier 3j; **K = 100 with the hardened abstention instruction from
+Tier 3k on** — each chosen by a pre-registered rule over the measured K-curve, see the
+[Tier 3j](#tier-3j-the-retrieval-depth-curve-k-sweep-2026-09-02) and
+[Tier 3k](#tier-3k-abstention-at-depth-hardening-2026-09-02) sections;
 pinned memories
 already in the block are filtered out of this list so nothing repeats), rendered via
 `char._format_memories(...)`. Instruction: answer in at most 15 words, use only the memories,
@@ -227,7 +229,11 @@ module docstring says the same in the other direction).
 **QA system prompt** (`QA_SYSTEM`):
 
 ```
-You answer questions about a person using ONLY the memories provided. Be concise (at most 15 words). Convert relative dates to absolute dates. If the memories do not contain the answer, reply exactly: Not mentioned
+You answer questions about a person using ONLY the memories provided. Be concise (at most 15 words). Convert relative dates to absolute dates. You may combine multiple memories, but never guess or infer beyond what they state. If the memories do not actually state the answer, reply exactly: Not mentioned
+
+(The "never guess or infer beyond what they state" hardening is Tier 3k, 2026-09-02; runs
+through Tier 3j used the earlier final sentence "If the memories do not contain the answer,
+reply exactly: Not mentioned" — see the Tier 3k section.)
 ```
 
 QA user message (`qa_messages`): `"Today is {today}."`, then the assembled memory/facts block (if
@@ -327,10 +333,12 @@ anymore. The spec only requires a LoCoMo full-context baseline; LongMemEval-S is
 
 ## Results
 
-**Current defaults (2026-09-02, Tier 3j):** LoCoMo memory J **0.632** at the K = 60 protocol
-(`locomo-t3jK60`) vs. full-context 0.696 — the K = 20 lineage headline was 0.571
-(`locomo-t3gA`), and the full depth curve is in the
-[Tier 3j section](#tier-3j-the-retrieval-depth-curve-k-sweep-2026-09-02);
+**Current defaults (2026-09-02, Tier 3k):** LoCoMo memory J **0.670** at the K = 100 +
+hardened-abstention protocol (`locomo-t3kH100`, adversarial 0.888) vs. full-context 0.696 —
+2.6 points under the ceiling at 5.7× fewer prompt tokens. Lineage: 0.571 at K = 20
+(`locomo-t3gA`), 0.632 at K = 60 (`locomo-t3jK60`); the depth curve is in the
+[Tier 3j section](#tier-3j-the-retrieval-depth-curve-k-sweep-2026-09-02) and the hardening in
+[Tier 3k](#tier-3k-abstention-at-depth-hardening-2026-09-02);
 LongMemEval-S (100-Q) **0.495** (`lme-s-100-v4`; the earlier 50-Q sample scored 0.542 and is a
 strict subset — see [Tier 3h](#tier-3h-longmemeval-s-at-100-questions-2026-09-02)); LoCoMo-Plus cognitive memory **0.356** vs. full-context 0.135 —
 **recovered** from Tier 3d's 0.269 by decoupling `_build_context`'s render order from its
@@ -1203,6 +1211,46 @@ settle. The open problem this curve exposes is **abstention at depth** (0.913 �
 better refusal instruction or a retrieval-confidence signal in the prompt would let the
 curve run past K = 60, and that — not more query rewriting — is the recorded next retrieval
 candidate alongside entity-linking at ingest.
+
+## Tier 3k: abstention-at-depth hardening (2026-09-02)
+
+Tier 3j's curve left K = 80/100's J (0.664/0.674) on the table because adversarial
+abstention decayed below the 0.87 floor (0.863/0.848): the deeper pool surfaces
+related-but-not-answering memories, and on the 446 questions built to have no answer the
+model commits to plausible near-misses (the 33 K=20→K=100 flipped abstentions are all of
+this shape). Tier 3k hardens one sentence of the QA instruction — "You may combine multiple
+memories, but never guess or infer beyond what they state. If the memories do not actually
+state the answer, reply exactly: Not mentioned" — wording chosen to forbid speculation
+without banning the multi-memory combination the cat-1 gains depend on. Protocol change
+only (`eval/external/prompts.py::QA_SYSTEM`); no library code.
+
+Answer-only on the v3b DBs at three depths (`locomo-t3kH60/80/100`), vs the unhardened
+Tier 3j points:
+
+| metric | H60 | H80 | H100 | (unhardened 60/80/100) |
+|---|---:|---:|---:|---|
+| **Overall J** | 0.635 | 0.670 | **0.670** | 0.632 / 0.664 / 0.674 |
+| multi-hop (cat 1) | 0.397 | 0.489 | 0.493 | 0.401 / 0.472 / 0.518 |
+| temporal (cat 2) | 0.617 | 0.642 | 0.623 | 0.595 / 0.629 / 0.636 |
+| open-domain (cat 3) | 0.260 | 0.260 | 0.271 | 0.281 / 0.312 / 0.271 |
+| single-hop (cat 4) | 0.765 | 0.788 | 0.793 | 0.765 / 0.781 / 0.787 |
+| adversarial abstention | **0.899** | **0.883** | **0.888** | 0.877 / 0.863 / 0.848 |
+| mean prompt tokens/question | 3,057 | 3,734 | 4,406 | (unchanged) |
+
+The hardening recovers abstention at every depth (+2.2 / +2.0 / +4.0 points) at zero or
+positive overall-J cost at 60 and 80, and −0.4 at 100 (0.670 vs 0.674, inside the −0.005
+tolerance). **Pre-registered rule** (spec, declared before any run): adopt the largest
+K ∈ {60, 80, 100} with adversarial ≥ 0.87 AND J ≥ unhardened(K) − 0.005. All three pass;
+K = 100 is selected. H80 and H100 tie exactly on overall J (1331/1986 correct); H100 wins
+the rule and also carries better multi-hop (0.493) and abstention (0.888) at ~18% more
+prompt tokens — a future cost-sensitive consumer can run K = 80 for the same J today.
+
+**New headline: LoCoMo memory J 0.670, adversarial 0.888** (`locomo-t3kH100`; the hardened
+instruction is the protocol prompt at all K from here on). The campaign arc: 0.444 (Tier
+3b) → 0.571 (3g) → 0.632 (3j) → **0.670**, now 2.6 points under the full-context ceiling at
+5.7× fewer prompt tokens. The remaining gap is concentrated in open-domain (cat 3, 0.271 vs
+full-context 0.302) and the still-unsaturated multi-hop tail; entity-linking at ingest
+stays the recorded next retrieval candidate.
 
 ## Caveats
 

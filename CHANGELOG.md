@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Results — Tier 3k (2026-09-02): abstention-at-depth hardening, new LoCoMo headline
+- One-sentence QA-instruction hardening ("combine memories, never guess beyond them")
+  recovers adversarial abstention at every depth (+2.2/+2.0/+4.0 at K=60/80/100) at ≤0.005
+  overall-J cost. Pre-registered rule adopts K=100: **LoCoMo memory headline J 0.670,
+  adversarial 0.888** (`locomo-t3kH100`; H80 ties exactly on J at ~18% fewer tokens).
+  Campaign arc 0.444 → 0.571 → 0.632 → 0.670, now 2.6 points under full-context at 5.7×
+  fewer prompt tokens. Protocol-only change (`eval/external/prompts.py::QA_SYSTEM`).
+
 ### Results — Tier 3j (2026-09-02): retrieval-depth K-sweep, new LoCoMo headline
 - `diagnose_recall` on `locomo-t3gA`: 66% of wrong answers had the gold evidence stored but
   below the K=20 cutoff (recall@20 0.570 vs recall@100 0.777). K-sweep on the v3b DBs:

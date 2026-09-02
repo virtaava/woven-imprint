@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Results — Tier 3j (2026-09-02): retrieval-depth K-sweep, new LoCoMo headline
+- `diagnose_recall` on `locomo-t3gA`: 66% of wrong answers had the gold evidence stored but
+  below the K=20 cutoff (recall@20 0.570 vs recall@100 0.777). K-sweep on the v3b DBs:
+  J 0.571/0.600/0.632/0.664/0.674 at K=20/40/60/80/100; multi-hop 0.287 → 0.518; adversarial
+  abstention decays 0.913 → 0.848 past K=40. Pre-registered selection rule (step gain ≥ +1.0
+  AND abstention ≥ 0.87) picks **K=60 as the new LoCoMo memory-mode protocol: headline J
+  0.632** (`locomo-t3jK60`; 3,057 prompt tokens/question). No library change — the sweep only
+  varies `retrieve(limit=…)`. Next retrieval candidates recorded: abstention-at-depth
+  hardening, entity-linking at ingest.
+
 ### Added — Tier 3i (LLM-guided query expansion, opt-in)
 - **`memory.query_expansion` (default `0`)**: when > 0 and the retriever holds an LLM
   handle, one JSON call per `retrieve()` rewrites the query into ≤N instance-level search

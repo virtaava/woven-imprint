@@ -225,7 +225,7 @@ flips after Darcy rescues the Bennets (affection turns positive), and resolves a
 proposal (trust +0.06, affection +0.22, familiarity 0.99).
 
 Deterministic benchmark suites run in CI; the current numbers are generated into [docs/RESULTS.md](docs/RESULTS.md) by `eval/render_results.py`. Four live persistence tests need a real model.
-LoCoMo, LoCoMo-Plus, and LongMemEval-S numbers, judged by the local brain against a full-context baseline, are documented in [docs/BENCHMARKS.md](docs/BENCHMARKS.md). LoCoMo J 0.57 (memory) vs 0.70 (full context); LongMemEval-S 0.50 (100-question sample); LoCoMo-Plus cognitive 0.36 (regression root-caused to prompt section order and fixed; see BENCHMARKS).
+LoCoMo, LoCoMo-Plus, and LongMemEval-S numbers, judged by the local brain against a full-context baseline, are documented in [docs/BENCHMARKS.md](docs/BENCHMARKS.md). LoCoMo J 0.63 (memory, K=60 protocol; 0.674 at K=100, 2 points under full context at 5.7x fewer tokens) vs 0.70 (full context); LongMemEval-S 0.50 (100-question sample); LoCoMo-Plus cognitive 0.36 (regression root-caused to prompt section order and fixed; see BENCHMARKS).
 Covers memory recall, cross-session persistence, consolidation, belief revision,
 relationship bounds, persona consistency, adversarial persona resistance, and contradiction handling.
 

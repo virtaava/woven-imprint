@@ -324,8 +324,9 @@ anymore. The spec only requires a LoCoMo full-context baseline; LongMemEval-S is
 
 ## Results
 
-**Current defaults (2026-09-01, Tier 3e):** LoCoMo memory J **0.562** vs. full-context 0.696;
-LongMemEval-S (50-Q) **0.542**; LoCoMo-Plus cognitive memory **0.356** vs. full-context 0.135 —
+**Current defaults (2026-09-02, Tier 3h):** LoCoMo memory J **0.571** vs. full-context 0.696;
+LongMemEval-S (100-Q) **0.495** (`lme-s-100-v4`; the earlier 50-Q sample scored 0.542 and is a
+strict subset — see [Tier 3h](#tier-3h-longmemeval-s-at-100-questions-2026-09-02)); LoCoMo-Plus cognitive memory **0.356** vs. full-context 0.135 —
 **recovered** from Tier 3d's 0.269 by decoupling `_build_context`'s render order from its
 shedding priority (the Tier 3d reorder's actual cost), measured under a fixed-temperature
 (0.3) chat protocol that also tamed the ±4-point run-to-run noise that had been muddying this
@@ -1077,6 +1078,44 @@ The pre-registered bar (overall ≥ 0.557 AND cat-2 ≥ +0.02 or cat-4 ≥ +0.01
 room to spare — temporal gained +6.2 points, precisely the failure mode the hints target.
 Multi-hop's −1.8 sits inside the measured replica spread. `locomo:memory` now points at
 `locomo-t3gA` (J 0.571 is the headline).
+
+## Tier 3h: LongMemEval-S at 100 questions (2026-09-02)
+
+Every LongMemEval-S number so far rested on a 50-question sample. Tier 3h is a measurement
+tier only — no library changes: the same shipped defaults (master `c6ff520`, all Tier 3b-3g
+improvements active) re-measured on a 100-question stratified sample (seed 7). The sample is
+prefix-stable: all 50 earlier questions are contained in the 100, so the run decomposes
+exactly.
+
+Run `lme-s-100-v4`, 10 shards, `--interval 1`, `--delete-db-after-answer`, K = 20. Ingested
+49,649 turns / 4,809 sessions with 34,198 LLM calls; wall ~17.5 h (2026-09-01 11:43 →
+2026-09-02 05:05); mean prompt 2,461 tokens/question.
+
+| metric | 100-Q (`lme-s-100-v4`) | 50-Q (`lme-s-50-v3b`) |
+|---|---:|---:|
+| **Overall J** | **0.495** (46/93) | 0.542 (26/48) |
+| single-session-user | 1.000 (n=14) | 1.000 (n=7) |
+| knowledge-update | 0.769 (n=13) | 0.875 (n=8) |
+| single-session-assistant | 0.588 (n=17) | 0.500 (n=8) |
+| temporal-reasoning | 0.375 (n=16) | 0.500 (n=8) |
+| multi-session | 0.313 (n=16) | 0.222 (n=9) |
+| single-session-preference | 0.059 (n=17) | 0.250 (n=8) |
+| abstention (`_abs`, rule-scored) | 7/7 | 2/2 |
+| token-F1 | 0.261 | — |
+| n_unparsed | 0 | 0 |
+
+Decomposition (same code, so any drop must come from sampling or noise): on the **shared 48
+qa questions** this run scores 0.521 vs. the 50-Q run's 0.542 — a one-question flip, within
+run-to-run judge/answer noise. The **45 new questions** score 0.467. The headline drop
+0.542 → 0.495 is therefore the fuller sample being slightly harder, not a regression; 0.495
+(±0.05 SE at n=93) is the better-grounded number and becomes the headline.
+
+Failure modes are unchanged in kind: 32 of the 47 wrong answers (68%) are "Not mentioned" —
+retrieval misses, the same dominant mode as LoCoMo — and `single-session-preference` stays
+near zero (1/17): those questions ask the assistant to *apply* a stated preference in a new
+reply, which the ≤15-word factual-answer prompt cannot do (a protocol mismatch documented
+since Tier 3b, not a memory failure). Abstention stays perfect at the larger n.
+`longmemeval_s:memory` now points at `lme-s-100-v4`.
 
 ## Caveats
 

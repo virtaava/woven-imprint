@@ -1117,6 +1117,40 @@ reply, which the ≤15-word factual-answer prompt cannot do (a protocol mismatch
 since Tier 3b, not a memory failure). Abstention stays perfect at the larger n.
 `longmemeval_s:memory` now points at `lme-s-100-v4`.
 
+## Tier 3i: LLM-guided query expansion — measured, shipped opt-in (2026-09-02)
+
+Tier 3h's failure analysis pointed at aggregation questions ("how many X **in total**",
+"what order were the three trips") — the answer is scattered across instance memories that
+are individually dissimilar to the aggregate phrasing, so single-query retrieval never
+surfaces them all. Tier 3f's zero-LLM lexical expansion had already failed its bar; this
+tier measured the recorded next step: `memory.query_expansion` (N) has the LLM rewrite the
+question into ≤N instance-level search queries (one JSON call), embeds each (one batch
+call), runs one FTS pull each, and fuses each expansion's semantic + keyword rankings into
+the final RRF at `memory.query_expansion_weight` (0.5). Off path byte-identical; every
+failure degrades silently to the unexpanded ranking.
+
+Measured answer-only on the `locomo-mem-v3b` DBs (run `locomo-t3iA`, code eb06543,
+`--set memory.query_expansion=3`) against the `locomo-t3gA` baseline:
+
+| metric | expansion ON | t3gA baseline |
+|---|---:|---:|
+| Overall J | 0.572 | 0.571 |
+| multi-hop (cat 1) | 0.305 | 0.287 |
+| temporal (cat 2) | 0.564 | 0.573 |
+| open-domain (cat 3) | 0.229 | 0.240 |
+| single-hop (cat 4) | 0.704 | 0.704 |
+| adversarial abstention | 0.901 | 0.895 |
+| mean seconds / question | **10.1** | 2.2 |
+
+**Pre-registered bar missed.** The bar (declared in the spec before any run) required
+overall ≥ 0.565 AND cat-1 ≥ 0.317 AND adversarial ≥ 0.87. Overall and adversarial clear,
+but cat-1 gained +1.8 points where the bar demanded +3.0 — and the feature costs 4.6× the
+per-question latency (the expansion LLM call dominates). A sub-bar gain at that price does
+not ship on. `query_expansion` therefore ships **opt-in** (default `0`), exactly like Tier
+3f's lexical variant; `locomo:memory` keeps pointing at `locomo-t3gA`. The aggregation gap
+(LME multi-session 0.31) remains open — the next candidate is entity-linking at ingest or
+a raised K for detected aggregate questions, not more query rewriting.
+
 ## Caveats
 
 - **Local 35B judge ≠ GPT-4o.** These numbers are judged by the same local Qwen3.5-35B-A3B-FP8

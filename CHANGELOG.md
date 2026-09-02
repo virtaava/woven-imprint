@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Tier 3i (LLM-guided query expansion, opt-in)
+- **`memory.query_expansion` (default `0`)**: when > 0 and the retriever holds an LLM
+  handle, one JSON call per `retrieve()` rewrites the query into ≤N instance-level search
+  queries; each adds one embedding (single batch call) + one `fts_search` and two extra
+  weighted-RRF ranked lists at **`memory.query_expansion_weight`** (default `0.5`). Off
+  path is byte-identical; LLM/parse/embed/FTS failures degrade silently to the unexpanded
+  ranking. `MemoryRetriever.__init__` gains optional `llm=None` (Character wires its own
+  LLM through, which also makes the external-benchmark runner expansion-capable with zero
+  runner changes). `MemoryConfig.__post_init__` validates both fields.
+
+### Results — Tier 3i (2026-09-02)
+- Measured on the v3b DBs (`locomo-t3iA`): overall J 0.572 vs 0.571, cat-1 multi-hop
+  0.305 vs 0.287 (+1.8, bar demanded +3.0), adversarial 0.901, at 4.6× per-question
+  latency (10.1 s vs 2.2 s). **Pre-registered bar missed → ships opt-in**; headline and
+  `locomo:memory` pointer unchanged (`locomo-t3gA`).
+
 ### Results — Tier 3h (2026-09-02)
 - **LongMemEval-S measured at 100 questions**: J **0.495** (`lme-s-100-v4`, seed 7, all Tier
   3b-3g defaults, no code changes). The earlier 50-question sample is a strict subset: on the

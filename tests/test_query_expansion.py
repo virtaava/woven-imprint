@@ -227,3 +227,14 @@ def test_empty_query_skips_expansion(setup):
     llm = FakeExpansionLLM(["anything"])
     MemoryRetriever(storage, embedder, "c1", llm=llm).retrieve("", limit=5)
     assert llm.calls == 0
+
+
+def test_character_wires_llm_into_retriever():
+    """eval/external/runner.py calls char.retriever.retrieve() directly —
+    the Character must hand its LLM to the retriever or benchmark runs can
+    never exercise expansion."""
+    from tests.helpers import make_test_engine  # existing suite-wide factory
+
+    engine = make_test_engine()
+    char = engine.create_character("Wire Test", persona={})
+    assert char.retriever.llm is char.llm

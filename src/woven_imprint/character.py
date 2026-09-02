@@ -254,7 +254,7 @@ class Character:
         self.memory = MemoryStore(storage, embedder, char_id, character_name=persona.name)
         self.facts = FactStore(storage, char_id, embedder=embedder, embed_fn=self.memory.embed_for)
         self.memory.facts = self.facts
-        self.retriever = MemoryRetriever(storage, embedder, char_id)
+        self.retriever = MemoryRetriever(storage, embedder, char_id, llm=llm)
         self.belief = BeliefReviser(
             storage, char_id, embedder=embedder, embed_fn=self.memory.embed_for
         )

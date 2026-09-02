@@ -98,3 +98,13 @@ pytest/ruff (src tests eval demo)/pyright green; deterministic suites unaffected
 Branch `feat/tier3i-query-expansion` off master `0ea7298`. Never touch
 `experiments/parametric_spike/` or `kotlin/`. Local brain/embedder only; never stop
 vllm-brain; memory < 85%. Data files gitignored; results JSON committed with `git add -f`.
+
+## Deviations (recorded at final review)
+The spec's `max_tokens ≤ 300` cap on the expansion call was not implemented:
+`_generate_expansions` calls `llm.generate_json_robust`, whose signature has no
+`max_tokens` parameter (provider default 2048). Ruling: keep the looser default rather
+than thread `max_tokens` through every provider's `generate_json_robust` signature —
+doing so risks the documented reasoning-model mid-JSON-truncation trap (tight caps on
+JSON-returning calls truncate mid-JSON on `deepseek-v4-flash` and similar). The output
+contract (short JSON list, capped/deduped in `_generate_expansions`) bounds cost in
+practice regardless of the provider's token ceiling.

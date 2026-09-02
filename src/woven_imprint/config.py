@@ -138,6 +138,12 @@ class MemoryConfig:
     # stays dominant at the 0.5 default.
     query_expansion_weight: float = 0.5
 
+    def __post_init__(self):
+        if self.query_expansion < 0:
+            raise ValueError("query_expansion must be >= 0")
+        if self.query_expansion_weight <= 0:
+            raise ValueError("query_expansion_weight must be > 0")
+
 
 @dataclass
 class ContextConfig:

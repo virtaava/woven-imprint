@@ -115,9 +115,11 @@ def setup():
     cfg = get_config().memory
     orig_qe = cfg.query_expansion
     orig_sp = cfg.retrieval_second_pass
+    orig_weight = cfg.query_expansion_weight
     yield storage, embedder, cfg
     cfg.query_expansion = orig_qe
     cfg.retrieval_second_pass = orig_sp
+    cfg.query_expansion_weight = orig_weight
     storage.close()
 
 
@@ -163,8 +165,6 @@ def test_off_by_default_no_llm_calls_and_identical_results(setup):
 def test_config_on_but_no_llm_handle_is_silently_off(setup):
     storage, embedder, cfg = setup
     _seed_aggregation_corpus(storage, embedder)
-    cfg.query_expansion = 3
-    baseline_cfg_off = None
     cfg.query_expansion = 0
     baseline_cfg_off = MemoryRetriever(storage, embedder, "c1").retrieve(
         "art events attended", limit=5
@@ -192,6 +192,43 @@ def test_expansion_surfaces_instance_memories(setup):
     # The three instance memories share no words with the query; only the
     # expansion lists can rank them into the top 5 above the 10 dinner rows.
     assert {ids["gallery"], ids["museum"], ids["concert"]} <= got
+
+
+def test_query_expansion_weight_is_honored(setup):
+    """`query_expansion_weight` controls how strongly the expansion lists'
+    rank credit is mixed into the fused ranking. Same corpus/expansions as
+    `test_expansion_surfaces_instance_memories`: a vanishingly small weight
+    leaves the ranking indistinguishable from the unexpanded (query_expansion=0)
+    baseline, while the 0.5 default visibly reorders it — proof the weight is
+    actually read, not just accepted."""
+    storage, embedder, cfg = setup
+    _seed_aggregation_corpus(storage, embedder)
+    query = "how many cultural outings in total"
+
+    cfg.query_expansion = 0
+    baseline = MemoryRetriever(storage, embedder, "c1").retrieve(query, limit=5)
+
+    cfg.query_expansion = 3
+    llm = FakeExpansionLLM(
+        [
+            "went to a gallery opening",
+            "visited the modern museum",
+            "enjoyed the symphony concert",
+        ]
+    )
+
+    cfg.query_expansion_weight = 1e-6
+    low_weight = MemoryRetriever(storage, embedder, "c1", llm=llm).retrieve(query, limit=5)
+
+    cfg.query_expansion_weight = 0.5
+    high_weight = MemoryRetriever(storage, embedder, "c1", llm=llm).retrieve(query, limit=5)
+
+    # Negligible weight ~= no expansion influence at all: same ranking as the
+    # query_expansion=0 baseline.
+    assert [m["id"] for m in low_weight] == [m["id"] for m in baseline]
+    # A real weight changes the ranking (a strict rank difference from the
+    # negligible-weight run) — the expansion lists' credit is honored.
+    assert [m["id"] for m in high_weight] != [m["id"] for m in low_weight]
 
 
 def test_llm_failure_degrades_to_unexpanded_ranking(setup):

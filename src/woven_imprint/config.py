@@ -121,6 +121,22 @@ class MemoryConfig:
     # `MemoryRetriever.retrieve` for the widen-and-re-fuse implementation. Off by
     # default pending live measurement (controller ruling pending Task 2/3).
     retrieval_second_pass: int = 0
+    # Tier 3i (docs/superpowers/specs/2026-09-02-tier3i-llm-query-expansion.md):
+    # LLM-guided query expansion (0 = off). When > 0 AND the retriever was built
+    # with an `llm` handle, one JSON call per retrieve() rewrites the query into
+    # at most this many instance-level search queries (aggregation questions like
+    # "how many X in total" need instance memories that are individually
+    # dissimilar to the aggregate phrasing — LME-S-100 multi-session J 0.31,
+    # Tier 3h diagnostics). Each expansion adds one embedding (single batch
+    # call) + one fts_search and contributes two extra RRF ranked lists at
+    # `query_expansion_weight`. Off by default pending the pre-registered
+    # locomo-t3iA bar (spec §Measurement). Cost when on: +1 LLM call,
+    # +1 embed_batch call, +N fts_search per retrieve.
+    query_expansion: int = 0
+    # RRF weight for each expansion query's two ranked lists (semantic + keyword).
+    # The original query's lists keep their own weights, so the original ranking
+    # stays dominant at the 0.5 default.
+    query_expansion_weight: float = 0.5
 
 
 @dataclass
@@ -505,6 +521,9 @@ memory:
   fact_dedup_similarity: 0.0
   # retrieval_second_pass: 0       # >0 = number of top fused hits to expand from (multi-hop
   # second pass); one extra fts_search + zero embed calls per retrieve. Off by default.
+  # query_expansion: 0             # >0 = max LLM-generated expansion queries per retrieve
+  # (aggregation/multi-hop recall); +1 LLM call + 1 embed_batch + N fts_search when on.
+  # query_expansion_weight: 0.5    # RRF weight of each expansion's ranked lists.
 
 context:
   total_tokens: 6000

@@ -651,13 +651,13 @@
     "judge_versions": "2"
   },
   "longmemeval_s:memory": {
-    "run_id": "lme-s-50-v3b",
+    "run_id": "lme-s-100-v4",
     "bench": "longmemeval_s",
     "mode": "memory",
     "model": "Qwen/Qwen3.5-35B-A3B-FP8",
     "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
     "embedding": "nomic-embed-text",
-    "timestamp": "2026-08-31T13:03:24.113200+00:00",
+    "timestamp": "2026-09-02T02:05:46.366606+00:00",
     "config": {
       "k": 20,
       "fact_extraction_interval": 1,
@@ -670,7 +670,7 @@
         "judge": 0.0
       },
       "limit_conversations": null,
-      "sample": 50,
+      "sample": 100,
       "seed": 7,
       "max_sessions": null,
       "max_questions": null,
@@ -678,64 +678,68 @@
       "overrides": []
     },
     "summary": {
-      "n_questions": 50,
-      "overall_j": 0.5416666666666666,
-      "overall_f1": 0.22260142659332502,
+      "n_questions": 100,
+      "overall_j": 0.4946236559139785,
+      "overall_f1": 0.2611693191345874,
       "per_category": {
         "multi-session": {
-          "n": 9,
-          "j": 0.2222222222222222,
-          "f1": 0.03607503607503607
+          "n": 16,
+          "j": 0.3125,
+          "f1": 0.06836219336219337
         },
         "single-session-assistant": {
-          "n": 8,
-          "j": 0.5,
-          "f1": 0.22443667443667445
+          "n": 17,
+          "j": 0.5882352941176471,
+          "f1": 0.3420273626155979
         },
         "single-session-preference": {
-          "n": 8,
-          "j": 0.25,
-          "f1": 0.0869042818115546
+          "n": 17,
+          "j": 0.058823529411764705,
+          "f1": 0.06954639687633568
         },
         "single-session-user": {
-          "n": 7,
+          "n": 14,
           "j": 1.0,
-          "f1": 0.5873015873015872
+          "f1": 0.6195027195027195
         },
         "temporal-reasoning": {
-          "n": 8,
-          "j": 0.5,
-          "f1": 0.21343607373019138
+          "n": 16,
+          "j": 0.375,
+          "f1": 0.19794693395699586
         },
         "knowledge-update": {
-          "n": 8,
-          "j": 0.875,
-          "f1": 0.2563582251082251
+          "n": 13,
+          "j": 0.7692307692307693,
+          "f1": 0.3352314352314352
         }
       },
       "rule_scored": {
         "knowledge-update": {
-          "n": 1,
+          "n": 4,
           "accuracy": 1.0
         },
         "single-session-user": {
+          "n": 2,
+          "accuracy": 1.0
+        },
+        "multi-session": {
           "n": 1,
           "accuracy": 1.0
         }
       },
       "adversarial_accuracy": null,
       "abstain_accuracy": 1.0,
-      "mean_prompt_tokens_est": 2538.08,
+      "mean_prompt_tokens_est": 2461.05,
       "n_unparsed": 0
     },
     "ingest_totals": {
-      "turns": 24639,
-      "sessions": 2380,
-      "llm_calls": 17021,
-      "seconds": 426536.76139363647
+      "turns": 49649,
+      "sessions": 4809,
+      "llm_calls": 34198,
+      "seconds": 614517.9366769111
     },
-    "records_file": "external_lme-s-50-v3b.json",
-    "n_conversations": 50,
+    "records_file": "external_lme-s-100-v4.json",
+    "n_conversations": 100,
     "judge_versions": "2"
   }
 }

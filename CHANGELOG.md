@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Results — Tier 3h (2026-09-02)
+- **LongMemEval-S measured at 100 questions**: J **0.495** (`lme-s-100-v4`, seed 7, all Tier
+  3b-3g defaults, no code changes). The earlier 50-question sample is a strict subset: on the
+  shared 48 qa questions this run scores 0.521 vs. 0.542 (one-question flip, within noise);
+  the 45 new questions score 0.467 — the fuller sample is slightly harder, not a regression.
+  Abstention 7/7; `single-session-preference` remains a protocol mismatch (1/17). New
+  LongMemEval-S headline; `longmemeval_s:memory` now points at `lme-s-100-v4`.
+
 ### Results — Tier 3g (2026-09-01)
 - Relative-date hints + photo-caption lines measured on the v3b DBs: LoCoMo J 0.562 → **0.571**, temporal +6.2 points — pre-registered bar met, defaults ship on. New LoCoMo headline.
 

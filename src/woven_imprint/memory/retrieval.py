@@ -107,6 +107,58 @@ def _salient_terms(text: str, limit: int = 16) -> list[str]:
     return terms
 
 
+# Tier 3i (docs/superpowers/specs/2026-09-02-tier3i-llm-query-expansion.md):
+# prompt for the one expansion call. The model must return a bare JSON list of
+# strings — instance-level search queries, not answers. Kept short: it runs
+# once per retrieve() when `query_expansion` > 0.
+_EXPANSION_PROMPT = (
+    "You rewrite a question into search queries for a personal-memory database.\n"
+    "The database stores one small dated memory per event (e.g. \"went to a gallery"
+    " opening\", \"donated $50 at the bake sale\").\n"
+    "Aggregate questions (how many / how much / in total / list all / what order)"
+    " can only be answered by finding EVERY individual instance, so produce"
+    " instance-level rephrasings naming the concrete things someone would have"
+    " mentioned. For questions about connected entities, add a query naming the"
+    " linking entity.\n"
+    "Return ONLY a JSON list of at most {n} short search queries (3-8 words each),"
+    " no explanations. Do not repeat the original question.\n"
+    "Question: {query}"
+)
+
+
+def _generate_expansions(llm, query: str, n: int) -> list[str]:
+    """One LLM JSON call -> up to `n` cleaned expansion queries.
+
+    Returns [] on ANY failure (LLM error, non-list payload, non-string items,
+    nothing left after cleaning) — expansion must never break retrieval.
+    Cleaning: strip; drop empties; case-fold dedup; drop anything equal to the
+    original query (case-folded); cap at `n`.
+    """
+    try:
+        payload = llm.generate_json_robust(
+            [{"role": "user", "content": _EXPANSION_PROMPT.format(n=n, query=query)}],
+            temperature=0.0,
+        )
+    except Exception:
+        return []
+    if not isinstance(payload, list):
+        return []
+    seen: set[str] = {query.casefold().strip()}
+    out: list[str] = []
+    for item in payload:
+        if not isinstance(item, str):
+            return []
+        cleaned = item.strip()
+        key = cleaned.casefold()
+        if not cleaned or key in seen:
+            continue
+        seen.add(key)
+        out.append(cleaned)
+        if len(out) >= n:
+            break
+    return out
+
+
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors.
 

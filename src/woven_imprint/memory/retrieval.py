@@ -281,10 +281,20 @@ class MemoryRetriever:
     - Buffer memories decay quickly (ephemeral by design)
     """
 
-    def __init__(self, storage: SQLiteStorage, embedder: EmbeddingProvider, character_id: str):
+    def __init__(
+        self,
+        storage: SQLiteStorage,
+        embedder: EmbeddingProvider,
+        character_id: str,
+        llm=None,
+    ):
         self.storage = storage
         self.embedder = embedder
         self.character_id = character_id
+        # Tier 3i: optional LLM handle for query expansion. None (the default)
+        # keeps expansion off regardless of config — the retriever must work
+        # LLM-free everywhere it does today.
+        self.llm = llm
 
     def retrieve(
         self, query: str, limit: int = 10, relationship_target: str | None = None
@@ -574,6 +584,69 @@ class MemoryRetriever:
                     weights2.append(mem_cfg.weight_relationship)
 
                 fused = reciprocal_rank_fusion(ranked_lists2, k=mem_cfg.rrf_k, weights=weights2)
+
+        # ── Tier 3i: LLM-guided query expansion (off by default) ──────────────
+        # When `query_expansion` (N) > 0 AND this retriever holds an LLM handle,
+        # one JSON call rewrites the query into <=N instance-level search
+        # queries (aggregation questions — "how many X in total" — need
+        # instance memories individually dissimilar to the aggregate phrasing;
+        # LME-S-100 multi-session J 0.31). Each expansion gets one embedding
+        # (single embed_batch call) + one fts_search; its semantic and keyword
+        # rankings join the final RRF as extra lists at
+        # `query_expansion_weight`. The already-built lists are reused as-is
+        # (strategies 3-5 are NOT re-run, the relevance gate is not
+        # re-derived): rows surfaced only by an expansion earn credit purely
+        # through the expansion lists — the same additive-credit rationale as
+        # the Tier 3f strategy-2 extension. Every failure (LLM, parse, embed,
+        # FTS) degrades silently to the unexpanded ranking.
+        if self.llm is not None and mem_cfg.query_expansion > 0 and query.strip():
+            expansions = _generate_expansions(self.llm, query, mem_cfg.query_expansion)
+            exp_vectors: list[list[float]] = []
+            if expansions:
+                try:
+                    exp_vectors = self.embedder.embed_batch(expansions)
+                except Exception:
+                    expansions = []
+            if expansions and len(exp_vectors) == len(expansions):
+                exp_lists: list[list[str]] = []
+                new_exp_rows = False
+                exp_fts_hits: list[list[dict]] = []
+                for exp in expansions:
+                    try:
+                        hits = self.storage.fts_search(self.character_id, exp, limit=50)
+                    except Exception:
+                        hits = []
+                    exp_fts_hits.append(hits)
+                    for m in hits:
+                        if m["id"] not in memory_map:
+                            memory_map[m["id"]] = m
+                            all_memories.append(m)
+                            new_exp_rows = True
+                if new_exp_rows:
+                    all_memories.sort(key=lambda m: m.get("rowid", 0))
+                embedded_exp = [m for m in all_memories if m.get("embedding")]
+                exp_weights: list[float] = []
+                for exp_vec, hits in zip(exp_vectors, exp_fts_hits):
+                    sims_e = cosine_matrix(exp_vec, [m["embedding"] for m in embedded_exp])
+                    scored = list(zip((m["id"] for m in embedded_exp), sims_e))
+                    scored.sort(key=lambda x: x[1], reverse=True)
+                    exp_lists.append([mid for mid, _ in scored])
+                    exp_weights.append(mem_cfg.query_expansion_weight)
+                    exp_lists.append([m["id"] for m in hits])
+                    exp_weights.append(mem_cfg.query_expansion_weight)
+                if exp_lists:
+                    # `base_lists`/`base_weights` = whatever fusion last ran:
+                    # the second-pass lists when Tier 3f was active, else the
+                    # first-pass lists.
+                    if mem_cfg.retrieval_second_pass > 0 and "ranked_lists2" in locals():
+                        base_lists, base_weights = ranked_lists2, weights2
+                    else:
+                        base_lists, base_weights = ranked_lists, weights
+                    fused = reciprocal_rank_fusion(
+                        base_lists + exp_lists,
+                        k=mem_cfg.rrf_k,
+                        weights=base_weights + exp_weights,
+                    )
 
         # Return top-N memories
         results = []

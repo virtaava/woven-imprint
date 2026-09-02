@@ -91,8 +91,11 @@ file order.
 For each question, under `clock.override(question's asked_at)` — LoCoMo: last session date + 1
 day; LongMemEval-S: the dataset's `question_date` — the prompt is assembled exactly as the
 product's real prompt-assembly path builds it: pinned block (`char._format_pinned_block()`) +
-facts block (`char._format_facts_block(user_id, pinned_ids)`) + up to K = 20 dated memories from
-`char.retriever.retrieve(question, limit=20, relationship_target=user_id)` (pinned memories
+facts block (`char._format_facts_block(user_id, pinned_ids)`) + up to K dated memories from
+`char.retriever.retrieve(question, limit=K, relationship_target=user_id)` (K = 20 for all runs
+through Tier 3i; **K = 60 from Tier 3j on** — chosen by the pre-registered rule over the
+measured K-curve, see the [Tier 3j section](#tier-3j-the-retrieval-depth-curve-k-sweep-2026-09-02);
+pinned memories
 already in the block are filtered out of this list so nothing repeats), rendered via
 `char._format_memories(...)`. Instruction: answer in at most 15 words, use only the memories,
 convert relative dates to absolute, and reply exactly `Not mentioned` if the memories don't
@@ -324,7 +327,10 @@ anymore. The spec only requires a LoCoMo full-context baseline; LongMemEval-S is
 
 ## Results
 
-**Current defaults (2026-09-02, Tier 3h):** LoCoMo memory J **0.571** vs. full-context 0.696;
+**Current defaults (2026-09-02, Tier 3j):** LoCoMo memory J **0.632** at the K = 60 protocol
+(`locomo-t3jK60`) vs. full-context 0.696 — the K = 20 lineage headline was 0.571
+(`locomo-t3gA`), and the full depth curve is in the
+[Tier 3j section](#tier-3j-the-retrieval-depth-curve-k-sweep-2026-09-02);
 LongMemEval-S (100-Q) **0.495** (`lme-s-100-v4`; the earlier 50-Q sample scored 0.542 and is a
 strict subset — see [Tier 3h](#tier-3h-longmemeval-s-at-100-questions-2026-09-02)); LoCoMo-Plus cognitive memory **0.356** vs. full-context 0.135 —
 **recovered** from Tier 3d's 0.269 by decoupling `_build_context`'s render order from its
@@ -1150,6 +1156,53 @@ not ship on. `query_expansion` therefore ships **opt-in** (default `0`), exactly
 3f's lexical variant; `locomo:memory` keeps pointing at `locomo-t3gA`. The aggregation gap
 (LME multi-session 0.31) remains open — the next candidate is entity-linking at ingest or
 a raised K for detected aggregate questions, not more query rewriting.
+
+## Tier 3j: the retrieval-depth curve (K-sweep) (2026-09-02)
+
+Tier 3i's expansion measurement and Tier 3h's failure analysis both pointed the same way, so
+before building any more retrieval machinery we asked the diagnostic question directly: **is
+the evidence already in the store, just below the K = 20 cutoff?** `diagnose_recall` on
+`locomo-t3gA` says yes, emphatically: of 660 wrong answers, 435 (66%) had the gold evidence
+stored and active but absent from the top-20; evidence recall@K over all 1,540 qa questions
+climbs 0.570 → 0.641 → 0.777 at K = 20/50/100 (cat-1 multi-hop: 0.413 → 0.495 → 0.708). The
+binding constraint was never query understanding — it was depth.
+
+The sweep (answer-only on the `locomo-mem-v3b` DBs, shipped defaults, only `--k` varies;
+runs `locomo-t3jK40/60/80/100` vs the `locomo-t3gA` K = 20 baseline):
+
+| metric | K=20 | K=40 | K=60 | K=80 | K=100 |
+|---|---:|---:|---:|---:|---:|
+| **Overall J** | 0.571 | 0.600 | **0.632** | 0.664 | 0.674 |
+| multi-hop (cat 1) | 0.287 | 0.344 | 0.401 | 0.472 | 0.518 |
+| temporal (cat 2) | 0.573 | 0.583 | 0.595 | 0.629 | 0.636 |
+| open-domain (cat 3) | 0.240 | 0.229 | 0.281 | 0.312 | 0.271 |
+| single-hop (cat 4) | 0.704 | 0.735 | 0.765 | 0.781 | 0.787 |
+| adversarial abstention | 0.895 | 0.913 | 0.877 | 0.863 | 0.848 |
+| token-F1 | 0.306 | 0.324 | 0.340 | 0.358 | 0.355 |
+| mean prompt tokens/question | 1,206 | 2,147 | 3,057 | 3,734 | 4,406 |
+
+Every answer category gains monotonically with depth (multi-hop nearly doubles, 0.287 →
+0.518), while adversarial abstention decays monotonically past K = 40 — more retrieved
+material means more temptation to answer questions whose answer isn't there. At K = 100,
+memory mode sits 2.2 points under the full-context ceiling (0.674 vs 0.696) at 5.7× fewer
+prompt tokens.
+
+**Selection rule (pre-registered in-session before the K = 80/100 points landed):** the
+headline K is the largest K whose overall-J step gain over the previous point is ≥ +1.0 AND
+whose adversarial abstention stays ≥ 0.87. K = 60 passes (+3.2, 0.877); K = 80 fails the
+abstention floor (0.863). **The LoCoMo memory-mode headline protocol is now K = 60: J 0.632**
+(`locomo:memory` → `locomo-t3jK60`), with the K = 20 lineage retained above for comparability
+with every number published through Tier 3i. LongMemEval-S numbers are still K = 20 — the
+`lme-s-100-v4` DBs were deleted after answering, so the next full LME ingest should adopt
+K = 60 and will be labeled accordingly.
+
+No library change ships in this tier: `retrieve(limit=…)` always took the depth parameter,
+and the product's chat path budgets memories by tokens (`context.memory_tokens`), not by K —
+raising that default is a separate, latency-sensitive decision this benchmark does not
+settle. The open problem this curve exposes is **abstention at depth** (0.913 → 0.848): a
+better refusal instruction or a retrieval-confidence signal in the prompt would let the
+curve run past K = 60, and that — not more query rewriting — is the recorded next retrieval
+candidate alongside entity-linking at ingest.
 
 ## Caveats
 

@@ -16,7 +16,8 @@ from __future__ import annotations
 
 QA_SYSTEM = (
     "You answer questions about a person using ONLY the memories provided. Be concise (at most 15 words). "
-    "Convert relative dates to absolute dates. If the memories do not contain the answer, reply exactly: Not mentioned"
+    "Convert relative dates to absolute dates. You may combine multiple memories, but never guess or infer "
+    "beyond what they state. If the memories do not actually state the answer, reply exactly: Not mentioned"
 )
 
 JUDGE_SYSTEM = (

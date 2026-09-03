@@ -73,15 +73,15 @@
   "judge_versions": "2"
  },
  "locomo:memory": {
-  "run_id": "locomo-t3jK60",
+  "run_id": "locomo-t3kH100",
   "bench": "locomo",
   "mode": "memory",
   "model": "Qwen/Qwen3.5-35B-A3B-FP8",
   "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
   "embedding": "nomic-embed-text",
-  "timestamp": "2026-09-02T11:06:48.245852+00:00",
+  "timestamp": "2026-09-02T18:06:22.436197+00:00",
   "config": {
-   "k": 60,
+   "k": 100,
    "fact_extraction_interval": 1,
    "pair_turns": false,
    "max_tokens": {
@@ -101,39 +101,39 @@
   },
   "summary": {
    "n_questions": 1986,
-   "overall_j": 0.6324675324675325,
-   "overall_f1": 0.3401202518153507,
+   "overall_j": 0.6701298701298701,
+   "overall_f1": 0.3275488999031409,
    "per_category": {
     "2": {
      "n": 321,
-     "j": 0.5950155763239875,
-     "f1": 0.2251276269765319
+     "j": 0.6230529595015576,
+     "f1": 0.20718230391850936
     },
     "3": {
      "n": 96,
-     "j": 0.28125,
-     "f1": 0.09599582425591924
+     "j": 0.2708333333333333,
+     "f1": 0.10723360761732968
     },
     "1": {
      "n": 282,
-     "j": 0.40070921985815605,
-     "f1": 0.2540301402137359
+     "j": 0.4929078014184397,
+     "f1": 0.28170358163185655
     },
     "4": {
      "n": 841,
-     "j": 0.7645659928656362,
-     "f1": 0.44074568474117964
+     "j": 0.7931034482758621,
+     "f1": 0.41401302014452884
     }
    },
    "rule_scored": {
     "5": {
      "n": 446,
-     "accuracy": 0.8766816143497758
+     "accuracy": 0.8878923766816144
     }
    },
-   "adversarial_accuracy": 0.8766816143497758,
+   "adversarial_accuracy": 0.8878923766816144,
    "abstain_accuracy": null,
-   "mean_prompt_tokens_est": 3056.851460221551,
+   "mean_prompt_tokens_est": 4405.661127895267,
    "n_unparsed": 0
   },
   "ingest_totals": {
@@ -142,7 +142,7 @@
    "llm_calls": 6265,
    "seconds": 100131.85766953137
   },
-  "records_file": "external_locomo-t3jK60.json",
+  "records_file": "external_locomo-t3kH100.json",
   "n_conversations": 1986,
   "judge_versions": "2"
  },

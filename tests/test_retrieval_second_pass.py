@@ -57,9 +57,11 @@ def setup():
     embedder = WordEmbedder()
     retriever = MemoryRetriever(storage, embedder, "c1")
     cfg = get_config().memory
-    original = cfg.retrieval_second_pass
+    original_second_pass = cfg.retrieval_second_pass
+    original_entities = cfg.second_pass_entities
     yield storage, embedder, retriever, cfg
-    cfg.retrieval_second_pass = original
+    cfg.retrieval_second_pass = original_second_pass
+    cfg.second_pass_entities = original_entities
     storage.close()
 
 
@@ -321,3 +323,58 @@ def test_decoys_sharing_only_the_word_or_stay_out(setup):
     b_score = results[1]["_retrieval_score"]
     decoy_scores = [m["_retrieval_score"] for m in results if "Tax filings" in m["content"]]
     assert all(d < b_score * 0.5 for d in decoy_scores), (b_score, decoy_scores)
+
+
+# ── (e) second_pass_entities: Tier 3o entity-quality terms ─────────────────
+
+
+def _add_with_entities(storage, embedder, content, entities, importance=0.5):
+    mid = _add(storage, embedder, content, importance=importance)
+    row = storage.get_memory(mid)
+    meta = dict(row.get("metadata") or {})
+    meta["entities"] = entities
+    storage.update_memory_fields(mid, metadata=meta)
+    return mid
+
+
+def test_second_pass_uses_seed_entities_when_enabled(setup):
+    storage, embedder, retriever, cfg = setup
+    cfg.retrieval_second_pass = 2
+    cfg.second_pass_entities = True
+    # Seed: matches the query, carries an entity handle that shares no
+    # vocabulary with the query.
+    _add_with_entities(storage, embedder, "adopted a puppy last week", ["Rocket"])
+    # Co-dependent evidence reachable ONLY via the entity term:
+    target = _add(storage, embedder, "Rocket chewed the garden hose")
+    for i in range(8):
+        _add(storage, embedder, f"weather note number {i} sunny")
+    results = retriever.retrieve("tell me about the puppy adoption", limit=6)
+    assert target in {m["id"] for m in results}
+
+
+def test_second_pass_entities_empty_union_falls_back_to_salient_terms(setup):
+    storage, embedder, retriever, cfg = setup
+    cfg.retrieval_second_pass = 2
+    cfg.second_pass_entities = True
+    # No seed has metadata.entities -> behavior must equal the flag-off run.
+    _add(storage, embedder, "Bermuda Triangle mystery discussed at length")
+    _add(storage, embedder, "Bermuda shorts purchased yesterday")
+    baseline_cfg = cfg.second_pass_entities
+    cfg.second_pass_entities = False
+    off = [m["id"] for m in retriever.retrieve("mystery discussion", limit=5)]
+    cfg.second_pass_entities = True
+    on = [m["id"] for m in retriever.retrieve("mystery discussion", limit=5)]
+    cfg.second_pass_entities = baseline_cfg
+    assert on == off
+
+
+def test_second_pass_entities_flag_off_is_byte_identical(setup):
+    storage, embedder, retriever, cfg = setup
+    cfg.retrieval_second_pass = 2
+    cfg.second_pass_entities = False
+    _add_with_entities(storage, embedder, "adopted a puppy last week", ["Rocket"])
+    _add(storage, embedder, "Rocket chewed the garden hose")
+    r1 = [m["id"] for m in retriever.retrieve("puppy adoption", limit=5)]
+    # flag stays off: entities on rows must not influence anything
+    r2 = [m["id"] for m in retriever.retrieve("puppy adoption", limit=5)]
+    assert r1 == r2

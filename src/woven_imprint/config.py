@@ -137,6 +137,14 @@ class MemoryConfig:
     # The original query's lists keep their own weights, so the original ranking
     # stays dominant at the 0.5 default.
     query_expansion_weight: float = 0.5
+    # Tier 3o (docs/superpowers/specs/2026-09-04-tier3o-entity-linking.md):
+    # when true AND retrieval_second_pass > 0, the second-pass FTS terms are
+    # the union of the seeds' `metadata.entities` (case-fold deduped, first
+    # casing kept, cap 16) instead of `_salient_terms` heuristics; an empty
+    # union falls back to the heuristics so stores without entity metadata
+    # behave exactly as before. Off by default pending the pre-registered
+    # locomo-t3oEnt bar.
+    second_pass_entities: bool = False
 
     def __post_init__(self):
         if self.query_expansion < 0:
@@ -530,6 +538,7 @@ memory:
   # query_expansion: 0             # >0 = max LLM-generated expansion queries per retrieve
   # (aggregation/multi-hop recall); +1 LLM call + 1 embed_batch + N fts_search when on.
   # query_expansion_weight: 0.5    # RRF weight of each expansion's ranked lists.
+  # second_pass_entities: false   # second-pass FTS pivots on seeds' metadata.entities
 
 context:
   total_tokens: 6000

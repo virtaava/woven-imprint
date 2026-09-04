@@ -461,7 +461,28 @@ class MemoryRetriever:
             seeds = [memory_map[mid] for mid, _ in fused[:n] if mid in memory_map]
             if seeds:
                 combined_text = " ".join(s.get("content", "") for s in seeds)
-                terms = _salient_terms(combined_text)
+                # Tier 3o: entity-quality terms when available. Union of the
+                # seeds' metadata.entities; empty union (stores predating
+                # entity linking, or flag off) falls back to the heuristics.
+                terms: list[str] = []
+                if mem_cfg.second_pass_entities:
+                    seen_ents: set[str] = set()
+                    for s_ in seeds:
+                        for ent in (s_.get("metadata") or {}).get("entities") or []:
+                            if not isinstance(ent, str):
+                                continue
+                            cleaned = ent.strip()
+                            key = cleaned.casefold()
+                            if not cleaned or key in seen_ents:
+                                continue
+                            seen_ents.add(key)
+                            terms.append(cleaned)
+                            if len(terms) >= 16:
+                                break
+                        if len(terms) >= 16:
+                            break
+                if not terms:
+                    terms = _salient_terms(combined_text)
                 try:
                     # fts_search tokenizes on \w+ and ORs the tokens itself;
                     # pre-joining with a literal " OR " made "OR" a search term

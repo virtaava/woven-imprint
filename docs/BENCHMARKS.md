@@ -339,8 +339,10 @@ hardened-abstention protocol (`locomo-t3kH100`, adversarial 0.888) vs. full-cont
 (`locomo-t3gA`), 0.632 at K = 60 (`locomo-t3jK60`); the depth curve is in the
 [Tier 3j section](#tier-3j-the-retrieval-depth-curve-k-sweep-2026-09-02) and the hardening in
 [Tier 3k](#tier-3k-abstention-at-depth-hardening-2026-09-02);
-LongMemEval-S (100-Q) **0.495** (`lme-s-100-v4`; the earlier 50-Q sample scored 0.542 and is a
-strict subset — see [Tier 3h](#tier-3h-longmemeval-s-at-100-questions-2026-09-02)); LoCoMo-Plus cognitive memory **0.356** vs. full-context 0.135 —
+LongMemEval-S (100-Q) **0.559** at the K = 100 + hardened protocol (`lme-s-100-v5`; the same
+sample scored 0.495 under the old K = 20 protocol, and the 50-Q subset 0.542 — see
+[Tier 3h](#tier-3h-longmemeval-s-at-100-questions-2026-09-02) and
+[Tier 3l](#tier-3l-longmemeval-s-under-the-new-protocol-2026-09-04)); LoCoMo-Plus cognitive memory **0.356** vs. full-context 0.135 —
 **recovered** from Tier 3d's 0.269 by decoupling `_build_context`'s render order from its
 shedding priority (the Tier 3d reorder's actual cost), measured under a fixed-temperature
 (0.3) chat protocol that also tamed the ±4-point run-to-run noise that had been muddying this
@@ -1251,6 +1253,42 @@ instruction is the protocol prompt at all K from here on). The campaign arc: 0.4
 5.7× fewer prompt tokens. The remaining gap is concentrated in open-domain (cat 3, 0.271 vs
 full-context 0.302) and the still-unsaturated multi-hop tail; entity-linking at ingest
 stays the recorded next retrieval candidate.
+
+## Tier 3l: LongMemEval-S under the new protocol (2026-09-04)
+
+The Tier 3j/3k protocol (K = 100 + hardened abstention instruction) was adopted on LoCoMo
+evidence alone; Tier 3l re-measures LongMemEval-S under it. Run `lme-s-100-v5`: same
+seed-7 100-question sample as `lme-s-100-v4`, full re-ingest (49.6K turns), `--k 100`,
+hardened prompt; DBs KEPT this time (no `--delete-db-after-answer`) so future LME
+experiments can run answer-only.
+
+| metric | v5 (K=100, hardened) | v4 (K=20, old prompt) |
+|---|---:|---:|
+| **Overall J** | **0.559** | 0.495 |
+| single-session-user | 1.000 (n=14) | 1.000 |
+| single-session-assistant | 0.824 (n=17) | 0.588 |
+| knowledge-update | 0.769 (n=13) | 0.769 |
+| temporal-reasoning | 0.375 (n=16) | 0.375 |
+| multi-session | 0.250 (n=16) | 0.312 |
+| single-session-preference | 0.235 (n=17) | 0.059 |
+| abstention (`_abs`, rule-scored) | 7/7 | 7/7 |
+| mean prompt tokens/question | 8,835 | 2,461 |
+
+Question-level (same 100 questions, so the diff is exact): 8 gained, 2 lost, net **+6.4 J
+points**. The gains land where the LoCoMo evidence predicted — answers that existed in the
+store but sat below the old cutoff (single-session-assistant +4 questions) — plus an
+unpredicted one: `single-session-preference` recovered from 1/17 to 4/17 because the deeper
+pool surfaces the stated preference verbatim, partially compensating for the ≤15-word
+protocol mismatch documented since Tier 3b. Abstention held 7/7 at K = 100 under the
+hardened instruction. The honest negative: `multi-session` (LME's aggregation category)
+went 5/16 → 4/16 — depth alone does not solve enumeration-style aggregation here the way
+it moved LoCoMo multi-hop, consistent with the Tier 3h diagnosis that those questions also
+need counting/ordering over the retrieved set, not just coverage. Prompt cost rises 3.6×
+(LME memories render longer than LoCoMo's); still ~9× under a full-context transcript,
+which does not fit the 64K window at all for this dataset.
+
+Campaign LME arc: 0.396 (50-Q, Tier 3b) → 0.542 (50-Q, Tier 3d) → 0.495 (100-Q, Tier 3h,
+better-grounded sample) → **0.559** (100-Q, Tier 3j/3k protocol).
 
 ## Caveats
 

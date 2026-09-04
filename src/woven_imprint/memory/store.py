@@ -456,6 +456,23 @@ class MemoryStore:
         assert updated is not None
         return updated
 
+    def set_entities(self, memory_id: str, entities: list[str]) -> dict:
+        """Set `metadata.entities` on a memory (Tier 3o entity handles).
+
+        Merge-style like `pin`: other metadata keys survive. The key's
+        PRESENCE (even as []) marks the row as entity-processed — the
+        backfill job (`link_entities`) skips rows that have it.
+        """
+        row = self.storage.get_memory(memory_id)
+        if row is None or row.get("character_id") != self.character_id:
+            raise KeyError(memory_id)
+        meta = dict(row.get("metadata") or {})
+        meta["entities"] = list(entities)
+        self.storage.update_memory_fields(memory_id, metadata=meta)
+        updated = self.storage.get_memory(memory_id)
+        assert updated is not None
+        return updated
+
     def pinned(self) -> list[dict]:
         return self.storage.list_pinned_memories(self.character_id)
 

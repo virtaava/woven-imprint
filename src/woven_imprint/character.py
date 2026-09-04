@@ -478,7 +478,7 @@ class Character:
 
         # 1. Store user message as buffer memory
         store_user_started = time.perf_counter()
-        self.memory.add(
+        _user_mem = self.memory.add(
             content=f"[User] {message}",
             tier="buffer",
             role="user",
@@ -568,7 +568,7 @@ class Character:
 
         # 9. Store character response as buffer memory
         store_response_started = time.perf_counter()
-        self.memory.add(
+        _resp_mem = self.memory.add(
             content=f"[{self.name}] {response}",
             tier="buffer",
             role="character",
@@ -580,6 +580,7 @@ class Character:
         )
 
         self._turn_count += 1
+        turn_memory_ids = (_user_mem["id"], _resp_mem["id"])
 
         # Subsystem updates — all independent, all non-fatal
         subsystem_started = time.perf_counter()
@@ -601,11 +602,12 @@ class Character:
                 response,
                 user_id,
                 self._session_id,
+                turn_memory_ids,
             )
         elif self.parallel and not self.lightweight and not self.unified_assessment:
             self._run_subsystems_parallel(message, response, user_id, self._session_id)
         else:
-            target(message, response, user_id, self._session_id)
+            target(message, response, user_id, self._session_id, turn_memory_ids)
         metrics["subsystems_ms"] = round((time.perf_counter() - subsystem_started) * 1000.0, 2)
 
         # Periodic maintenance
@@ -832,7 +834,7 @@ class Character:
         # Store as buffer memory
         prefix = "[User]" if role == "user" else f"[{self.name}]"
         mem_role = "user" if role == "user" else "character"
-        self.memory.add(
+        _turn_mem = self.memory.add(
             content=f"{prefix} {content}",
             tier="buffer",
             role=mem_role,
@@ -858,7 +860,9 @@ class Character:
         # Run bookkeeping (non-fatal, same as chat)
         try:
             if self.unified_assessment:
-                self._run_bookkeeping(user_msg, response, user_id, self._session_id)
+                self._run_bookkeeping(
+                    user_msg, response, user_id, self._session_id, (_turn_mem["id"],)
+                )
             else:
                 self._extract_memories(user_msg, response, user_id, session_id=self._session_id)
         except Exception as e:
@@ -926,7 +930,7 @@ class Character:
         self._persist_turn("assistant", response)
 
         # Store both sides as buffer memory
-        self.memory.add(
+        _user_mem = self.memory.add(
             content=f"[User] {user_message}",
             tier="buffer",
             role="user",
@@ -934,7 +938,7 @@ class Character:
             importance=0.5,
             metadata=({"user_id": user_id} if user_id else None),
         )
-        self.memory.add(
+        _resp_mem = self.memory.add(
             content=f"[{self.name}] {response}",
             tier="buffer",
             role="character",
@@ -950,7 +954,13 @@ class Character:
         # Run bookkeeping once for the whole exchange (non-fatal, same as ingest/chat)
         try:
             if self.unified_assessment:
-                self._run_bookkeeping(user_message, response, user_id, self._session_id)
+                self._run_bookkeeping(
+                    user_message,
+                    response,
+                    user_id,
+                    self._session_id,
+                    (_user_mem["id"], _resp_mem["id"]),
+                )
             else:
                 self._extract_memories(user_message, response, user_id, session_id=self._session_id)
         except Exception as e:
@@ -1088,8 +1098,15 @@ class Character:
         response: str,
         user_id: str | None,
         session_id: str | None = None,
+        turn_memory_ids: tuple[str, ...] = (),
     ) -> None:
-        """Run subsystem updates sequentially (for testing or lightweight mode)."""
+        """Run subsystem updates sequentially (for testing or lightweight mode).
+
+        `turn_memory_ids` is accepted only for call-shape parity with `_run_bookkeeping`
+        (both are assigned to the same `target` variable and invoked identically in
+        `chat`/`chat_stream`); this legacy per-subsystem path has no unified
+        `TurnAssessment.entities` output to attach, so the parameter is unused here.
+        """
         if not self.lightweight:
             try:
                 self.emotion = self.emotion_engine.assess(
@@ -1895,8 +1912,19 @@ class Character:
         response: str,
         user_id: str | None,
         session_id: str | None = None,
+        turn_memory_ids: tuple[str, ...] = (),
     ) -> None:
-        """One LLM call for emotion + relationship + beat + facts (unified assessment)."""
+        """One LLM call for emotion + relationship + beat + facts (unified assessment).
+
+        When ``out.entities`` comes back non-empty and `turn_memory_ids` was given
+        (the buffer-memory row ids for this turn's user/response messages), each
+        one gets tagged with `metadata.entities` via `MemoryStore.set_entities` —
+        non-fatal, like every other subsystem here. This is a unified-assessment-only
+        feature: the legacy `_run_subsystems_sequential` path has no equivalent
+        `TurnAssessment.entities` output to attach, so it accepts the same
+        `turn_memory_ids` parameter (for call-shape parity with the shared `target(...)`
+        dispatch in `chat`/`chat_stream`) but leaves it unused.
+        """
         from .config import get_config
 
         mem_cfg = get_config().memory
@@ -1954,6 +1982,12 @@ class Character:
             except Exception as e:
                 logger.debug("Fact extraction failed: %s", e)
                 self._note_failure("extraction", e)
+        if out.entities and turn_memory_ids:
+            for mid in turn_memory_ids:
+                try:
+                    self.memory.set_entities(mid, out.entities)
+                except Exception as e:
+                    logger.debug("Entity attach failed for %s: %s", mid, e)
 
     def _extract_memories(
         self,

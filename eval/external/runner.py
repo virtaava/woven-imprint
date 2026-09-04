@@ -39,6 +39,7 @@ from woven_imprint.engine import Engine
 from woven_imprint.llm.base import LLMProvider
 
 from . import metrics, report
+from .aggregation import agg_qa_messages, is_aggregation_question, parse_agg_answer
 from .common import DATA_DIR, EMBED_MODEL, RESULTS_DIR, RUNS_DIR, Conversation, Probe, Question
 from .common import brain_llm as _brain_llm
 from .common import embedder as _make_embedder
@@ -54,6 +55,9 @@ from .prompts import judge_messages, plus_judge_messages, qa_messages
 FULLCONTEXT_CHAR_LIMIT = 220_000
 
 QA_MAX_TOKENS = 60
+# Tier 3n aggregation-stage QA calls (cfg.agg_stage): the enumerate-then-answer contract needs
+# room to list every matching item before the final "Answer:" line.
+AGG_QA_MAX_TOKENS = 700
 QA_TEMPERATURE = 0.0
 JUDGE_TEMPERATURE = 0.0
 _LOG_EVERY = 20
@@ -124,6 +128,11 @@ class RunConfig:
     # manually copy files first. Unlike `reuse_run` (locomo_plus's mandatory base-DB source),
     # this is optional and applies to `run()`'s own per-conversation loop, not `run_plus()`.
     reuse_ingest: str | None = None
+    # Tier 3n: route aggregation-shaped questions (`aggregation.is_aggregation_question`)
+    # through the enumerate-then-answer path in `answer_question` — per-question
+    # `memory.query_expansion=3` retrieval + `aggregation.AGG_QA_SYSTEM` + a larger answer
+    # token budget. Default False: a run without `--agg-stage` is byte-identical to today.
+    agg_stage: bool = False
 
     def __post_init__(self) -> None:
         if self.pair_turns is None:
@@ -299,13 +308,36 @@ def ingest_conversation(conv: Conversation, engine: Engine, cfg: "RunConfig") ->
 
 
 def answer_question(conv: Conversation, char, q: Question, cfg: "RunConfig", llm) -> dict:
-    """Answer ``q`` from ``char``'s pinned block + facts block + retrieved memories."""
+    """Answer ``q`` from ``char``'s pinned block + facts block + retrieved memories.
+
+    Tier 3n (``cfg.agg_stage``, opt-in): when ``q.question`` matches
+    ``aggregation.is_aggregation_question``, retrieval runs with ``memory.query_expansion``
+    temporarily forced to 3 (restored in a ``finally``, even if retrieval raises) and the QA
+    call uses the enumerate-then-answer ``aggregation.AGG_QA_SYSTEM`` prompt with a larger token
+    budget — the list needs room. The raw response is kept in ``raw_response``; ``response`` is
+    the parsed ``Answer:`` line (``aggregation.parse_agg_answer``). Every other question, and
+    every question when ``cfg.agg_stage`` is False, takes the path below unchanged.
+    """
     started = time.perf_counter()
     clock.override(q.asked_at)
 
     pinned, pinned_ids = char._format_pinned_block()
     facts = char._format_facts_block(conv.user_name, pinned_ids)
-    mems = char.retriever.retrieve(q.question, limit=cfg.k, relationship_target=conv.user_name)
+
+    agg = bool(cfg.agg_stage) and is_aggregation_question(q.question)
+    if agg:
+        mem_cfg = get_config().memory
+        prior_expansion = mem_cfg.query_expansion
+        mem_cfg.query_expansion = 3
+        try:
+            mems = char.retriever.retrieve(
+                q.question, limit=cfg.k, relationship_target=conv.user_name
+            )
+        finally:
+            mem_cfg.query_expansion = prior_expansion
+    else:
+        mems = char.retriever.retrieve(q.question, limit=cfg.k, relationship_target=conv.user_name)
+
     filtered = [m for m in mems if m["id"] not in pinned_ids]
     mem_text = char._format_memories(filtered)
 
@@ -314,6 +346,22 @@ def answer_question(conv: Conversation, char, q: Question, cfg: "RunConfig", llm
     ]
     block = "\n\n".join(blocks)
     today = q.asked_at.date().isoformat()
+
+    if agg:
+        raw_response = llm.generate(
+            agg_qa_messages(block, q.question, today),
+            temperature=QA_TEMPERATURE,
+            max_tokens=AGG_QA_MAX_TOKENS,
+        )
+        raw_response = raw_response or ""
+        return {
+            "qid": q.qid,
+            "response": parse_agg_answer(raw_response),
+            "raw_response": raw_response.strip(),
+            "prompt_tokens_est": len(block) // 4,
+            "memories_used": len(filtered),
+            "seconds": time.perf_counter() - started,
+        }
 
     response = llm.generate(
         qa_messages(block, q.question, today), temperature=QA_TEMPERATURE, max_tokens=QA_MAX_TOKENS
@@ -1129,7 +1177,8 @@ def run(
                 "k": cfg.k,
                 "fact_extraction_interval": cfg.fact_extraction_interval,
                 "pair_turns": bool(cfg.pair_turns),
-                "max_tokens": {"qa": QA_MAX_TOKENS},
+                "agg_stage": bool(cfg.agg_stage),
+                "max_tokens": {"qa": QA_MAX_TOKENS, "agg_qa": AGG_QA_MAX_TOKENS},
                 "temperature": {"qa": QA_TEMPERATURE, "judge": JUDGE_TEMPERATURE},
                 "limit_conversations": cfg.limit_conversations,
                 "sample": cfg.sample,
@@ -1274,7 +1323,8 @@ def rejudge(
             "k": cfg.k,
             "fact_extraction_interval": cfg.fact_extraction_interval,
             "pair_turns": bool(cfg.pair_turns),
-            "max_tokens": {"qa": QA_MAX_TOKENS},
+            "agg_stage": bool(cfg.agg_stage),
+            "max_tokens": {"qa": QA_MAX_TOKENS, "agg_qa": AGG_QA_MAX_TOKENS},
             "temperature": {"qa": QA_TEMPERATURE, "judge": JUDGE_TEMPERATURE},
             "limit_conversations": cfg.limit_conversations,
             "sample": cfg.sample,

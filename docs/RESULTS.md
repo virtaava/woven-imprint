@@ -76,24 +76,24 @@ Measured with the local brain (Qwen3.5-35B-A3B-FP8, thinking off) as both the an
 
 ### `locomo:memory`
 
-- Run id: `locomo-t3kH100` | Timestamp: 2026-09-02T18:06:22.436197+00:00
+- Run id: `locomo-t3nAgg` | Timestamp: 2026-09-04T14:58:04.370124+00:00
 - Judge version: 2
-- Overall J (categories 1-4 / non-abstain): 67.0% (n=1986)
-- Mean token-F1: 0.328
-- Adversarial accuracy (category 5): 88.8%
+- Overall J (categories 1-4 / non-abstain): 67.4% (n=1986)
+- Mean token-F1: 0.329
+- Adversarial accuracy (category 5): 87.7%
 - Abstain accuracy (`_abs`): n/a
 - Mean prompt tokens (est.): 4406
 
 | category | n | J | token-F1 |
 |---|---|---|---|
-| 1 | 282 | 49.3% | 0.282 |
-| 2 | 321 | 62.3% | 0.207 |
-| 3 | 96 | 27.1% | 0.107 |
-| 4 | 841 | 79.3% | 0.414 |
+| 1 | 282 | 50.0% | 0.278 |
+| 2 | 321 | 64.2% | 0.213 |
+| 3 | 96 | 27.1% | 0.108 |
+| 4 | 841 | 79.1% | 0.415 |
 
 | category (abstention rule) | n | accuracy |
 |---|---|---|
-| 5 | 446 | 88.8% |
+| 5 | 446 | 87.7% |
 
 ### `locomo_plus:fullcontext`
 
@@ -149,22 +149,22 @@ Measured with the local brain (Qwen3.5-35B-A3B-FP8, thinking off) as both the an
 
 ### `longmemeval_s:memory`
 
-- Run id: `lme-s-100-v5` | Timestamp: 2026-09-04T06:03:52.064597+00:00
+- Run id: `lme-t3nAgg` | Timestamp: 2026-09-04T13:53:23.617697+00:00
 - Judge version: 2
-- Overall J (categories 1-4 / non-abstain): 55.9% (n=100)
-- Mean token-F1: 0.213
+- Overall J (categories 1-4 / non-abstain): 65.6% (n=100)
+- Mean token-F1: 0.296
 - Adversarial accuracy (category 5): n/a
 - Abstain accuracy (`_abs`): 100.0%
-- Mean prompt tokens (est.): 8835
+- Mean prompt tokens (est.): 8879
 
 | category | n | J | token-F1 |
 |---|---|---|---|
-| knowledge-update | 13 | 76.9% | 0.200 |
-| multi-session | 16 | 25.0% | 0.040 |
-| single-session-assistant | 17 | 82.4% | 0.358 |
-| single-session-preference | 17 | 23.5% | 0.080 |
-| single-session-user | 14 | 100.0% | 0.422 |
-| temporal-reasoning | 16 | 37.5% | 0.202 |
+| knowledge-update | 13 | 76.9% | 0.307 |
+| multi-session | 16 | 62.5% | 0.226 |
+| single-session-assistant | 17 | 82.4% | 0.395 |
+| single-session-preference | 17 | 17.6% | 0.071 |
+| single-session-user | 14 | 100.0% | 0.531 |
+| temporal-reasoning | 16 | 62.5% | 0.283 |
 
 | category (abstention rule) | n | accuracy |
 |---|---|---|

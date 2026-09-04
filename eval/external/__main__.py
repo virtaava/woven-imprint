@@ -110,6 +110,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Delete a conversation's .db (+ -wal/-shm) once its answers are complete and "
         "judged — keeps the ingest.json/answers.json checkpoints",
     )
+    run_parser.add_argument(
+        "--agg-stage",
+        action="store_true",
+        help="Tier 3n: answer aggregation-shaped questions (how many/in total/what order/...) "
+        "via enumerate-then-answer — per-question memory.query_expansion=3 retrieval + a "
+        "larger answer budget (default off: byte-identical to a run without this flag)",
+    )
 
     rejudge_parser = sub.add_parser(
         "rejudge", help="Re-run the judge over an existing run's answer checkpoints, in place"
@@ -138,6 +145,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     rejudge_parser.add_argument(
         "--k", type=int, default=20, help="Recorded into config when no stored results exist"
+    )
+    rejudge_parser.add_argument(
+        "--agg-stage",
+        action="store_true",
+        help="Recorded into config when no stored results exist (see `run --agg-stage`)",
     )
 
     args = parser.parse_args(argv)
@@ -169,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
             force_aggregate=args.force_aggregate,
             pair_turns=args.pair_turns,
             delete_db_after_answer=args.delete_db_after_answer,
+            agg_stage=args.agg_stage,
         )
         if cfg.bench == "locomo_plus":
             results = run_plus(cfg)
@@ -199,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             fact_extraction_interval=args.interval,
             k=args.k,
+            agg_stage=args.agg_stage,
         )
         results = rejudge(cfg, only_unjudged=args.only_unjudged)
         summary = results["summary"]

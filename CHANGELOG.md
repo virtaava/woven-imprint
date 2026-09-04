@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Results — Tier 3n (2026-09-04): aggregation answer stage ADOPTED, both headlines move
+- `--agg-stage` (harness protocol machinery): a closed regex routes aggregation-shaped
+  questions through per-question `query_expansion=3` retrieval (the Tier 3i opt-in,
+  finally earning its keep) + an enumerate-then-answer prompt with a parsed `Answer:`
+  line. **LME-S 0.559 → 0.656** (multi-session 4/16 → 10/16, temporal 6/16 → 10/16,
+  abstain 7/7); LoCoMo confirmation **0.670 → 0.674** (adversarial 0.877 ≥ 0.87 floor).
+  Both pre-registered bars met; two-path answering documented in BENCHMARKS Protocol.
+  New headlines: **LoCoMo 0.674, LME-S 0.656**.
+
 ### Results — Tier 3m (2026-09-04): aggregation probes, two negative results
 - K=150 (multi-session +2, preference −2, +36% tokens) and an arithmetic-permission
   clause (+1) both miss the pre-registered bar (multi-session ≥ 7/16, overall ≥ 0.559

@@ -112,3 +112,56 @@ def test_chat_stream_attaches_entities_to_both_turn_memories():
     mems = char.storage.get_memories(char.id, limit=8)
     tagged = [m for m in mems if (m.get("metadata") or {}).get("entities") == ["Rocket"]]
     assert len(tagged) == 2  # user turn + response turn
+
+
+class _BatchLLM:
+    """Returns {"1": [...], "2": [...]} keyed by 1-based batch position."""
+
+    def __init__(self, mapping=None, exc=None):
+        self.mapping = mapping or {}
+        self.exc = exc
+        self.calls = 0
+
+    def generate_json_robust(self, messages, temperature=0.3, **kw):
+        self.calls += 1
+        if self.exc:
+            raise self.exc
+        return self.mapping
+
+
+def test_link_entities_backfills_only_unprocessed():
+    from tests.helpers import make_test_engine
+
+    engine = make_test_engine()
+    char = engine.create_character("Backfill Test")
+    a = char.memory.add(content="[User] Caroline adopted Rocket")
+    b = char.memory.add(content="[User] dinner was pasta")
+    char.memory.set_entities(b["id"], [])  # already processed (empty marker)
+    llm = _BatchLLM({"1": ["Caroline", "Rocket"]})
+    n = char.memory.link_entities(llm, batch_size=10)
+    assert n == 1 and llm.calls == 1
+    assert char.storage.get_memory(a["id"])["metadata"]["entities"] == ["Caroline", "Rocket"]
+    # second run: nothing left to do, no LLM call
+    llm2 = _BatchLLM({})
+    assert char.memory.link_entities(llm2) == 0 and llm2.calls == 0
+
+
+def test_link_entities_batch_failure_skips_not_raises():
+    from tests.helpers import make_test_engine
+
+    engine = make_test_engine()
+    char = engine.create_character("Backfill Fail")
+    char.memory.add(content="[User] one")
+    n = char.memory.link_entities(_BatchLLM(exc=RuntimeError("down")), batch_size=10)
+    assert n == 0  # skipped, no exception
+
+
+def test_link_entities_marks_empty_result_as_processed():
+    from tests.helpers import make_test_engine
+
+    engine = make_test_engine()
+    char = engine.create_character("Backfill Empty")
+    a = char.memory.add(content="[User] nothing notable")
+    n = char.memory.link_entities(_BatchLLM({}), batch_size=10)  # LLM returns {} -> no entities
+    assert n == 1
+    assert char.storage.get_memory(a["id"])["metadata"]["entities"] == []

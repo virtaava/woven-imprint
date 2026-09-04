@@ -88,6 +88,11 @@ TURN_ASSESSMENT_FACTS_SECTION = (
     'lives_in, works_as, likes, dislikes, plans_to), "object": the value as a short phrase, '
     '"event_time": "YYYY-MM-DD" or null}}; [] if nothing notable.'
 )
+TURN_ASSESSMENT_ENTITIES_SECTION = (
+    '"entities": up to 8 short canonical names of specific people, pets, places, '
+    "organizations, or distinctive objects/events mentioned in this exchange "
+    "(proper nouns preferred; no generic nouns, no dates); [] if none."
+)
 
 
 # ── Registry ─────────────────────────────────────────────────────────────

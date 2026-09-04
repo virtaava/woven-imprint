@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Results — Tier 3l (2026-09-04): LongMemEval-S under the K=100 + hardened protocol
+- Same seed-7 100-question sample re-ingested and measured under the Tier 3j/3k protocol:
+  **J 0.559 vs 0.495** (net +6 questions: 8 gained, 2 lost), abstention 7/7 held at depth.
+  single-session-assistant 0.588 → 0.824; preference 0.059 → 0.235 (deeper pool surfaces
+  the stated preference); multi-session dipped 0.312 → 0.250 — depth alone doesn't solve
+  LME's enumeration-style aggregation. Prompt 8,835 tok/question (3.6×). DBs kept for
+  future answer-only sweeps. `longmemeval_s:memory` → `lme-s-100-v5`. LME arc:
+  0.396 → 0.542 (50-Q) → 0.495 → **0.559** (100-Q).
+
 ### Results — Tier 3k (2026-09-02): abstention-at-depth hardening, new LoCoMo headline
 - One-sentence QA-instruction hardening ("combine memories, never guess beyond them")
   recovers adversarial abstention at every depth (+2.2/+2.0/+4.0 at K=60/80/100) at ≤0.005

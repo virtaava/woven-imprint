@@ -149,22 +149,22 @@ Measured with the local brain (Qwen3.5-35B-A3B-FP8, thinking off) as both the an
 
 ### `longmemeval_s:memory`
 
-- Run id: `lme-s-100-v4` | Timestamp: 2026-09-02T02:05:46.366606+00:00
+- Run id: `lme-s-100-v5` | Timestamp: 2026-09-04T06:03:52.064597+00:00
 - Judge version: 2
-- Overall J (categories 1-4 / non-abstain): 49.5% (n=100)
-- Mean token-F1: 0.261
+- Overall J (categories 1-4 / non-abstain): 55.9% (n=100)
+- Mean token-F1: 0.213
 - Adversarial accuracy (category 5): n/a
 - Abstain accuracy (`_abs`): 100.0%
-- Mean prompt tokens (est.): 2461
+- Mean prompt tokens (est.): 8835
 
 | category | n | J | token-F1 |
 |---|---|---|---|
-| knowledge-update | 13 | 76.9% | 0.335 |
-| multi-session | 16 | 31.2% | 0.068 |
-| single-session-assistant | 17 | 58.8% | 0.342 |
-| single-session-preference | 17 | 5.9% | 0.070 |
-| single-session-user | 14 | 100.0% | 0.620 |
-| temporal-reasoning | 16 | 37.5% | 0.198 |
+| knowledge-update | 13 | 76.9% | 0.200 |
+| multi-session | 16 | 25.0% | 0.040 |
+| single-session-assistant | 17 | 82.4% | 0.358 |
+| single-session-preference | 17 | 23.5% | 0.080 |
+| single-session-user | 14 | 100.0% | 0.422 |
+| temporal-reasoning | 16 | 37.5% | 0.202 |
 
 | category (abstention rule) | n | accuracy |
 |---|---|---|

@@ -651,15 +651,15 @@
   "judge_versions": "2"
  },
  "longmemeval_s:memory": {
-  "run_id": "lme-s-100-v4",
+  "run_id": "lme-s-100-v5",
   "bench": "longmemeval_s",
   "mode": "memory",
   "model": "Qwen/Qwen3.5-35B-A3B-FP8",
   "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
   "embedding": "nomic-embed-text",
-  "timestamp": "2026-09-02T02:05:46.366606+00:00",
+  "timestamp": "2026-09-04T06:03:52.064597+00:00",
   "config": {
-   "k": 20,
+   "k": 100,
    "fact_extraction_interval": 1,
    "pair_turns": true,
    "max_tokens": {
@@ -679,38 +679,38 @@
   },
   "summary": {
    "n_questions": 100,
-   "overall_j": 0.4946236559139785,
-   "overall_f1": 0.2611693191345874,
+   "overall_j": 0.5591397849462365,
+   "overall_f1": 0.21325054542249303,
    "per_category": {
     "multi-session": {
      "n": 16,
-     "j": 0.3125,
-     "f1": 0.06836219336219337
+     "j": 0.25,
+     "f1": 0.04032425907425908
     },
     "single-session-assistant": {
      "n": 17,
-     "j": 0.5882352941176471,
-     "f1": 0.3420273626155979
+     "j": 0.8235294117647058,
+     "f1": 0.3579722278638688
     },
     "single-session-preference": {
      "n": 17,
-     "j": 0.058823529411764705,
-     "f1": 0.06954639687633568
+     "j": 0.23529411764705882,
+     "f1": 0.07986520036932238
     },
     "single-session-user": {
      "n": 14,
      "j": 1.0,
-     "f1": 0.6195027195027195
+     "f1": 0.42181469324326465
     },
     "temporal-reasoning": {
      "n": 16,
      "j": 0.375,
-     "f1": 0.19794693395699586
+     "f1": 0.2023579308118782
     },
     "knowledge-update": {
      "n": 13,
      "j": 0.7692307692307693,
-     "f1": 0.3352314352314352
+     "f1": 0.20005720774951546
     }
    },
    "rule_scored": {
@@ -729,16 +729,16 @@
    },
    "adversarial_accuracy": null,
    "abstain_accuracy": 1.0,
-   "mean_prompt_tokens_est": 2461.05,
+   "mean_prompt_tokens_est": 8834.74,
    "n_unparsed": 0
   },
   "ingest_totals": {
    "turns": 49649,
    "sessions": 4809,
    "llm_calls": 34198,
-   "seconds": 614517.9366769111
+   "seconds": 615986.6408516006
   },
-  "records_file": "external_lme-s-100-v4.json",
+  "records_file": "external_lme-s-100-v5.json",
   "n_conversations": 100,
   "judge_versions": "2"
  }

@@ -85,3 +85,30 @@ def test_ingest_no_entities_leaves_metadata_untouched():
     mems = char.storage.get_memories(char.id, limit=5)
     turn = [m for m in mems if "hello there" in m["content"]]
     assert turn and "entities" not in (turn[0].get("metadata") or {})
+
+
+def test_chat_stream_attaches_entities_to_both_turn_memories():
+    from tests.helpers import make_test_engine
+
+    engine = make_test_engine()
+    char = engine.create_character("Entity Stream Test")
+
+    payload = {"emotion": {}, "facts": [], "entities": ["Rocket"]}
+
+    class _StreamLLM:
+        def generate(self, messages, **kw):
+            return "ok"
+        def generate_stream(self, messages, **kw):
+            yield "ok"
+        def generate_json_robust(self, messages, temperature=0.3, **kw):
+            return payload
+        def generate_json(self, messages, **kw):
+            return payload
+
+    char.llm = _StreamLLM()
+    char.assessor.llm = char.llm
+    char.background = False
+    list(char.chat_stream("tell me about Rocket", user_id="Melanie"))
+    mems = char.storage.get_memories(char.id, limit=8)
+    tagged = [m for m in mems if (m.get("metadata") or {}).get("entities") == ["Rocket"]]
+    assert len(tagged) == 2  # user turn + response turn

@@ -661,7 +661,7 @@ class Character:
             message = message[: _cfg.memory.max_message_length]
 
         # 1. Store user message as buffer memory
-        self.memory.add(
+        _user_mem = self.memory.add(
             content=f"[User] {message}",
             tier="buffer",
             role="user",
@@ -738,7 +738,7 @@ class Character:
         self._persist_turn("assistant", response)
 
         # 8. Store character response as buffer memory
-        self.memory.add(
+        _resp_mem = self.memory.add(
             content=f"[{self.name}] {response}",
             tier="buffer",
             role="character",
@@ -747,6 +747,7 @@ class Character:
         )
 
         self._turn_count += 1
+        turn_memory_ids = (_user_mem["id"], _resp_mem["id"])
 
         # Subsystem updates — all independent, all non-fatal
         target = (
@@ -767,11 +768,12 @@ class Character:
                 response,
                 user_id,
                 self._session_id,
+                turn_memory_ids,
             )
         elif self.parallel and not self.lightweight and not self.unified_assessment:
             self._run_subsystems_parallel(message, response, user_id, self._session_id)
         else:
-            target(message, response, user_id, self._session_id)
+            target(message, response, user_id, self._session_id, turn_memory_ids)
 
         # Periodic maintenance
         if self._turn_count % _cfg.memory.state_save_interval == 0:

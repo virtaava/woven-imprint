@@ -1290,6 +1290,27 @@ which does not fit the 64K window at all for this dataset.
 Campaign LME arc: 0.396 (50-Q, Tier 3b) → 0.542 (50-Q, Tier 3d) → 0.495 (100-Q, Tier 3h,
 better-grounded sample) → **0.559** (100-Q, Tier 3j/3k protocol).
 
+## Tier 3m: aggregation probes — two negative results (2026-09-04)
+
+Tier 3l left multi-session (LME's enumeration category) as the open failure: 4/16, with
+wrongs split 7 abstains / 5 partial enumerations. Two cheap answer-only probes on the kept
+`lme-s-100-v5` DBs, each with a pre-registered adoption bar (overall ≥ 0.559 AND
+multi-session ≥ 7/16 AND `_abs` ≥ 6/7):
+
+| arm | overall J | multi-session | notable side effects | verdict |
+|---|---:|---:|---|---|
+| `lme-t3mK150` (K = 150) | 0.559 | 6/16 (+2) | preference 4→2, prompt 12,030 tok/q (+36%) | **not adopted** |
+| `lme-t3mArith` (K = 100 + "counting/adding/ordering is combining, not guessing" clause) | 0.559 | 5/16 (+1) | knowledge-update 10→9 | **not adopted** |
+
+Neither dial moves the category to the bar; what depth gives to enumeration it takes from
+other categories, and permission-to-count barely helps when the instances themselves are
+scattered through a 100-line memory list. Conclusion recorded for the next slice: LME-style
+aggregation needs machinery — entity-linking at ingest (so instance memories share a
+retrievable handle) or an explicit aggregation answer stage (detect enumeration questions,
+retrieve per-instance, count over the set) — not further prompt or K adjustments. The
+protocol stays K = 100 + the Tier 3k instruction; `longmemeval_s:memory` stays
+`lme-s-100-v5`.
+
 ## Caveats
 
 - **Local 35B judge ≠ GPT-4o.** These numbers are judged by the same local Qwen3.5-35B-A3B-FP8

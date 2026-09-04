@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Results — Tier 3m (2026-09-04): aggregation probes, two negative results
+- K=150 (multi-session +2, preference −2, +36% tokens) and an arithmetic-permission
+  clause (+1) both miss the pre-registered bar (multi-session ≥ 7/16, overall ≥ 0.559
+  held) — not adopted, prompt reverted. Conclusion: LME enumeration needs entity-linking
+  at ingest or an aggregation answer stage, not prompt/depth dials. Protocol unchanged.
+
 ### Results — Tier 3l (2026-09-04): LongMemEval-S under the K=100 + hardened protocol
 - Same seed-7 100-question sample re-ingested and measured under the Tier 3j/3k protocol:
   **J 0.559 vs 0.495** (net +6 questions: 8 gained, 2 lost), abstention 7/7 held at depth.

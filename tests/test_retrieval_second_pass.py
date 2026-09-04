@@ -339,42 +339,122 @@ def _add_with_entities(storage, embedder, content, entities, importance=0.5):
 
 def test_second_pass_uses_seed_entities_when_enabled(setup):
     storage, embedder, retriever, cfg = setup
-    cfg.retrieval_second_pass = 2
+    # Query that matches seed but NOT target (no word overlap with target).
+    query = "adopted Caroline Hampshire"
+    # Seed matches query (has all three words); carries entity "Rocket" that reaches target.
+    seed = _add_with_entities(
+        storage, embedder, "Caroline adopted a beagle in Hampshire", ["Rocket"]
+    )
+    # Target reachable ONLY via entity "Rocket"; shares no words with query.
+    # Salient terms from seed are ["Caroline", "adopted", "beagle", "Hampshire"];
+    # target has ["Rocket", "beagle", "swims"] — overlap on "beagle" but NOT reachable
+    # via first-pass RRF since query doesn't have "beagle". Only reachable via entity.
+    target = _add(storage, embedder, "Rocket the beagle swims daily", importance=0.1)
+
+    # Negative control: verify target does NOT match query directly via FTS.
+    fts_match = storage.fts_search("c1", query, limit=20)
+    assert target not in {m["id"] for m in fts_match}, "target must not match query via FTS"
+
+    # Add 20 distractors with higher importance to bury low-importance target.
+    for i in range(20):
+        _add(storage, embedder, f"weather sunny day {i} forecast", importance=0.5)
+
+    # With second pass disabled + small limit: only seed appears, target buried.
+    cfg.retrieval_second_pass = 0
+    cfg.second_pass_entities = False
+    results_off = [m["id"] for m in retriever.retrieve(query, limit=1)]
+    assert target not in results_off, "target must not appear with second_pass=0"
+    assert seed in results_off, "seed must appear (matches query)"
+
+    # With second pass enabled + entities + higher limit: target IS retrieved via entity "Rocket".
+    cfg.retrieval_second_pass = 1
     cfg.second_pass_entities = True
-    # Seed: matches the query, carries an entity handle that shares no
-    # vocabulary with the query.
-    _add_with_entities(storage, embedder, "adopted a puppy last week", ["Rocket"])
-    # Co-dependent evidence reachable ONLY via the entity term:
-    target = _add(storage, embedder, "Rocket chewed the garden hose")
-    for i in range(8):
-        _add(storage, embedder, f"weather note number {i} sunny")
-    results = retriever.retrieve("tell me about the puppy adoption", limit=6)
-    assert target in {m["id"] for m in results}
+    results_on = [m["id"] for m in retriever.retrieve(query, limit=2)]
+    assert target in results_on, "target must appear via entity-seeded second pass"
 
 
 def test_second_pass_entities_empty_union_falls_back_to_salient_terms(setup):
     storage, embedder, retriever, cfg = setup
-    cfg.retrieval_second_pass = 2
-    cfg.second_pass_entities = True
-    # No seed has metadata.entities -> behavior must equal the flag-off run.
-    _add(storage, embedder, "Bermuda Triangle mystery discussed at length")
-    _add(storage, embedder, "Bermuda shorts purchased yesterday")
-    baseline_cfg = cfg.second_pass_entities
+    # Query that matches seed but not target (no word overlap).
+    query = "Bermuda mystery details"
+    # Seed matches query (has all three); salient terms reach target.
+    _add(storage, embedder, "Bermuda Triangle mystery discussed details")
+    # Target shares salient terms from seed ("Triangle") but NOT query words.
+    target = _add(storage, embedder, "Triangle geometry coordinates waters strange", importance=0.1)
+    # Seed has NO entities (empty union); should fall back to salient terms.
+
+    # Verify target does not match query directly via FTS.
+    fts_match = storage.fts_search("c1", query, limit=20)
+    assert target not in {m["id"] for m in fts_match}, "target must not match query via FTS"
+
+    # Add 20 distractors with higher importance to bury low-importance target.
+    for i in range(20):
+        _add(storage, embedder, f"weather satellite data temperature {i}", importance=0.5)
+
+    # Run with second pass OFF + small limit: target should not appear (buried).
+    cfg.retrieval_second_pass = 0
     cfg.second_pass_entities = False
-    off = [m["id"] for m in retriever.retrieve("mystery discussion", limit=5)]
+    results_no_second_pass = [m["id"] for m in retriever.retrieve(query, limit=1)]
+    assert target not in results_no_second_pass, "target must not appear without second pass"
+
+    # Run with entities=True, second_pass=1, no entities on seed:
+    # Should fallback to salient terms and find target.
+    cfg.retrieval_second_pass = 1
     cfg.second_pass_entities = True
-    on = [m["id"] for m in retriever.retrieve("mystery discussion", limit=5)]
-    cfg.second_pass_entities = baseline_cfg
-    assert on == off
+    results_entities_on = [m["id"] for m in retriever.retrieve(query, limit=2)]
+
+    # Run with entities=False, second_pass=1:
+    # Should use salient terms and find target.
+    cfg.second_pass_entities = False
+    results_entities_off = [m["id"] for m in retriever.retrieve(query, limit=2)]
+
+    # Both must find the target (via salient terms).
+    assert target in results_entities_on, "target must be found when entities=True (fallback)"
+    assert target in results_entities_off, "target must be found when entities=False"
+    # Mutation guard: results must be identical (both using salient terms).
+    assert results_entities_on == results_entities_off, "empty union must be byte-identical to salient-terms path"
 
 
 def test_second_pass_entities_flag_off_is_byte_identical(setup):
     storage, embedder, retriever, cfg = setup
-    cfg.retrieval_second_pass = 2
+    # Query that matches seed but not targets directly.
+    query = "adoption puppy week"
+    # Seed with entity "Rocket"; salient terms "adopted"/"puppy"/"training"/"week".
+    _add_with_entities(
+        storage, embedder, "adopted puppy training last week", ["Rocket"]
+    )
+    # Target 1: matches entity "Rocket" only (not salient terms or query).
+    target_entity = _add(storage, embedder, "Rocket chewed garden hose", importance=0.1)
+    # Target 2: matches salient terms "training" from seed (not entity "Rocket" or query).
+    target_salient = _add(storage, embedder, "training methods behavior puppies", importance=0.1)
+
+    # Verify neither target matches query via FTS.
+    fts_match = storage.fts_search("c1", query, limit=20)
+    assert target_entity not in {m["id"] for m in fts_match}, "target_entity must not match query via FTS"
+    assert target_salient not in {m["id"] for m in fts_match}, "target_salient must not match query via FTS"
+
+    # Add 20 distractors with higher importance to bury low-importance targets.
+    for i in range(20):
+        _add(storage, embedder, f"weather report temperature forecast {i}", importance=0.5)
+
+    # Run with second pass disabled + small limit: neither target appears (buried).
+    cfg.retrieval_second_pass = 0
     cfg.second_pass_entities = False
-    _add_with_entities(storage, embedder, "adopted a puppy last week", ["Rocket"])
-    _add(storage, embedder, "Rocket chewed the garden hose")
-    r1 = [m["id"] for m in retriever.retrieve("puppy adoption", limit=5)]
-    # flag stays off: entities on rows must not influence anything
-    r2 = [m["id"] for m in retriever.retrieve("puppy adoption", limit=5)]
-    assert r1 == r2
+    results_no_pass = [m["id"] for m in retriever.retrieve(query, limit=1)]
+    assert target_entity not in results_no_pass and target_salient not in results_no_pass
+
+    # Run with entities=False, second_pass=1: should find target_salient via salient terms.
+    cfg.retrieval_second_pass = 1
+    cfg.second_pass_entities = False
+    results_off_1 = [m["id"] for m in retriever.retrieve(query, limit=2)]
+    results_off_2 = [m["id"] for m in retriever.retrieve(query, limit=2)]
+    assert results_off_1 == results_off_2, "flag-off must be deterministic"
+    assert target_salient in results_off_1, "target_salient must appear (salient terms find it)"
+    assert target_entity not in results_off_1, "target_entity must NOT appear (entity is ignored when flag=False)"
+
+    # Run with entities=True, second_pass=1: should find target_entity via entity.
+    cfg.second_pass_entities = True
+    results_on = [m["id"] for m in retriever.retrieve(query, limit=2)]
+    assert target_entity in results_on, "target_entity must appear when entities=True (entity pivot)"
+    # Mutation guard: the entity path finds different targets than the salient path.
+    assert results_on != results_off_1, "entity pivot must produce different results than salient terms"

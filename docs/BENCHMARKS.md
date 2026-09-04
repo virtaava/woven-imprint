@@ -96,7 +96,13 @@ facts block (`char._format_facts_block(user_id, pinned_ids)`) + up to K dated me
 through Tier 3i; K = 60 for Tier 3j; **K = 100 with the hardened abstention instruction from
 Tier 3k on** — each chosen by a pre-registered rule over the measured K-curve, see the
 [Tier 3j](#tier-3j-the-retrieval-depth-curve-k-sweep-2026-09-02) and
-[Tier 3k](#tier-3k-abstention-at-depth-hardening-2026-09-02) sections;
+[Tier 3k](#tier-3k-abstention-at-depth-hardening-2026-09-02) sections. **From Tier 3n on the
+answering is two-path**: questions matching a closed aggregation-regex set
+(`eval/external/aggregation.py::is_aggregation_question` — how many / how much / in total /
+list all / order-of phrasings) retrieve with `memory.query_expansion=3` and answer via an
+enumerate-then-answer prompt (`AGG_QA_SYSTEM`, max_tokens 700, final `Answer:` line parsed
+and judged); every other question follows the single-path protocol unchanged. `--agg-stage`
+off reproduces the single-path protocol byte-identically;
 pinned memories
 already in the block are filtered out of this list so nothing repeats), rendered via
 `char._format_memories(...)`. Instruction: answer in at most 15 words, use only the memories,
@@ -333,12 +339,14 @@ anymore. The spec only requires a LoCoMo full-context baseline; LongMemEval-S is
 
 ## Results
 
-**Current defaults (2026-09-02, Tier 3k):** LoCoMo memory J **0.670** at the K = 100 +
-hardened-abstention protocol (`locomo-t3kH100`, adversarial 0.888) vs. full-context 0.696 —
-2.6 points under the ceiling at 5.7× fewer prompt tokens. Lineage: 0.571 at K = 20
-(`locomo-t3gA`), 0.632 at K = 60 (`locomo-t3jK60`); the depth curve is in the
-[Tier 3j section](#tier-3j-the-retrieval-depth-curve-k-sweep-2026-09-02) and the hardening in
-[Tier 3k](#tier-3k-abstention-at-depth-hardening-2026-09-02);
+**Current defaults (2026-09-04, Tier 3n):** LoCoMo memory J **0.674** and LongMemEval-S
+**0.656**, both at the K = 100 + hardened-abstention protocol with the aggregation answer
+stage (`locomo-t3nAgg` adversarial 0.877; `lme-t3nAgg` abstain 7/7) — LoCoMo is 2.2 points
+under the full-context ceiling (0.696) at ~5.7× fewer prompt tokens. Lineage: LoCoMo 0.571
+(K = 20, `locomo-t3gA`) → 0.632 (K = 60) → 0.670 (hardened) → 0.674; LME-S 0.495 → 0.559 →
+0.656. See [Tier 3j](#tier-3j-the-retrieval-depth-curve-k-sweep-2026-09-02),
+[Tier 3k](#tier-3k-abstention-at-depth-hardening-2026-09-02) and
+[Tier 3n](#tier-3n-the-aggregation-answer-stage-adopted-2026-09-04);
 LongMemEval-S (100-Q) **0.559** at the K = 100 + hardened protocol (`lme-s-100-v5`; the same
 sample scored 0.495 under the old K = 20 protocol, and the 50-Q subset 0.542 — see
 [Tier 3h](#tier-3h-longmemeval-s-at-100-questions-2026-09-02) and
@@ -1310,6 +1318,47 @@ retrievable handle) or an explicit aggregation answer stage (detect enumeration 
 retrieve per-instance, count over the set) — not further prompt or K adjustments. The
 protocol stays K = 100 + the Tier 3k instruction; `longmemeval_s:memory` stays
 `lme-s-100-v5`.
+
+## Tier 3n: the aggregation answer stage — adopted (2026-09-04)
+
+Tier 3m's negative results scoped this slice: enumeration questions fail on two coupled
+fronts — instance coverage (single-query retrieval misses scattered instances) and the
+answer step (counting a hundred-line list inside a 60-token cap). Tier 3n adds protocol
+machinery for exactly those questions, leaving every other question untouched: a closed
+regex routes aggregation-shaped questions ("how many / how much / in total / list all /
+what order") through (1) retrieval with the Tier 3i LLM query expansion enabled
+(`memory.query_expansion=3` — the opt-in feature built for instance recall, toggled
+per-question) and (2) an enumerate-then-answer prompt: list each matching item the
+memories state, then produce a final `Answer:` line (max_tokens 700; the parsed answer is
+judged; the raw enumeration is stored in the results for audit). Harness-only
+(`--agg-stage`); off reproduces the prior protocol byte-identically (tested).
+
+**LME-S 100-Q** (`lme-t3nAgg` vs `lme-s-100-v5`, 38/100 questions routed):
+
+| metric | agg stage | v5 baseline |
+|---|---:|---:|
+| **Overall J** | **0.656** | 0.559 |
+| multi-session | 10/16 | 4/16 |
+| temporal-reasoning | 10/16 | 6/16 |
+| single-session-preference | 3/17 | 4/17 |
+| (other categories) | unchanged | — |
+| abstention (`_abs`) | 7/7 | 7/7 |
+
+Pre-registered bar (overall ≥ 0.569, multi-session ≥ 7/16, `_abs` ≥ 6/7, no category −3)
+met with room: +9.7 J points, multi-session +6, and temporal +4 — ordering questions route
+through the stage too, which the bar did not anticipate but the regex intended.
+
+**LoCoMo confirmation** (`locomo-t3nAgg` vs `locomo-t3kH100`, 40/1,986 routed): overall
+0.674 vs 0.670, cat-2 temporal 0.642 vs 0.623, adversarial 0.877 vs 0.888 — the keep-bar
+(overall ≥ 0.665 AND adversarial ≥ 0.87) passes, so the stage is adopted in the
+cross-benchmark protocol rather than as an LME-only mode.
+
+**New headlines: LoCoMo J 0.674 (adversarial 0.877), LongMemEval-S J 0.656.** Campaign
+arcs: LoCoMo 0.444 → 0.571 → 0.632 → 0.670 → **0.674** (2.2 points under the full-context
+ceiling); LME-S 0.396 → 0.542/0.495 → 0.559 → **0.656**. The remaining LME gaps are
+`single-session-preference` (the ≤15-word protocol mismatch, unchanged) and temporal
+reasoning's unrouted half; LoCoMo's are open-domain (cat 3) and the multi-hop tail —
+entity-linking at ingest remains the recorded next retrieval candidate.
 
 ## Caveats
 

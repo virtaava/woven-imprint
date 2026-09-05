@@ -10,6 +10,7 @@ from ..prompts import (
     SOMEONE_FALLBACK,
     TURN_ASSESSMENT_BEAT_SECTION,
     TURN_ASSESSMENT_EMOTION_SECTION,
+    TURN_ASSESSMENT_ENTITIES_SECTION,
     TURN_ASSESSMENT_FACTS_SECTION,
     TURN_ASSESSMENT_NONE_TMPL,
     TURN_ASSESSMENT_RECENT_TMPL,
@@ -25,6 +26,7 @@ class TurnAssessment:
     relationship: dict[str, float] | None
     beat: StoryBeat | None
     facts: list[dict]
+    entities: list[str] = field(default_factory=list)
     raw: dict = field(default_factory=dict)
 
 
@@ -55,6 +57,7 @@ class TurnAssessor:
             sections.append(TURN_ASSESSMENT_BEAT_SECTION.format())
         if want_facts:
             sections.append(TURN_ASSESSMENT_FACTS_SECTION.format(max_facts=max_facts))
+        sections.append(TURN_ASSESSMENT_ENTITIES_SECTION)
         sections_text = "\n- ".join(sections)
 
         rel_line = ""
@@ -95,6 +98,32 @@ class TurnAssessor:
             context_hint=context_hint,
         )
 
+    @staticmethod
+    def _parse_entities(raw) -> list[str]:
+        """Fault-tolerant `entities` parsing: never raises, [] on anything odd.
+
+        Non-list payloads -> []. Non-string items are skipped (unlike a hard
+        void: entities are advisory handles, partial credit is fine). Items
+        are stripped, empties dropped, case-fold deduped keeping the first
+        casing seen, capped at 8 (spec 2026-09-04-tier3o-entity-linking).
+        """
+        if not isinstance(raw, list):
+            return []
+        out: list[str] = []
+        seen: set[str] = set()
+        for item in raw:
+            if not isinstance(item, str):
+                continue
+            cleaned = item.strip()
+            key = cleaned.casefold()
+            if not cleaned or key in seen:
+                continue
+            seen.add(key)
+            out.append(cleaned)
+            if len(out) >= 8:
+                break
+        return out
+
     def assess(self, **kwargs) -> TurnAssessment:
         messages = self.build_messages(**kwargs)
         data = self.llm.generate_json_robust(messages)
@@ -132,4 +161,5 @@ class TurnAssessor:
                 facts = Character._parse_facts(data.get("facts", []), kwargs["max_facts"])
             except (ValueError, TypeError, KeyError):
                 facts = []
-        return TurnAssessment(emotion=emotion, relationship=rel, beat=beat, facts=facts, raw=data)
+        entities = self._parse_entities(data.get("entities"))
+        return TurnAssessment(emotion=emotion, relationship=rel, beat=beat, facts=facts, entities=entities, raw=data)

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Tier 3o (entity linking: storage ships, retrieval pivot rejected by measurement)
+- **`metadata.entities`**: the unified turn assessment now extracts up to 8 canonical
+  entity names per exchange (zero extra LLM calls) and attaches them to the turn's buffer
+  memories on all four paths (chat, chat_stream, ingest, ingest_exchange, sync +
+  background). **`MemoryStore.link_entities(llm, batch_size=10)`** + CLI
+  `woven-imprint link-entities <character>` backfill existing stores (idempotent,
+  batch-failure-safe). **`memory.second_pass_entities` (default `false`)**: second-pass
+  FTS pivots on seeds' entities instead of salient-term heuristics.
+
+### Results — Tier 3o (2026-09-05): entity second pass NOT adopted
+- At the shipping protocol both second-pass variants hurt (baseline 0.674; salient 0.658;
+  entity 0.638, cat-1 0.500 → 0.408): two-speaker stores make entity handles
+  low-discriminative (speaker names match half the store) and the pivot floods the pool.
+  Bar missed on 3 of 4 legs; flags stay off; recorded follow-up is DF-aware entity
+  pivoting. Backfill validated: 11,478 memories, 85% non-empty, ~25 min on the local brain.
+
 ### Results — Tier 3n (2026-09-04): aggregation answer stage ADOPTED, both headlines move
 - `--agg-stage` (harness protocol machinery): a closed regex routes aggregation-shaped
   questions through per-question `query_expansion=3` retrieval (the Tier 3i opt-in,

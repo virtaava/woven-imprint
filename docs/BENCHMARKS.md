@@ -1360,6 +1360,39 @@ ceiling); LME-S 0.396 → 0.542/0.495 → 0.559 → **0.656**. The remaining LME
 reasoning's unrouted half; LoCoMo's are open-domain (cat 3) and the multi-hop tail —
 entity-linking at ingest remains the recorded next retrieval candidate.
 
+## Tier 3o: entity-linking at ingest — retrieval bar missed, storage ships (2026-09-05)
+
+The recorded next retrieval candidate: give memories clean entity handles
+(`metadata.entities`, extracted by the unified-assessment call at zero extra LLM cost, or
+backfilled via `woven-imprint link-entities`) and let the Tier 3f second pass pivot on
+them instead of `_salient_terms` heuristics (`memory.second_pass_entities`). Backfill on
+copies of the v3b DBs stamped 11,478 memories (85% non-empty) in ~25 min. Measured at the
+shipping protocol (K = 100, hardened, agg-stage), second pass N = 3:
+
+| metric | entity terms (`t3oEnt`) | salient terms (`t3oSal`) | no 2nd pass (`t3nAgg`) |
+|---|---:|---:|---:|
+| Overall J | 0.638 | 0.658 | **0.674** |
+| multi-hop (cat 1) | 0.408 | 0.450 | **0.500** |
+| single-hop (cat 4) | 0.757 | 0.786 | 0.791 |
+| adversarial | 0.888 | 0.899 | 0.877 |
+
+**Pre-registered bar missed on three of four legs** (needed overall ≥ 0.669, cat-1 ≥
+0.530, ent > sal on cat-1). Both second-pass variants HURT at this protocol, and entity
+terms hurt more than the heuristics they were meant to beat. The mechanism is visible in
+the numbers: LoCoMo stores are two-speaker conversations, so the extracted entities are
+dominated by the speakers' names and their recurring friends — terms that match hundreds
+of rows. The second-pass FTS pull on such handles floods the candidate pool with
+same-entity noise, and the re-fusion displaces genuinely relevant rows; multi-hop (whose
+seeds are the most entity-rich) suffers most. `_salient_terms`' rare long words are,
+ironically, more discriminative than proper names in this corpus shape.
+
+**Outcome:** `second_pass_entities` and `retrieval_second_pass` stay default-off;
+`locomo:memory` stays `locomo-t3nAgg` (0.674). The ingest-path entity storage, backfill
+job, and CLI ship anyway — additive, zero-cost, inert until read, and the enabler for the
+recorded follow-up: **document-frequency-aware entity pivoting** (only pivot on entities
+rarer than a DF threshold in the store), which is what this measurement says the idea
+actually needs. LME confirmation arm skipped per spec (bar missed).
+
 ## Caveats
 
 - **Local 35B judge ≠ GPT-4o.** These numbers are judged by the same local Qwen3.5-35B-A3B-FP8

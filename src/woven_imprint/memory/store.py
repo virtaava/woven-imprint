@@ -348,6 +348,52 @@ class MemoryStore:
             count += len(chunk)
         return count
 
+    def link_entities(self, llm, batch_size: int = 10) -> int:
+        """Backfill `metadata.entities` for active memories that predate Tier 3o.
+
+        One `generate_json_robust` call per `batch_size` memories. Idempotent:
+        rows whose metadata already CONTAINS the `entities` key (even `[]`)
+        are skipped, and a batch whose LLM call fails is skipped (logged via
+        return count only — never raises). Rows the LLM omits from its answer
+        are stamped `entities: []` so reruns don't loop on them. Returns the
+        number of memories updated.
+        """
+        from ..persona.assessment import TurnAssessor
+
+        _LINK_ENTITIES_PROMPT = (
+            "For each numbered memory below, list up to 8 short canonical names of specific "
+            "people, pets, places, organizations, or distinctive objects/events it mentions "
+            "(proper nouns preferred; no generic nouns, no dates).\n"
+            'Return ONLY a JSON object mapping the number to the list, e.g. {{"1": ["Rocket"], '
+            '"2": []}}. Every number must appear.\n\n{items}'
+        )
+
+        rows = self.storage.get_memories(self.character_id, limit=100000)
+        todo = [r for r in rows if "entities" not in (r.get("metadata") or {})]
+        updated = 0
+        for start in range(0, len(todo), batch_size):
+            batch = todo[start : start + batch_size]
+            items = "\n".join(
+                f"{i + 1}. {(r.get('content') or '')[:400]}" for i, r in enumerate(batch)
+            )
+            try:
+                data = llm.generate_json_robust(
+                    [{"role": "user", "content": _LINK_ENTITIES_PROMPT.format(items=items)}],
+                    temperature=0.0,
+                )
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            for i, r in enumerate(batch):
+                ents = TurnAssessor._parse_entities(data.get(str(i + 1)))
+                try:
+                    self.set_entities(r["id"], ents)
+                    updated += 1
+                except KeyError:
+                    continue
+        return updated
+
     def add_without_embedding(
         self,
         content: str,
@@ -451,6 +497,23 @@ class MemoryStore:
             raise KeyError(memory_id)
         meta = dict(row.get("metadata") or {})
         meta["pinned"] = bool(pinned)
+        self.storage.update_memory_fields(memory_id, metadata=meta)
+        updated = self.storage.get_memory(memory_id)
+        assert updated is not None
+        return updated
+
+    def set_entities(self, memory_id: str, entities: list[str]) -> dict:
+        """Set `metadata.entities` on a memory (Tier 3o entity handles).
+
+        Merge-style like `pin`: other metadata keys survive. The key's
+        PRESENCE (even as []) marks the row as entity-processed — the
+        backfill job (`link_entities`) skips rows that have it.
+        """
+        row = self.storage.get_memory(memory_id)
+        if row is None or row.get("character_id") != self.character_id:
+            raise KeyError(memory_id)
+        meta = dict(row.get("metadata") or {})
+        meta["entities"] = list(entities)
         self.storage.update_memory_fields(memory_id, metadata=meta)
         updated = self.storage.get_memory(memory_id)
         assert updated is not None

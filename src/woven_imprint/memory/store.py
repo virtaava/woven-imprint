@@ -368,7 +368,7 @@ class MemoryStore:
             '"2": []}}. Every number must appear.\n\n{items}'
         )
 
-        rows = self.storage.get_memories(self.character_id, limit=100000)
+        rows = self.storage.get_memories(self.character_id, limit=None)
         todo = [r for r in rows if "entities" not in (r.get("metadata") or {})]
         updated = 0
         for start in range(0, len(todo), batch_size):

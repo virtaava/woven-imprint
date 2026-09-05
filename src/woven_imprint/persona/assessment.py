@@ -1,4 +1,4 @@
-"""One LLM call per turn for all bookkeeping: emotion, relationship deltas, story beat, facts."""
+"""One LLM call per turn for all bookkeeping: emotion, relationship deltas, story beat, facts, entities."""
 
 from __future__ import annotations
 

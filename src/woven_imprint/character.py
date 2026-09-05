@@ -1968,7 +1968,10 @@ class Character:
         if not self.lightweight and out.emotion is not None:
             self.emotion = out.emotion
             self._note_success("emotion")
-        if want_beat:
+        if want_beat and out.beat is not None:
+            # Only count arc bookkeeping as healthy when a beat actually
+            # parsed and was applied — `parse_beat` mutates the arc in place,
+            # so `out.beat is None` means nothing happened this turn.
             self._note_success("arc")
         if want_relationship and out.relationship:
             try:

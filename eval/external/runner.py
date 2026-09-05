@@ -45,6 +45,7 @@ from .common import brain_llm as _brain_llm
 from .common import embedder as _make_embedder
 from .locomo import load_locomo, load_locomo_plus
 from .longmemeval import load_longmemeval_s
+from .preference import is_preference_question, pref_qa_messages
 from .prompts import judge_messages, plus_judge_messages, qa_messages
 
 # Full-context transcripts are truncated to this many characters (from the END — the most
@@ -58,6 +59,10 @@ QA_MAX_TOKENS = 60
 # Tier 3n aggregation-stage QA calls (cfg.agg_stage): the enumerate-then-answer contract needs
 # room to list every matching item before the final "Answer:" line.
 AGG_QA_MAX_TOKENS = 700
+# Tier 3q preference-stage QA calls (cfg.pref_stage): a 2-3 sentence grounded advice answer
+# needs more room than the 15-word factual QA_MAX_TOKENS budget, but nowhere near the
+# enumerate-then-answer AGG_QA_MAX_TOKENS budget.
+PREF_QA_MAX_TOKENS = 200
 QA_TEMPERATURE = 0.0
 JUDGE_TEMPERATURE = 0.0
 _LOG_EVERY = 20
@@ -133,6 +138,12 @@ class RunConfig:
     # `memory.query_expansion=3` retrieval + `aggregation.AGG_QA_SYSTEM` + a larger answer
     # token budget. Default False: a run without `--agg-stage` is byte-identical to today.
     agg_stage: bool = False
+    # Tier 3q: route preference/advice-request questions (`preference.is_preference_question`)
+    # through the grounded-advice-answer path in `answer_question` — `preference.PREF_QA_SYSTEM`
+    # + a 200-token answer budget, no marker parsing (the whole reply is judged as-is). Checked
+    # only when `agg_stage` didn't already claim the question (see `answer_question`'s routing
+    # precedence). Default False: a run without `--pref-stage` is byte-identical to today.
+    pref_stage: bool = False
 
     def __post_init__(self) -> None:
         if self.pair_turns is None:
@@ -315,8 +326,18 @@ def answer_question(conv: Conversation, char, q: Question, cfg: "RunConfig", llm
     temporarily forced to 3 (restored in a ``finally``, even if retrieval raises) and the QA
     call uses the enumerate-then-answer ``aggregation.AGG_QA_SYSTEM`` prompt with a larger token
     budget — the list needs room. The raw response is kept in ``raw_response``; ``response`` is
-    the parsed ``Answer:`` line (``aggregation.parse_agg_answer``). Every other question, and
-    every question when ``cfg.agg_stage`` is False, takes the path below unchanged.
+    the parsed ``Answer:`` line (``aggregation.parse_agg_answer``).
+
+    Tier 3q (``cfg.pref_stage``, opt-in): when the aggregation stage above didn't already claim
+    the question and ``q.question`` matches ``preference.is_preference_question``, the QA call
+    uses the grounded-advice ``preference.PREF_QA_SYSTEM`` prompt with its own token budget
+    instead — no marker parsing, the whole reply is recorded and judged as-is. Routing
+    precedence is aggregation first, then preference: a question matching both regexes takes the
+    aggregation path (it was there first — Tier 3n — and its enumerate-then-answer contract
+    still applies to a preference question shaped like "how many ... should I ...").
+
+    Every other question, and every question when both ``cfg.agg_stage`` and ``cfg.pref_stage``
+    are False, takes the path below unchanged.
     """
     started = time.perf_counter()
     clock.override(q.asked_at)
@@ -325,6 +346,7 @@ def answer_question(conv: Conversation, char, q: Question, cfg: "RunConfig", llm
     facts = char._format_facts_block(conv.user_name, pinned_ids)
 
     agg = bool(cfg.agg_stage) and is_aggregation_question(q.question)
+    pref = not agg and bool(cfg.pref_stage) and is_preference_question(q.question)
     if agg:
         mem_cfg = get_config().memory
         prior_expansion = mem_cfg.query_expansion
@@ -358,6 +380,20 @@ def answer_question(conv: Conversation, char, q: Question, cfg: "RunConfig", llm
             "qid": q.qid,
             "response": parse_agg_answer(raw_response),
             "raw_response": raw_response.strip(),
+            "prompt_tokens_est": len(block) // 4,
+            "memories_used": len(filtered),
+            "seconds": time.perf_counter() - started,
+        }
+
+    if pref:
+        response = llm.generate(
+            pref_qa_messages(block, q.question, today),
+            temperature=QA_TEMPERATURE,
+            max_tokens=PREF_QA_MAX_TOKENS,
+        )
+        return {
+            "qid": q.qid,
+            "response": (response or "").strip(),
             "prompt_tokens_est": len(block) // 4,
             "memories_used": len(filtered),
             "seconds": time.perf_counter() - started,
@@ -1178,7 +1214,12 @@ def run(
                 "fact_extraction_interval": cfg.fact_extraction_interval,
                 "pair_turns": bool(cfg.pair_turns),
                 "agg_stage": bool(cfg.agg_stage),
-                "max_tokens": {"qa": QA_MAX_TOKENS, "agg_qa": AGG_QA_MAX_TOKENS},
+                "pref_stage": bool(cfg.pref_stage),
+                "max_tokens": {
+                    "qa": QA_MAX_TOKENS,
+                    "agg_qa": AGG_QA_MAX_TOKENS,
+                    "pref_qa": PREF_QA_MAX_TOKENS,
+                },
                 "temperature": {"qa": QA_TEMPERATURE, "judge": JUDGE_TEMPERATURE},
                 "limit_conversations": cfg.limit_conversations,
                 "sample": cfg.sample,
@@ -1324,7 +1365,12 @@ def rejudge(
             "fact_extraction_interval": cfg.fact_extraction_interval,
             "pair_turns": bool(cfg.pair_turns),
             "agg_stage": bool(cfg.agg_stage),
-            "max_tokens": {"qa": QA_MAX_TOKENS, "agg_qa": AGG_QA_MAX_TOKENS},
+            "pref_stage": bool(cfg.pref_stage),
+            "max_tokens": {
+                "qa": QA_MAX_TOKENS,
+                "agg_qa": AGG_QA_MAX_TOKENS,
+                "pref_qa": PREF_QA_MAX_TOKENS,
+            },
             "temperature": {"qa": QA_TEMPERATURE, "judge": JUDGE_TEMPERATURE},
             "limit_conversations": cfg.limit_conversations,
             "sample": cfg.sample,

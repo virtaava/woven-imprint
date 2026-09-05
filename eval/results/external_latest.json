@@ -1,749 +1,751 @@
 {
-  "locomo:fullcontext": {
-    "run_id": "locomo-full-v1",
-    "bench": "locomo",
-    "mode": "fullcontext",
-    "model": "Qwen/Qwen3.5-35B-A3B-FP8",
-    "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
-    "embedding": "nomic-embed-text",
-    "timestamp": "2026-08-28T04:30:21.302409+00:00",
-    "config": {
-      "k": 20,
-      "fact_extraction_interval": 1,
-      "pair_turns": false,
-      "max_tokens": {
-        "qa": 60
-      },
-      "temperature": {
-        "qa": 0.0,
-        "judge": 0.0
-      },
-      "limit_conversations": null,
-      "sample": null,
-      "seed": 7,
-      "max_sessions": null,
-      "max_questions": null,
-      "shard": null
-    },
-    "summary": {
-      "n_questions": 1986,
-      "overall_j": 0.6954545454545454,
-      "overall_f1": 0.3880527277359627,
-      "per_category": {
-        "2": {
-          "n": 321,
-          "j": 0.5109034267912772,
-          "f1": 0.2616734258404061
-        },
-        "3": {
-          "n": 96,
-          "j": 0.3020833333333333,
-          "f1": 0.11758453559744148
-        },
-        "1": {
-          "n": 282,
-          "j": 0.5035460992907801,
-          "f1": 0.30901748316224303
-        },
-        "4": {
-          "n": 841,
-          "j": 0.8751486325802615,
-          "f1": 0.49366585653924644
-        }
-      },
-      "rule_scored": {
-        "5": {
-          "n": 446,
-          "accuracy": 0.8318385650224215
-        }
-      },
-      "adversarial_accuracy": 0.8318385650224215,
-      "abstain_accuracy": null,
-      "mean_prompt_tokens_est": 24917.190835850957,
-      "n_unparsed": 0
-    },
-    "ingest_totals": {
-      "turns": 0,
-      "sessions": 0,
-      "llm_calls": 0,
-      "seconds": 0.0
-    },
-    "records_file": "external_locomo-full-v1.json",
-    "n_conversations": 1986,
-    "judge_versions": "2"
+ "locomo:fullcontext": {
+  "run_id": "locomo-full-v1",
+  "bench": "locomo",
+  "mode": "fullcontext",
+  "model": "Qwen/Qwen3.5-35B-A3B-FP8",
+  "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
+  "embedding": "nomic-embed-text",
+  "timestamp": "2026-08-28T04:30:21.302409+00:00",
+  "config": {
+   "k": 20,
+   "fact_extraction_interval": 1,
+   "pair_turns": false,
+   "max_tokens": {
+    "qa": 60
+   },
+   "temperature": {
+    "qa": 0.0,
+    "judge": 0.0
+   },
+   "limit_conversations": null,
+   "sample": null,
+   "seed": 7,
+   "max_sessions": null,
+   "max_questions": null,
+   "shard": null
   },
-  "locomo:memory": {
-    "run_id": "locomo-t3nAgg",
-    "bench": "locomo",
-    "mode": "memory",
-    "model": "Qwen/Qwen3.5-35B-A3B-FP8",
-    "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
-    "embedding": "nomic-embed-text",
-    "timestamp": "2026-09-04T14:58:04.370124+00:00",
-    "config": {
-      "k": 100,
-      "fact_extraction_interval": 1,
-      "pair_turns": false,
-      "agg_stage": true,
-      "max_tokens": {
-        "qa": 60,
-        "agg_qa": 700
-      },
-      "temperature": {
-        "qa": 0.0,
-        "judge": 0.0
-      },
-      "limit_conversations": null,
-      "sample": null,
-      "seed": 7,
-      "max_sessions": null,
-      "max_questions": null,
-      "shard": null,
-      "overrides": []
+  "summary": {
+   "n_questions": 1986,
+   "overall_j": 0.6954545454545454,
+   "overall_f1": 0.3880527277359627,
+   "per_category": {
+    "2": {
+     "n": 321,
+     "j": 0.5109034267912772,
+     "f1": 0.2616734258404061
     },
-    "summary": {
-      "n_questions": 1986,
-      "overall_j": 0.674025974025974,
-      "overall_f1": 0.32903128394096626,
-      "per_category": {
-        "2": {
-          "n": 321,
-          "j": 0.6417445482866043,
-          "f1": 0.21342483423581377
-        },
-        "3": {
-          "n": 96,
-          "j": 0.2708333333333333,
-          "f1": 0.10810136171029455
-        },
-        "1": {
-          "n": 282,
-          "j": 0.5,
-          "f1": 0.2782654372345126
-        },
-        "4": {
-          "n": 841,
-          "j": 0.7907253269916765,
-          "f1": 0.41539859863861034
-        }
-      },
-      "rule_scored": {
-        "5": {
-          "n": 446,
-          "accuracy": 0.8766816143497758
-        }
-      },
-      "adversarial_accuracy": 0.8766816143497758,
-      "abstain_accuracy": null,
-      "mean_prompt_tokens_est": 4405.6394763343405,
-      "n_unparsed": 0
+    "3": {
+     "n": 96,
+     "j": 0.3020833333333333,
+     "f1": 0.11758453559744148
     },
-    "ingest_totals": {
-      "turns": 5882,
-      "sessions": 272,
-      "llm_calls": 6265,
-      "seconds": 100131.85766953137
+    "1": {
+     "n": 282,
+     "j": 0.5035460992907801,
+     "f1": 0.30901748316224303
     },
-    "records_file": "external_locomo-t3nAgg.json",
-    "n_conversations": 1986,
-    "judge_versions": "2"
+    "4": {
+     "n": 841,
+     "j": 0.8751486325802615,
+     "f1": 0.49366585653924644
+    }
+   },
+   "rule_scored": {
+    "5": {
+     "n": 446,
+     "accuracy": 0.8318385650224215
+    }
+   },
+   "adversarial_accuracy": 0.8318385650224215,
+   "abstain_accuracy": null,
+   "mean_prompt_tokens_est": 24917.190835850957,
+   "n_unparsed": 0
   },
-  "locomo_plus:fullcontext": {
-    "run_id": "plus-full-v1",
-    "bench": "locomo_plus",
-    "mode": "fullcontext",
-    "model": "Qwen/Qwen3.5-35B-A3B-FP8",
-    "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
-    "embedding": null,
-    "timestamp": "2026-08-28T05:10:32.244339+00:00",
-    "config": {
-      "limit_conversations": null,
-      "shard": null,
-      "reuse_run": null,
-      "temperature": {
-        "judge": 0.0,
-        "fullcontext_response": 0.3
-      }
-    },
-    "summary": {
-      "n_probes": 401,
-      "cognitive_accuracy": 0.13466334164588528,
-      "per_relation_type": {
-        "causal": {
-          "n": 101,
-          "cognitive_accuracy": 0.18811881188118812
-        },
-        "state": {
-          "n": 100,
-          "cognitive_accuracy": 0.17
-        },
-        "goal": {
-          "n": 100,
-          "cognitive_accuracy": 0.08
-        },
-        "value": {
-          "n": 100,
-          "cognitive_accuracy": 0.1
-        }
-      },
-      "per_time_gap": {
-        "two weeks later": {
-          "n": 10,
-          "cognitive_accuracy": 0.0
-        },
-        "one week later": {
-          "n": 13,
-          "cognitive_accuracy": 0.07692307692307693
-        },
-        "about one month later": {
-          "n": 11,
-          "cognitive_accuracy": 0.18181818181818182
-        },
-        "about five months later": {
-          "n": 3,
-          "cognitive_accuracy": 0.3333333333333333
-        },
-        "about six months later": {
-          "n": 3,
-          "cognitive_accuracy": 0.6666666666666666
-        },
-        "about one week later": {
-          "n": 4,
-          "cognitive_accuracy": 0.0
-        },
-        "two months later": {
-          "n": 59,
-          "cognitive_accuracy": 0.0847457627118644
-        },
-        "six months later": {
-          "n": 33,
-          "cognitive_accuracy": 0.15151515151515152
-        },
-        "around seven months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "one month later": {
-          "n": 44,
-          "cognitive_accuracy": 0.06818181818181818
-        },
-        "six weeks later": {
-          "n": 25,
-          "cognitive_accuracy": 0.12
-        },
-        "three months later": {
-          "n": 56,
-          "cognitive_accuracy": 0.125
-        },
-        "around four months later": {
-          "n": 3,
-          "cognitive_accuracy": 0.3333333333333333
-        },
-        "four months later": {
-          "n": 26,
-          "cognitive_accuracy": 0.15384615384615385
-        },
-        "three weeks later": {
-          "n": 10,
-          "cognitive_accuracy": 0.3
-        },
-        "nine months later": {
-          "n": 6,
-          "cognitive_accuracy": 0.0
-        },
-        "eight months later": {
-          "n": 6,
-          "cognitive_accuracy": 0.3333333333333333
-        },
-        "five months later": {
-          "n": 7,
-          "cognitive_accuracy": 0.14285714285714285
-        },
-        "around six weeks later": {
-          "n": 4,
-          "cognitive_accuracy": 0.5
-        },
-        "about three weeks later": {
-          "n": 9,
-          "cognitive_accuracy": 0.2222222222222222
-        },
-        "several months later": {
-          "n": 11,
-          "cognitive_accuracy": 0.09090909090909091
-        },
-        "one year later": {
-          "n": 5,
-          "cognitive_accuracy": 0.2
-        },
-        "about seven months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "about three months later": {
-          "n": 5,
-          "cognitive_accuracy": 0.0
-        },
-        "around eight months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "about six weeks later": {
-          "n": 7,
-          "cognitive_accuracy": 0.0
-        },
-        "about two weeks later": {
-          "n": 3,
-          "cognitive_accuracy": 0.3333333333333333
-        },
-        "seven months later": {
-          "n": 4,
-          "cognitive_accuracy": 0.0
-        },
-        "about nine months later": {
-          "n": 2,
-          "cognitive_accuracy": 0.0
-        },
-        "around five months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "around six months later": {
-          "n": 5,
-          "cognitive_accuracy": 0.4
-        },
-        "about eight months later": {
-          "n": 3,
-          "cognitive_accuracy": 0.3333333333333333
-        },
-        "about one year later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "about eight weeks later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "about two months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "about four months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "a year after": {
-          "n": 2,
-          "cognitive_accuracy": 0.0
-        },
-        "roughly three months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "a month later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "seven weeks later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "two months after the challenge ended": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "a year later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "several years later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "around one week after the birth": {
-          "n": 1,
-          "cognitive_accuracy": 1.0
-        },
-        "a couple of months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "several weeks later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "around one month later": {
-          "n": 1,
-          "cognitive_accuracy": 1.0
-        },
-        "a few weeks later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "around three months later": {
-          "n": 2,
-          "cognitive_accuracy": 0.5
-        },
-        "around three weeks later": {
-          "n": 1,
-          "cognitive_accuracy": 1.0
-        }
-      },
-      "mean_prompt_tokens_est": 22883.174563591023,
-      "mean_seconds": 29.868031717239973,
-      "mean_llm_calls": 2.0,
-      "n_unparsed": 0
-    },
-    "records_file": "external_plus-full-v1.json",
-    "n_probes": 401,
-    "judge_versions": "2"
+  "ingest_totals": {
+   "turns": 0,
+   "sessions": 0,
+   "llm_calls": 0,
+   "seconds": 0.0
   },
-  "locomo_plus:memory": {
-    "run_id": "plus-t3eD",
-    "bench": "locomo_plus",
-    "mode": "memory",
-    "model": "Qwen/Qwen3.5-35B-A3B-FP8",
-    "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
-    "embedding": "nomic-embed-text",
-    "timestamp": "2026-09-01T00:03:29.102326+00:00",
-    "config": {
-      "limit_conversations": null,
-      "shard": null,
-      "overrides": [
-        "memory.rrf_k=60",
-        "memory.weight_keyword=1.0",
-        "memory.embedding_context=false",
-        "llm.temperature=0.3"
-      ],
-      "reuse_run": "locomo-mem-v2",
-      "temperature": {
-        "judge": 0.0,
-        "fullcontext_response": 0.3
-      }
-    },
-    "summary": {
-      "n_probes": 401,
-      "cognitive_accuracy": 0.3541147132169576,
-      "per_relation_type": {
-        "causal": {
-          "n": 101,
-          "cognitive_accuracy": 0.43564356435643564
-        },
-        "state": {
-          "n": 100,
-          "cognitive_accuracy": 0.38
-        },
-        "goal": {
-          "n": 100,
-          "cognitive_accuracy": 0.24
-        },
-        "value": {
-          "n": 100,
-          "cognitive_accuracy": 0.36
-        }
-      },
-      "per_time_gap": {
-        "two weeks later": {
-          "n": 10,
-          "cognitive_accuracy": 0.4
-        },
-        "one week later": {
-          "n": 13,
-          "cognitive_accuracy": 0.7692307692307693
-        },
-        "about one month later": {
-          "n": 11,
-          "cognitive_accuracy": 0.36363636363636365
-        },
-        "about five months later": {
-          "n": 3,
-          "cognitive_accuracy": 0.6666666666666666
-        },
-        "about six months later": {
-          "n": 3,
-          "cognitive_accuracy": 0.6666666666666666
-        },
-        "about one week later": {
-          "n": 4,
-          "cognitive_accuracy": 0.75
-        },
-        "two months later": {
-          "n": 59,
-          "cognitive_accuracy": 0.2711864406779661
-        },
-        "six months later": {
-          "n": 33,
-          "cognitive_accuracy": 0.3333333333333333
-        },
-        "around seven months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "one month later": {
-          "n": 44,
-          "cognitive_accuracy": 0.36363636363636365
-        },
-        "six weeks later": {
-          "n": 25,
-          "cognitive_accuracy": 0.2
-        },
-        "three months later": {
-          "n": 56,
-          "cognitive_accuracy": 0.3392857142857143
-        },
-        "around four months later": {
-          "n": 3,
-          "cognitive_accuracy": 0.0
-        },
-        "four months later": {
-          "n": 26,
-          "cognitive_accuracy": 0.23076923076923078
-        },
-        "three weeks later": {
-          "n": 10,
-          "cognitive_accuracy": 0.4
-        },
-        "nine months later": {
-          "n": 6,
-          "cognitive_accuracy": 0.16666666666666666
-        },
-        "eight months later": {
-          "n": 6,
-          "cognitive_accuracy": 0.3333333333333333
-        },
-        "five months later": {
-          "n": 7,
-          "cognitive_accuracy": 0.42857142857142855
-        },
-        "around six weeks later": {
-          "n": 4,
-          "cognitive_accuracy": 0.75
-        },
-        "about three weeks later": {
-          "n": 9,
-          "cognitive_accuracy": 0.4444444444444444
-        },
-        "several months later": {
-          "n": 11,
-          "cognitive_accuracy": 0.5454545454545454
-        },
-        "one year later": {
-          "n": 5,
-          "cognitive_accuracy": 0.6
-        },
-        "about seven months later": {
-          "n": 1,
-          "cognitive_accuracy": 1.0
-        },
-        "about three months later": {
-          "n": 5,
-          "cognitive_accuracy": 0.2
-        },
-        "around eight months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "about six weeks later": {
-          "n": 7,
-          "cognitive_accuracy": 0.42857142857142855
-        },
-        "about two weeks later": {
-          "n": 3,
-          "cognitive_accuracy": 0.6666666666666666
-        },
-        "seven months later": {
-          "n": 4,
-          "cognitive_accuracy": 0.25
-        },
-        "about nine months later": {
-          "n": 2,
-          "cognitive_accuracy": 0.0
-        },
-        "around five months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "around six months later": {
-          "n": 5,
-          "cognitive_accuracy": 0.6
-        },
-        "about eight months later": {
-          "n": 3,
-          "cognitive_accuracy": 0.3333333333333333
-        },
-        "about one year later": {
-          "n": 1,
-          "cognitive_accuracy": 1.0
-        },
-        "about eight weeks later": {
-          "n": 1,
-          "cognitive_accuracy": 1.0
-        },
-        "about two months later": {
-          "n": 1,
-          "cognitive_accuracy": 1.0
-        },
-        "about four months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "a year after": {
-          "n": 2,
-          "cognitive_accuracy": 0.0
-        },
-        "roughly three months later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "a month later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "seven weeks later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "two months after the challenge ended": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "a year later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "several years later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "around one week after the birth": {
-          "n": 1,
-          "cognitive_accuracy": 1.0
-        },
-        "a couple of months later": {
-          "n": 1,
-          "cognitive_accuracy": 1.0
-        },
-        "several weeks later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "around one month later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "a few weeks later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        },
-        "around three months later": {
-          "n": 2,
-          "cognitive_accuracy": 0.5
-        },
-        "around three weeks later": {
-          "n": 1,
-          "cognitive_accuracy": 0.0
-        }
-      },
-      "mean_prompt_tokens_est": 1232.6932668329177,
-      "mean_seconds": 57.16958944954238,
-      "mean_llm_calls": 5.324189526184538,
-      "n_unparsed": 1
-    },
-    "records_file": "external_plus-t3eD.json",
-    "n_probes": 401,
-    "judge_versions": "2"
+  "records_file": "external_locomo-full-v1.json",
+  "n_conversations": 1986,
+  "judge_versions": "2"
+ },
+ "locomo:memory": {
+  "run_id": "locomo-t3nAgg",
+  "bench": "locomo",
+  "mode": "memory",
+  "model": "Qwen/Qwen3.5-35B-A3B-FP8",
+  "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
+  "embedding": "nomic-embed-text",
+  "timestamp": "2026-09-04T14:58:04.370124+00:00",
+  "config": {
+   "k": 100,
+   "fact_extraction_interval": 1,
+   "pair_turns": false,
+   "agg_stage": true,
+   "max_tokens": {
+    "qa": 60,
+    "agg_qa": 700
+   },
+   "temperature": {
+    "qa": 0.0,
+    "judge": 0.0
+   },
+   "limit_conversations": null,
+   "sample": null,
+   "seed": 7,
+   "max_sessions": null,
+   "max_questions": null,
+   "shard": null,
+   "overrides": []
   },
-  "longmemeval_s:memory": {
-    "run_id": "lme-t3nAgg",
-    "bench": "longmemeval_s",
-    "mode": "memory",
-    "model": "Qwen/Qwen3.5-35B-A3B-FP8",
-    "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
-    "embedding": "nomic-embed-text",
-    "timestamp": "2026-09-04T13:53:23.617697+00:00",
-    "config": {
-      "k": 100,
-      "fact_extraction_interval": 1,
-      "pair_turns": true,
-      "agg_stage": true,
-      "max_tokens": {
-        "qa": 60,
-        "agg_qa": 700
-      },
-      "temperature": {
-        "qa": 0.0,
-        "judge": 0.0
-      },
-      "limit_conversations": null,
-      "sample": 100,
-      "seed": 7,
-      "max_sessions": null,
-      "max_questions": null,
-      "shard": null,
-      "overrides": []
+  "summary": {
+   "n_questions": 1986,
+   "overall_j": 0.674025974025974,
+   "overall_f1": 0.32903128394096626,
+   "per_category": {
+    "2": {
+     "n": 321,
+     "j": 0.6417445482866043,
+     "f1": 0.21342483423581377
     },
-    "summary": {
-      "n_questions": 100,
-      "overall_j": 0.6559139784946236,
-      "overall_f1": 0.29578965558722653,
-      "per_category": {
-        "multi-session": {
-          "n": 16,
-          "j": 0.625,
-          "f1": 0.22627580752580753
-        },
-        "single-session-assistant": {
-          "n": 17,
-          "j": 0.8235294117647058,
-          "f1": 0.39545138956903664
-        },
-        "single-session-preference": {
-          "n": 17,
-          "j": 0.17647058823529413,
-          "f1": 0.07111688756220073
-        },
-        "single-session-user": {
-          "n": 14,
-          "j": 1.0,
-          "f1": 0.5311291882720455
-        },
-        "temporal-reasoning": {
-          "n": 16,
-          "j": 0.625,
-          "f1": 0.28290987707261295
-        },
-        "knowledge-update": {
-          "n": 13,
-          "j": 0.7692307692307693,
-          "f1": 0.3072305899228976
-        }
-      },
-      "rule_scored": {
-        "knowledge-update": {
-          "n": 4,
-          "accuracy": 1.0
-        },
-        "single-session-user": {
-          "n": 2,
-          "accuracy": 1.0
-        },
-        "multi-session": {
-          "n": 1,
-          "accuracy": 1.0
-        }
-      },
-      "adversarial_accuracy": null,
-      "abstain_accuracy": 1.0,
-      "mean_prompt_tokens_est": 8879.11,
-      "n_unparsed": 0
+    "3": {
+     "n": 96,
+     "j": 0.2708333333333333,
+     "f1": 0.10810136171029455
     },
-    "ingest_totals": {
-      "turns": 49649,
-      "sessions": 4809,
-      "llm_calls": 34198,
-      "seconds": 615986.6408516006
+    "1": {
+     "n": 282,
+     "j": 0.5,
+     "f1": 0.2782654372345126
     },
-    "records_file": "external_lme-t3nAgg.json",
-    "n_conversations": 100,
-    "judge_versions": "2"
-  }
+    "4": {
+     "n": 841,
+     "j": 0.7907253269916765,
+     "f1": 0.41539859863861034
+    }
+   },
+   "rule_scored": {
+    "5": {
+     "n": 446,
+     "accuracy": 0.8766816143497758
+    }
+   },
+   "adversarial_accuracy": 0.8766816143497758,
+   "abstain_accuracy": null,
+   "mean_prompt_tokens_est": 4405.6394763343405,
+   "n_unparsed": 0
+  },
+  "ingest_totals": {
+   "turns": 5882,
+   "sessions": 272,
+   "llm_calls": 6265,
+   "seconds": 100131.85766953137
+  },
+  "records_file": "external_locomo-t3nAgg.json",
+  "n_conversations": 1986,
+  "judge_versions": "2"
+ },
+ "locomo_plus:fullcontext": {
+  "run_id": "plus-full-v1",
+  "bench": "locomo_plus",
+  "mode": "fullcontext",
+  "model": "Qwen/Qwen3.5-35B-A3B-FP8",
+  "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
+  "embedding": null,
+  "timestamp": "2026-08-28T05:10:32.244339+00:00",
+  "config": {
+   "limit_conversations": null,
+   "shard": null,
+   "reuse_run": null,
+   "temperature": {
+    "judge": 0.0,
+    "fullcontext_response": 0.3
+   }
+  },
+  "summary": {
+   "n_probes": 401,
+   "cognitive_accuracy": 0.13466334164588528,
+   "per_relation_type": {
+    "causal": {
+     "n": 101,
+     "cognitive_accuracy": 0.18811881188118812
+    },
+    "state": {
+     "n": 100,
+     "cognitive_accuracy": 0.17
+    },
+    "goal": {
+     "n": 100,
+     "cognitive_accuracy": 0.08
+    },
+    "value": {
+     "n": 100,
+     "cognitive_accuracy": 0.1
+    }
+   },
+   "per_time_gap": {
+    "two weeks later": {
+     "n": 10,
+     "cognitive_accuracy": 0.0
+    },
+    "one week later": {
+     "n": 13,
+     "cognitive_accuracy": 0.07692307692307693
+    },
+    "about one month later": {
+     "n": 11,
+     "cognitive_accuracy": 0.18181818181818182
+    },
+    "about five months later": {
+     "n": 3,
+     "cognitive_accuracy": 0.3333333333333333
+    },
+    "about six months later": {
+     "n": 3,
+     "cognitive_accuracy": 0.6666666666666666
+    },
+    "about one week later": {
+     "n": 4,
+     "cognitive_accuracy": 0.0
+    },
+    "two months later": {
+     "n": 59,
+     "cognitive_accuracy": 0.0847457627118644
+    },
+    "six months later": {
+     "n": 33,
+     "cognitive_accuracy": 0.15151515151515152
+    },
+    "around seven months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "one month later": {
+     "n": 44,
+     "cognitive_accuracy": 0.06818181818181818
+    },
+    "six weeks later": {
+     "n": 25,
+     "cognitive_accuracy": 0.12
+    },
+    "three months later": {
+     "n": 56,
+     "cognitive_accuracy": 0.125
+    },
+    "around four months later": {
+     "n": 3,
+     "cognitive_accuracy": 0.3333333333333333
+    },
+    "four months later": {
+     "n": 26,
+     "cognitive_accuracy": 0.15384615384615385
+    },
+    "three weeks later": {
+     "n": 10,
+     "cognitive_accuracy": 0.3
+    },
+    "nine months later": {
+     "n": 6,
+     "cognitive_accuracy": 0.0
+    },
+    "eight months later": {
+     "n": 6,
+     "cognitive_accuracy": 0.3333333333333333
+    },
+    "five months later": {
+     "n": 7,
+     "cognitive_accuracy": 0.14285714285714285
+    },
+    "around six weeks later": {
+     "n": 4,
+     "cognitive_accuracy": 0.5
+    },
+    "about three weeks later": {
+     "n": 9,
+     "cognitive_accuracy": 0.2222222222222222
+    },
+    "several months later": {
+     "n": 11,
+     "cognitive_accuracy": 0.09090909090909091
+    },
+    "one year later": {
+     "n": 5,
+     "cognitive_accuracy": 0.2
+    },
+    "about seven months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "about three months later": {
+     "n": 5,
+     "cognitive_accuracy": 0.0
+    },
+    "around eight months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "about six weeks later": {
+     "n": 7,
+     "cognitive_accuracy": 0.0
+    },
+    "about two weeks later": {
+     "n": 3,
+     "cognitive_accuracy": 0.3333333333333333
+    },
+    "seven months later": {
+     "n": 4,
+     "cognitive_accuracy": 0.0
+    },
+    "about nine months later": {
+     "n": 2,
+     "cognitive_accuracy": 0.0
+    },
+    "around five months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "around six months later": {
+     "n": 5,
+     "cognitive_accuracy": 0.4
+    },
+    "about eight months later": {
+     "n": 3,
+     "cognitive_accuracy": 0.3333333333333333
+    },
+    "about one year later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "about eight weeks later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "about two months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "about four months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "a year after": {
+     "n": 2,
+     "cognitive_accuracy": 0.0
+    },
+    "roughly three months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "a month later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "seven weeks later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "two months after the challenge ended": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "a year later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "several years later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "around one week after the birth": {
+     "n": 1,
+     "cognitive_accuracy": 1.0
+    },
+    "a couple of months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "several weeks later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "around one month later": {
+     "n": 1,
+     "cognitive_accuracy": 1.0
+    },
+    "a few weeks later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "around three months later": {
+     "n": 2,
+     "cognitive_accuracy": 0.5
+    },
+    "around three weeks later": {
+     "n": 1,
+     "cognitive_accuracy": 1.0
+    }
+   },
+   "mean_prompt_tokens_est": 22883.174563591023,
+   "mean_seconds": 29.868031717239973,
+   "mean_llm_calls": 2.0,
+   "n_unparsed": 0
+  },
+  "records_file": "external_plus-full-v1.json",
+  "n_probes": 401,
+  "judge_versions": "2"
+ },
+ "locomo_plus:memory": {
+  "run_id": "plus-t3eD",
+  "bench": "locomo_plus",
+  "mode": "memory",
+  "model": "Qwen/Qwen3.5-35B-A3B-FP8",
+  "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
+  "embedding": "nomic-embed-text",
+  "timestamp": "2026-09-01T00:03:29.102326+00:00",
+  "config": {
+   "limit_conversations": null,
+   "shard": null,
+   "overrides": [
+    "memory.rrf_k=60",
+    "memory.weight_keyword=1.0",
+    "memory.embedding_context=false",
+    "llm.temperature=0.3"
+   ],
+   "reuse_run": "locomo-mem-v2",
+   "temperature": {
+    "judge": 0.0,
+    "fullcontext_response": 0.3
+   }
+  },
+  "summary": {
+   "n_probes": 401,
+   "cognitive_accuracy": 0.3541147132169576,
+   "per_relation_type": {
+    "causal": {
+     "n": 101,
+     "cognitive_accuracy": 0.43564356435643564
+    },
+    "state": {
+     "n": 100,
+     "cognitive_accuracy": 0.38
+    },
+    "goal": {
+     "n": 100,
+     "cognitive_accuracy": 0.24
+    },
+    "value": {
+     "n": 100,
+     "cognitive_accuracy": 0.36
+    }
+   },
+   "per_time_gap": {
+    "two weeks later": {
+     "n": 10,
+     "cognitive_accuracy": 0.4
+    },
+    "one week later": {
+     "n": 13,
+     "cognitive_accuracy": 0.7692307692307693
+    },
+    "about one month later": {
+     "n": 11,
+     "cognitive_accuracy": 0.36363636363636365
+    },
+    "about five months later": {
+     "n": 3,
+     "cognitive_accuracy": 0.6666666666666666
+    },
+    "about six months later": {
+     "n": 3,
+     "cognitive_accuracy": 0.6666666666666666
+    },
+    "about one week later": {
+     "n": 4,
+     "cognitive_accuracy": 0.75
+    },
+    "two months later": {
+     "n": 59,
+     "cognitive_accuracy": 0.2711864406779661
+    },
+    "six months later": {
+     "n": 33,
+     "cognitive_accuracy": 0.3333333333333333
+    },
+    "around seven months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "one month later": {
+     "n": 44,
+     "cognitive_accuracy": 0.36363636363636365
+    },
+    "six weeks later": {
+     "n": 25,
+     "cognitive_accuracy": 0.2
+    },
+    "three months later": {
+     "n": 56,
+     "cognitive_accuracy": 0.3392857142857143
+    },
+    "around four months later": {
+     "n": 3,
+     "cognitive_accuracy": 0.0
+    },
+    "four months later": {
+     "n": 26,
+     "cognitive_accuracy": 0.23076923076923078
+    },
+    "three weeks later": {
+     "n": 10,
+     "cognitive_accuracy": 0.4
+    },
+    "nine months later": {
+     "n": 6,
+     "cognitive_accuracy": 0.16666666666666666
+    },
+    "eight months later": {
+     "n": 6,
+     "cognitive_accuracy": 0.3333333333333333
+    },
+    "five months later": {
+     "n": 7,
+     "cognitive_accuracy": 0.42857142857142855
+    },
+    "around six weeks later": {
+     "n": 4,
+     "cognitive_accuracy": 0.75
+    },
+    "about three weeks later": {
+     "n": 9,
+     "cognitive_accuracy": 0.4444444444444444
+    },
+    "several months later": {
+     "n": 11,
+     "cognitive_accuracy": 0.5454545454545454
+    },
+    "one year later": {
+     "n": 5,
+     "cognitive_accuracy": 0.6
+    },
+    "about seven months later": {
+     "n": 1,
+     "cognitive_accuracy": 1.0
+    },
+    "about three months later": {
+     "n": 5,
+     "cognitive_accuracy": 0.2
+    },
+    "around eight months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "about six weeks later": {
+     "n": 7,
+     "cognitive_accuracy": 0.42857142857142855
+    },
+    "about two weeks later": {
+     "n": 3,
+     "cognitive_accuracy": 0.6666666666666666
+    },
+    "seven months later": {
+     "n": 4,
+     "cognitive_accuracy": 0.25
+    },
+    "about nine months later": {
+     "n": 2,
+     "cognitive_accuracy": 0.0
+    },
+    "around five months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "around six months later": {
+     "n": 5,
+     "cognitive_accuracy": 0.6
+    },
+    "about eight months later": {
+     "n": 3,
+     "cognitive_accuracy": 0.3333333333333333
+    },
+    "about one year later": {
+     "n": 1,
+     "cognitive_accuracy": 1.0
+    },
+    "about eight weeks later": {
+     "n": 1,
+     "cognitive_accuracy": 1.0
+    },
+    "about two months later": {
+     "n": 1,
+     "cognitive_accuracy": 1.0
+    },
+    "about four months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "a year after": {
+     "n": 2,
+     "cognitive_accuracy": 0.0
+    },
+    "roughly three months later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "a month later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "seven weeks later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "two months after the challenge ended": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "a year later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "several years later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "around one week after the birth": {
+     "n": 1,
+     "cognitive_accuracy": 1.0
+    },
+    "a couple of months later": {
+     "n": 1,
+     "cognitive_accuracy": 1.0
+    },
+    "several weeks later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "around one month later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "a few weeks later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    },
+    "around three months later": {
+     "n": 2,
+     "cognitive_accuracy": 0.5
+    },
+    "around three weeks later": {
+     "n": 1,
+     "cognitive_accuracy": 0.0
+    }
+   },
+   "mean_prompt_tokens_est": 1232.6932668329177,
+   "mean_seconds": 57.16958944954238,
+   "mean_llm_calls": 5.324189526184538,
+   "n_unparsed": 1
+  },
+  "records_file": "external_plus-t3eD.json",
+  "n_probes": 401,
+  "judge_versions": "2"
+ },
+ "longmemeval_s:memory": {
+  "run_id": "lme-t3qPref",
+  "bench": "longmemeval_s",
+  "mode": "memory",
+  "model": "Qwen/Qwen3.5-35B-A3B-FP8",
+  "judge": "Qwen/Qwen3.5-35B-A3B-FP8",
+  "embedding": "nomic-embed-text",
+  "timestamp": "2026-09-05T15:41:06.191897+00:00",
+  "config": {
+   "k": 100,
+   "fact_extraction_interval": 1,
+   "pair_turns": true,
+   "agg_stage": true,
+   "pref_stage": true,
+   "max_tokens": {
+    "qa": 60,
+    "agg_qa": 700,
+    "pref_qa": 200
+   },
+   "temperature": {
+    "qa": 0.0,
+    "judge": 0.0
+   },
+   "limit_conversations": null,
+   "sample": 100,
+   "seed": 7,
+   "max_sessions": null,
+   "max_questions": null,
+   "shard": null,
+   "overrides": []
+  },
+  "summary": {
+   "n_questions": 100,
+   "overall_j": 0.6989247311827957,
+   "overall_f1": 0.31855141277152116,
+   "per_category": {
+    "multi-session": {
+     "n": 16,
+     "j": 0.5625,
+     "f1": 0.17339119214119214
+    },
+    "single-session-assistant": {
+     "n": 17,
+     "j": 0.8235294117647058,
+     "f1": 0.39545138956903664
+    },
+    "single-session-preference": {
+     "n": 17,
+     "j": 0.5294117647058824,
+     "f1": 0.18373272711332
+    },
+    "single-session-user": {
+     "n": 14,
+     "j": 1.0,
+     "f1": 0.637973137973138
+    },
+    "temporal-reasoning": {
+     "n": 16,
+     "j": 0.5625,
+     "f1": 0.27300234487734487
+    },
+    "knowledge-update": {
+     "n": 13,
+     "j": 0.7692307692307693,
+     "f1": 0.28501776001776
+    }
+   },
+   "rule_scored": {
+    "knowledge-update": {
+     "n": 4,
+     "accuracy": 1.0
+    },
+    "single-session-user": {
+     "n": 2,
+     "accuracy": 1.0
+    },
+    "multi-session": {
+     "n": 1,
+     "accuracy": 1.0
+    }
+   },
+   "adversarial_accuracy": null,
+   "abstain_accuracy": 1.0,
+   "mean_prompt_tokens_est": 8857.53,
+   "n_unparsed": 0
+  },
+  "ingest_totals": {
+   "turns": 49649,
+   "sessions": 4809,
+   "llm_calls": 34198,
+   "seconds": 615986.6408516006
+  },
+  "records_file": "external_lme-t3qPref.json",
+  "n_conversations": 100,
+  "judge_versions": "2"
+ }
 }

@@ -154,13 +154,13 @@ woven-imprint chat marcus
 1. ChatGPT → Settings → Data Controls → Export Data
 2. Download zip, unzip, find `conversations.json`
 
-**Web UI**: Migrate tab → upload the file
+**Web UI**: Import tab → Import from File
 
 **Terminal**: `woven-imprint migrate conversations.json`
 
 ### From a Custom GPT
 
-**Web UI**: Migrate tab → paste instructions text
+**Web UI**: Import tab → Migrate from Text
 
 **Terminal**: `woven-imprint migrate --text "You are Coach Rivera..."`
 

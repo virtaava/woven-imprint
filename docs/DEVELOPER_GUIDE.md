@@ -524,10 +524,11 @@ print(char.relationships.describe("imported_user"))
 
 ### MCP Server (Claude Desktop, Cursor, Hermes, OpenClaw)
 
-See [MCP Setup](../examples/mcp_setup.md) for config. 17 tools available:
+See [MCP Setup](../examples/mcp_setup.md) for config. 24 tools available:
 `list_characters`, `create_character`, `chat`, `recall`, `get_relationship`,
-`reflect`, `evolve`, `new_session`, `end_session`, `consolidate`, `get_stats`,
-`get_callbacks`, `observe`, `get_health`, `maintain`,
+`reflect`, `evolve`, `new_session`, `end_session`, `consolidate`, `get_facts`,
+`edit_memory`, `delete_memory`, `pin_memory`, `list_pinned`, `edit_fact`,
+`retract_fact`, `get_stats`, `get_callbacks`, `observe`, `get_health`, `maintain`,
 `delete_character`, `migrate_from_text`.
 
 ### OpenAI-Compatible API Proxy
@@ -601,6 +602,7 @@ woven-imprint chat <name-or-id>           # Chat
 woven-imprint list                        # List characters
 woven-imprint stats <name-or-id>          # Character info
 woven-imprint export <name-or-id>         # Export to JSON
+woven-imprint export-card <name-or-id>    # Export as a SillyTavern V2 character card
 woven-imprint import <path>               # Import from JSON
 woven-imprint delete <name-or-id>         # Delete
 
@@ -621,6 +623,10 @@ woven-imprint maintain --jobs consolidate,callbacks --budget 20
 woven-imprint maintain --json             # Machine-readable report
 
 # Housekeeping
+woven-imprint config --init               # Create default config.yaml
+woven-imprint prompts                     # List registered prompts (id, version)
+woven-imprint reembed <name-or-id>         # Recompute a character's memory embeddings
+woven-imprint link-entities <name-or-id>   # Backfill metadata.entities on existing memories
 woven-imprint update                      # Update to latest version
 woven-imprint --version                   # Show version
 ```

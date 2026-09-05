@@ -544,7 +544,12 @@ Each conversation session produces:
 `persona/assessment.py`'s `TurnAssessor.assess(...)` replaces up to four
 per-turn LLM calls (emotion, relationship, story beat, fact extraction) with
 one `generate_json_robust` call returning
-`{"emotion": {...}, "relationship": {...}, "beat": {...}|null, "facts": [...]}`.
+`{"emotion": {...}, "relationship": {...}, "beat": {...}|null, "facts": [...], "entities": [...]}`.
+`entities` is parsed fault-tolerantly (`TurnAssessor._parse_entities`, never
+raises) into up to 8 canonical entity names and, when present, attached to
+the turn's buffer memories as `metadata.entities` via `MemoryStore.set_entities`.
+Stores that predate the field can backfill it with the
+`woven-imprint link-entities <character>` CLI command.
 Parsing is factored into pure functions that each engine's standalone method
 now delegates to — `EmotionEngine.parse_assessment()`, `ArcTracker.parse_beat()`,
 `Character._parse_relationship_deltas()`, `Character._parse_facts()` — so the
@@ -635,7 +640,12 @@ when the memory carries `metadata.user_id` (set from `chat`/`ingest`/
 `ingest_exchange`'s `user_id` argument) and falls back to the anonymous
 `[User]` tag otherwise, including for memories stored before this tag
 existed. Each line's date prefix also carries the weekday, e.g.
-`(2023-05-08 Mon, 3 months ago)`.
+`(2023-05-08 Mon, 3 months ago)`. Two more rendering features are default-on:
+`resolve_relative_dates` appends absolute-date hints for a closed set of
+relative-time phrases found in a memory's content (e.g. `"last Saturday"`),
+computed from that memory's own date, e.g. `"tomorrow"→2023-05-09`; and
+`photo_caption_line` renders a `"(shared a photo: X)"` parenthetical as its
+own indented `[photo] X` continuation line instead of leaving it inline.
 
 **Prompt assembly: two decoupled orders.** `_build_context` builds five optional sections —
 emotion, arc, relationship, facts, memories — and decides their fate with two independent

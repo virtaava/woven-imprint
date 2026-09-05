@@ -3,7 +3,8 @@
 ## How Relationship Scoring Works
 
 Every conversation turn, the system asks the LLM to assess relationship changes.
-Here is the exact prompt used (from `character.py`):
+Here is the exact prompt used (from the Prompt Registry, `woven_imprint/prompts.py`,
+rendered via `render()`):
 
 ```
 System: You assess how a conversation exchange affects a relationship between
@@ -32,10 +33,13 @@ assessing similar interactions produces similar deltas. The bounded change
 
 ## Benchmark Types
 
-### 1. Deterministic Benchmarks (13 tests, no LLM needed)
+### 1. Deterministic Benchmarks (26 tests, no LLM needed)
 
 These test the ENGINE, not the LLM. They use mock embedders and mock LLMs
-to verify that the system's mechanics work correctly:
+to verify that the system's mechanics work correctly, across three suites:
+`eval/bench_memory.py` (8 tests), `eval/bench_persona.py` (6 tests), and
+`eval/bench_longhorizon.py` (12 scenarios over 60 simulated days, exercising
+`chat()` end-to-end with a fake clock and a scripted LLM):
 
 - Memory storage and retrieval across tiers
 - Cross-session persistence
@@ -43,6 +47,8 @@ to verify that the system's mechanics work correctly:
 - Relationship dimension bounds
 - Persona constraint enforcement
 - Character growth thresholds
+- Long-horizon recall, contradiction supersession, and relationship
+  trajectory across 60 simulated days of accumulated memory
 
 These prove the code is correct. They do NOT prove the system produces
 good characters — that depends on the LLM.
@@ -99,7 +105,11 @@ python eval/pride_and_prejudice.py
 
 ## Limitations
 
-- **No external validation**: All evaluations were designed by the project creator
+- **External benchmarks, local judge**: LoCoMo, LoCoMo-Plus, and LongMemEval-S are
+  now run against a fully local judge (Qwen3.5-35B), scored alongside a full-context
+  baseline under the same judge for a fair comparison — see [docs/BENCHMARKS.md](BENCHMARKS.md).
+  The honest limitation that remains: local-judge scores are not comparable to
+  GPT-4o-judged numbers published by other systems' papers
 - **No ground truth calibration**: Relationship deltas are LLM-assessed, not measured against human annotations
 - **Model-dependent**: Results vary by LLM quality. A 3B model produces worse characters than a 30B model
 - **No adversarial robustness guarantee**: The persona consistency test covers common attacks but not all

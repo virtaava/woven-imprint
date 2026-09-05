@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Tier 3p (DF-aware entity pivoting, opt-in; direction closed)
+- **`memory.second_pass_entity_max_df` (default `0.05`)** + `SQLiteStorage.fts_term_count`:
+  the entity second pass now pivots only on entities matching ≤ max_df of the store.
+  Measured (`locomo-t3pDF`): recovers most of Tier 3o's flooding damage (0.638 → 0.667,
+  cat-1 0.408 → 0.465) but still under the no-second-pass baseline (0.674/0.500) — bar
+  missed; all second-pass flags stay default-off. Three measured attempts (3f/3o/3p) close
+  the second-pass retrieval direction: at K=100 the first pass is already rich enough.
+
 ### Added — Tier 3o (entity linking: storage ships, retrieval pivot rejected by measurement)
 - **`metadata.entities`**: the unified turn assessment now extracts up to 8 canonical
   entity names per exchange (zero extra LLM calls) and attaches them to the turn's buffer

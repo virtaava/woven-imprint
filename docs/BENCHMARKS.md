@@ -1393,6 +1393,32 @@ recorded follow-up: **document-frequency-aware entity pivoting** (only pivot on 
 rarer than a DF threshold in the store), which is what this measurement says the idea
 actually needs. LME confirmation arm skipped per spec (bar missed).
 
+## Tier 3p: DF-aware entity pivoting — diagnosis validated, direction closed (2026-09-05)
+
+Tier 3o's post-mortem predicted that filtering the entity pivot to LOW-document-frequency
+entities would remove the flooding damage. A DF histogram on the backfilled store
+confirmed the shape (63 unique entities in conv-26: 5 match >20% of the store — the
+speaker names — while 51 sit ≤5%), and `memory.second_pass_entity_max_df` (default 0.05,
+≤16 µs-scale count queries per retrieve via the new `fts_term_count`) implements the
+filter. Measured (`locomo-t3pDF`, same protocol and backfilled DBs as Tier 3o):
+
+| metric | DF-filtered (`t3pDF`) | unfiltered (`t3oEnt`) | no 2nd pass (`t3nAgg`) |
+|---|---:|---:|---:|
+| Overall J | 0.667 | 0.638 | **0.674** |
+| multi-hop (cat 1) | 0.465 | 0.408 | **0.500** |
+| adversarial | 0.892 | 0.888 | 0.877 |
+
+**The diagnosis was right and the bar was still missed** (needed overall ≥ 0.669, cat-1 ≥
+0.530): the filter recovers most of the flooding damage but "less harmful than the
+unfiltered pivot" is not "better than no pivot". Three measured attempts now agree —
+Tier 3f (lexical terms, K = 20 era), Tier 3o (entity terms), Tier 3p (DF-filtered entity
+terms) — at the K = 100 protocol the first-pass pool is already rich enough that
+second-pass widening only dilutes the fusion. **The second-pass retrieval direction is
+closed**; all its flags ship opt-in and default-off, and the honest summary is that the
+Tier 3j depth increase already captured what the second pass was reaching for. The entity
+metadata itself (Tier 3o storage) remains in place — its value is product-side (X-Ray
+panels, filtering, future graph features), not benchmark retrieval.
+
 ## Caveats
 
 - **Local 35B judge ≠ GPT-4o.** These numbers are judged by the same local Qwen3.5-35B-A3B-FP8

@@ -481,6 +481,24 @@ class MemoryRetriever:
                                 break
                         if len(terms) >= 16:
                             break
+                    # Tier 3p: drop entities that flood the store (e.g. a
+                    # speaker name matching half a two-speaker corpus's rows)
+                    # instead of narrowing the second-pass pivot — keep an
+                    # entity only if its FTS document count is at most
+                    # `second_pass_entity_max_df * candidate pool size`. At
+                    # most 16 count queries (µs-scale SQLite counts); an
+                    # empty result falls through to the `_salient_terms`
+                    # fallback below exactly like an empty entity union.
+                    if terms:
+                        df_ceiling = mem_cfg.second_pass_entity_max_df * max(
+                            len(all_memories), 1
+                        )
+                        terms = [
+                            e
+                            for e in terms
+                            if self.storage.fts_term_count(self.character_id, e)
+                            <= df_ceiling
+                        ]
                 if not terms:
                     terms = _salient_terms(combined_text)
                 try:

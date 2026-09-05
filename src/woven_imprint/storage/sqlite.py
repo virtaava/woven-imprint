@@ -636,6 +636,34 @@ class SQLiteStorage:
             ).fetchall()
             return [self._row_to_memory(r) for r in rows]
 
+    def fts_term_count(self, character_id: str, term: str) -> int:
+        """Count active memories whose content matches a single FTS term.
+
+        Tier 3p (docs/superpowers/specs/2026-09-05-tier3p-df-entity-pivot.md):
+        document-frequency probe backing the DF-aware entity pivot filter —
+        `MemoryRetriever` uses this to decide whether an entity handle is rare
+        enough to be worth pivoting the second-pass search on, or whether it
+        floods the store (e.g. a speaker name matching half the rows) and
+        should be dropped. Same sanitization discipline as `fts_search`
+        (strip to `\\w+` words, quote); a term that sanitizes to nothing
+        (e.g. pure punctuation) returns 0 without querying.
+        """
+        import re
+
+        words = re.findall(r"\w+", term)
+        if not words:
+            return 0
+        safe_query = " OR ".join(f'"{w}"' for w in words)
+
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT COUNT(*) as c FROM memories_fts
+                   JOIN memories m ON memories_fts.rowid = m.rowid
+                   WHERE memories_fts MATCH ? AND m.character_id = ? AND m.status = 'active'""",
+                (safe_query, character_id),
+            ).fetchone()
+            return row["c"]
+
     def _row_to_memory(self, row: sqlite3.Row) -> dict:
         d = dict(row)
         if d.get("embedding"):

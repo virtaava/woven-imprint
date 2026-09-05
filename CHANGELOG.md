@@ -5,7 +5,19 @@ All notable changes to Woven Imprint will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-05
+
+The measured-improvement campaign (Tiers 3b-3r): every change below was adopted or
+rejected by a pre-registered bar on real benchmark runs against the local judge
+(docs/BENCHMARKS.md has the full history, including the negative results). Headlines
+moved from LoCoMo J 0.444 / LongMemEval-S 0.396 (v0.5.2 era, K=20 protocol) to
+**LoCoMo 0.674** and **LME-S 0.699** under the current protocol. Library highlights:
+consolidation keep-sources, relevance-first ranking, contextualized embeddings +
+`reembed`, retrieval relevance gate tuning, LLM query expansion (opt-in), relative-date
+hints + photo-caption rendering, entity linking at ingest + `link-entities` backfill CLI,
+DF-aware entity pivoting (opt-in), chat-path render-order fix, `llm.temperature`
+honored in chat, `MemoryConfig` validation. All additive; no breaking changes.
+
 
 ### Fixed — Tier 3r (debt batch, 2026-09-05)
 - `_run_bookkeeping` no longer notes arc bookkeeping as healthy when no story beat

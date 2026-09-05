@@ -102,7 +102,12 @@ answering is two-path**: questions matching a closed aggregation-regex set
 list all / order-of phrasings) retrieve with `memory.query_expansion=3` and answer via an
 enumerate-then-answer prompt (`AGG_QA_SYSTEM`, max_tokens 700, final `Answer:` line parsed
 and judged); every other question follows the single-path protocol unchanged. `--agg-stage`
-off reproduces the single-path protocol byte-identically;
+off reproduces the single-path protocol byte-identically. **From Tier 3q on, the
+LongMemEval-S protocol additionally routes advice-request-shaped questions
+(`eval/external/preference.py::is_preference_question`) to an assistant-style
+preference-grounded reply (`--pref-stage`); LoCoMo runs do NOT use the pref stage — its
+confirmation missed the keep-bar by 0.001 and the protocols are split, see the Tier 3q
+section;
 pinned memories
 already in the block are filtered out of this list so nothing repeats), rendered via
 `char._format_memories(...)`. Instruction: answer in at most 15 words, use only the memories,
@@ -1418,6 +1423,38 @@ closed**; all its flags ship opt-in and default-off, and the honest summary is t
 Tier 3j depth increase already captured what the second pass was reaching for. The entity
 metadata itself (Tier 3o storage) remains in place — its value is product-side (X-Ray
 panels, filtering, future graph features), not benchmark retrieval.
+
+## Tier 3q: the preference answer stage — adopted for LME (2026-09-05)
+
+`single-session-preference` has been LME's worst category all campaign (0/8 → 1/17 →
+3-4/17), and the failure was an instrument mismatch documented since Tier 3b: the
+questions are advice REQUESTS ("Can you recommend a show for me tonight?"), the golds are
+rubrics ("the user would prefer responses that reference their stated ..."), and the
+hardened ≤15-word factual prompt makes the model abstain on questions that have no fact
+to abstain from. Tier 3q routes advice-request-shaped questions (closed regex,
+`eval/external/preference.py`; 16/17 of the real preference texts match, 0/16 negatives)
+to an assistant-style reply grounded in the stated preferences (2-3 sentences,
+max_tokens 200), judged as-is. Aggregation routing takes precedence; `--pref-stage` off
+is byte-identical (tested, mutation-verified).
+
+**LME-S 100-Q** (`lme-t3qPref` vs `lme-t3nAgg`): overall **0.699 vs 0.656**, preference
+**9/17 vs 3/17**, abstain 7/7, worst side effect −1 question (multi-session and temporal,
+both single-question noise). All four pre-registered bar legs met.
+
+**LoCoMo confirmation missed its keep-bar by 0.001** (`locomo-t3qPref` 0.668 vs required
+0.669; adversarial 0.888 fine; cat-1 0.479 vs 0.500 — a handful of "do you think"-shaped
+factual questions misroute into chatty answers). Per the spec's pre-registered fallback,
+the stage is adopted as an **LME-protocol mode only**: the LongMemEval-S protocol is now
+K = 100 + hardened + `--agg-stage --pref-stage`; the LoCoMo protocol stays
+`--agg-stage` only (headline 0.674 unchanged, `locomo:memory` stays `locomo-t3nAgg`).
+The split is honest about question-class reality — LME contains a genuine
+advice-request category, LoCoMo does not — and is recorded in the Protocol section.
+Follow-up recorded: a tighter second-person advice regex ("for me", "I'm planning")
+might pass the LoCoMo bar and unify the protocol.
+
+**New LME-S headline: J 0.699.** Campaign arc: 0.396 → 0.542/0.495 → 0.559 → 0.656 →
+**0.699** — now within 0.003 of LoCoMo's full-context baseline (0.696) on a benchmark
+whose transcripts don't even fit the context window.
 
 ## Caveats
 

@@ -117,6 +117,14 @@ def main(argv: list[str] | None = None) -> int:
         "via enumerate-then-answer — per-question memory.query_expansion=3 retrieval + a "
         "larger answer budget (default off: byte-identical to a run without this flag)",
     )
+    run_parser.add_argument(
+        "--pref-stage",
+        action="store_true",
+        help="Tier 3q: answer preference/advice-request questions (can you suggest/recommend, "
+        "any tips, should I, ...) via a grounded-advice prompt instead of the factual "
+        "15-word never-guess contract (default off: byte-identical to a run without this "
+        "flag). Checked only when --agg-stage didn't already claim the question.",
+    )
 
     rejudge_parser = sub.add_parser(
         "rejudge", help="Re-run the judge over an existing run's answer checkpoints, in place"
@@ -151,6 +159,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Recorded into config when no stored results exist (see `run --agg-stage`)",
     )
+    rejudge_parser.add_argument(
+        "--pref-stage",
+        action="store_true",
+        help="Recorded into config when no stored results exist (see `run --pref-stage`)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -182,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
             pair_turns=args.pair_turns,
             delete_db_after_answer=args.delete_db_after_answer,
             agg_stage=args.agg_stage,
+            pref_stage=args.pref_stage,
         )
         if cfg.bench == "locomo_plus":
             results = run_plus(cfg)
@@ -213,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
             fact_extraction_interval=args.interval,
             k=args.k,
             agg_stage=args.agg_stage,
+            pref_stage=args.pref_stage,
         )
         results = rejudge(cfg, only_unjudged=args.only_unjudged)
         summary = results["summary"]

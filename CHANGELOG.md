@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Results — Tier 3q (2026-09-05): preference answer stage adopted for LME — headline 0.699
+- `--pref-stage`: closed-regex routing of advice-request questions to an assistant-style
+  preference-grounded reply. **LME-S 0.656 → 0.699** (preference 3/17 → 9/17, abstain 7/7,
+  all bar legs met). LoCoMo confirmation missed its keep-bar by 0.001 (0.668 vs 0.669) →
+  per the pre-registered fallback the protocols split: LME = agg+pref stages, LoCoMo =
+  agg only (0.674 unchanged). LME arc: 0.396 → ... → 0.656 → **0.699**, now 0.003 under
+  LoCoMo's full-context ceiling. Follow-up: tighter second-person regex may unify.
+
 ### Added — Tier 3p (DF-aware entity pivoting, opt-in; direction closed)
 - **`memory.second_pass_entity_max_df` (default `0.05`)** + `SQLiteStorage.fts_term_count`:
   the entity second pass now pivots only on entities matching ≤ max_df of the store.

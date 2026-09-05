@@ -109,6 +109,7 @@ memory:
   fact_dedup_similarity: 0.0
   retrieval_second_pass: 0
   second_pass_entities: false
+  second_pass_entity_max_df: 0.05
   query_expansion: 0
   query_expansion_weight: 0.5
 ```

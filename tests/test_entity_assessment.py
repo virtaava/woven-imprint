@@ -20,8 +20,8 @@ def test_parse_entities_happy_path():
 def test_parse_entities_cleans_dedups_caps():
     raw = ["  Rocket ", "rocket", "", 42, None, "A", "B", "C", "D", "E", "F", "G", "H"]
     out = TurnAssessor._parse_entities(raw)
-    assert out[0] == "Rocket"          # first-seen casing kept, stripped
-    assert "rocket" not in out[1:]     # case-fold dedup
+    assert out[0] == "Rocket"  # first-seen casing kept, stripped
+    assert "rocket" not in out[1:]  # case-fold dedup
     assert 42 not in out and None not in out and "" not in out
     assert len(out) <= 8
 
@@ -38,13 +38,17 @@ def _mk_char(payload):
 
     engine = make_test_engine()
     char = engine.create_character("Entity Test")
+
     class _LLM:
         def generate(self, messages, **kw):
             return "ok"
+
         def generate_json_robust(self, messages, temperature=0.3, **kw):
             return payload
+
         def generate_json(self, messages, **kw):
             return payload
+
     char.llm = _LLM()
     char.assessor.llm = char.llm
     return char
@@ -98,10 +102,13 @@ def test_chat_stream_attaches_entities_to_both_turn_memories():
     class _StreamLLM:
         def generate(self, messages, **kw):
             return "ok"
+
         def generate_stream(self, messages, **kw):
             yield "ok"
+
         def generate_json_robust(self, messages, temperature=0.3, **kw):
             return payload
+
         def generate_json(self, messages, **kw):
             return payload
 

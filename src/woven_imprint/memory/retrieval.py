@@ -113,8 +113,8 @@ def _salient_terms(text: str, limit: int = 16) -> list[str]:
 # once per retrieve() when `query_expansion` > 0.
 _EXPANSION_PROMPT = (
     "You rewrite a question into search queries for a personal-memory database.\n"
-    "The database stores one small dated memory per event (e.g. \"went to a gallery"
-    " opening\", \"donated $50 at the bake sale\").\n"
+    'The database stores one small dated memory per event (e.g. "went to a gallery'
+    ' opening", "donated $50 at the bake sale").\n'
     "Aggregate questions (how many / how much / in total / list all / what order)"
     " can only be answered by finding EVERY individual instance, so produce"
     " instance-level rephrasings naming the concrete things someone would have"
@@ -490,14 +490,11 @@ class MemoryRetriever:
                     # empty result falls through to the `_salient_terms`
                     # fallback below exactly like an empty entity union.
                     if terms:
-                        df_ceiling = mem_cfg.second_pass_entity_max_df * max(
-                            len(all_memories), 1
-                        )
+                        df_ceiling = mem_cfg.second_pass_entity_max_df * max(len(all_memories), 1)
                         terms = [
                             e
                             for e in terms
-                            if self.storage.fts_term_count(self.character_id, e)
-                            <= df_ceiling
+                            if self.storage.fts_term_count(self.character_id, e) <= df_ceiling
                         ]
                 if not terms:
                     terms = _salient_terms(combined_text)

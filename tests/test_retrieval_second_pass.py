@@ -344,9 +344,7 @@ def test_second_pass_uses_seed_entities_when_enabled(setup):
     # Query with NO overlap with target.
     query = "shopping mall visit"
     # Seed matches query; carries very short entity ID that can't be salient term.
-    _add_with_entities(
-        storage, embedder, "shopping at mall today", ["pz"]
-    )
+    _add_with_entities(storage, embedder, "shopping at mall today", ["pz"])
     # Target reachable ONLY via entity "pz" (2 chars: cannot be salient term;
     # zero word overlap with seed or query). Salient terms from seed are
     # ["shopping", "today"] — target has ["walls", "painted"] (no overlap).
@@ -364,7 +362,9 @@ def test_second_pass_uses_seed_entities_when_enabled(setup):
     cfg.retrieval_second_pass = 0
     cfg.second_pass_entities = False
     results_control = [m["id"] for m in retriever.retrieve(query, limit=2)]
-    assert target not in results_control, "NEGATIVE CONTROL: target must not appear with second_pass=0"
+    assert target not in results_control, (
+        "NEGATIVE CONTROL: target must not appear with second_pass=0"
+    )
 
     # POSITIVE: with second_pass=2 + entities=True, target IS retrieved via entity "pz".
     cfg.retrieval_second_pass = 2
@@ -397,7 +397,9 @@ def test_second_pass_entities_empty_union_falls_back_to_salient_terms(setup):
     cfg.retrieval_second_pass = 0
     cfg.second_pass_entities = False
     results_control = [m["id"] for m in retriever.retrieve(query, limit=2)]
-    assert target not in results_control, "NEGATIVE CONTROL: target must not appear without second pass"
+    assert target not in results_control, (
+        "NEGATIVE CONTROL: target must not appear without second pass"
+    )
 
     # POSITIVE: with second_pass=2 + entities=True (empty union), should fallback to salient terms
     # and find target via "mountain".
@@ -413,7 +415,9 @@ def test_second_pass_entities_empty_union_falls_back_to_salient_terms(setup):
     assert target in results_entities_on, "target must be found when entities=True (fallback)"
     assert target in results_entities_off, "target must be found when entities=False"
     # Mutation guard: results must be identical (both using salient-term fallback).
-    assert results_entities_on == results_entities_off, "empty union must be byte-identical to salient-terms path"
+    assert results_entities_on == results_entities_off, (
+        "empty union must be byte-identical to salient-terms path"
+    )
 
 
 def test_second_pass_entities_flag_off_is_byte_identical(setup):
@@ -421,9 +425,7 @@ def test_second_pass_entities_flag_off_is_byte_identical(setup):
     # Query that matches seed but not targets directly.
     query = "adoption puppy week"
     # Seed with entity "Rocket"; salient terms "adopted"/"puppy"/"training"/"week".
-    _add_with_entities(
-        storage, embedder, "adopted puppy training last week", ["Rocket"]
-    )
+    _add_with_entities(storage, embedder, "adopted puppy training last week", ["Rocket"])
     # Target 1: matches entity "Rocket" only (not salient terms or query).
     target_entity = _add(storage, embedder, "Rocket chewed garden hose", importance=0.1)
     # Target 2: matches salient terms "training" from seed (not entity "Rocket" or query).
@@ -431,8 +433,12 @@ def test_second_pass_entities_flag_off_is_byte_identical(setup):
 
     # Verify neither target matches query via FTS.
     fts_match = storage.fts_search("c1", query, limit=20)
-    assert target_entity not in {m["id"] for m in fts_match}, "target_entity must not match query via FTS"
-    assert target_salient not in {m["id"] for m in fts_match}, "target_salient must not match query via FTS"
+    assert target_entity not in {m["id"] for m in fts_match}, (
+        "target_entity must not match query via FTS"
+    )
+    assert target_salient not in {m["id"] for m in fts_match}, (
+        "target_salient must not match query via FTS"
+    )
 
     # Add 20 distractors with higher importance to bury low-importance targets.
     for i in range(20):
@@ -451,14 +457,20 @@ def test_second_pass_entities_flag_off_is_byte_identical(setup):
     results_off_2 = [m["id"] for m in retriever.retrieve(query, limit=2)]
     assert results_off_1 == results_off_2, "flag-off must be deterministic"
     assert target_salient in results_off_1, "target_salient must appear (salient terms find it)"
-    assert target_entity not in results_off_1, "target_entity must NOT appear (entity is ignored when flag=False)"
+    assert target_entity not in results_off_1, (
+        "target_entity must NOT appear (entity is ignored when flag=False)"
+    )
 
     # Run with entities=True, second_pass=1: should find target_entity via entity.
     cfg.second_pass_entities = True
     results_on = [m["id"] for m in retriever.retrieve(query, limit=2)]
-    assert target_entity in results_on, "target_entity must appear when entities=True (entity pivot)"
+    assert target_entity in results_on, (
+        "target_entity must appear when entities=True (entity pivot)"
+    )
     # Mutation guard: the entity path finds different targets than the salient path.
-    assert results_on != results_off_1, "entity pivot must produce different results than salient terms"
+    assert results_on != results_off_1, (
+        "entity pivot must produce different results than salient terms"
+    )
 
 
 # ── (f) second_pass_entity_max_df: Tier 3p DF-aware entity pivot filter ────
@@ -492,9 +504,7 @@ def test_second_pass_entity_df_filter_drops_flooding_entity(setup):
     # The wrong row: reachable only via the flooding entity "Caroline"; highest
     # importance in the store, so if it becomes gate-eligible it outranks
     # everything else on the importance axis.
-    wrong_row = _add(
-        storage, embedder, "Caroline wrong row special content here", importance=1.0
-    )
+    wrong_row = _add(storage, embedder, "Caroline wrong row special content here", importance=1.0)
     # 11 more "Caroline" rows (12 total incl. wrong_row) so "Caroline" sits on
     # 60% of the store's 20 rows -- well above a 0.05 max_df ceiling.
     for i in range(11):
@@ -567,9 +577,7 @@ def test_second_pass_entity_df_filter_empty_after_filter_falls_back_to_salient_t
     query = "expedition planning update"
     # Seed matches query; its only entity ("Everyone") floods the store, so it
     # is dropped by the DF filter, leaving an empty `terms` list.
-    _add_with_entities(
-        storage, embedder, "mountain expedition planned eagerly", ["Everyone"]
-    )
+    _add_with_entities(storage, embedder, "mountain expedition planned eagerly", ["Everyone"])
     # Target shares the salient term "mountain" with the seed (>= 5 chars),
     # zero overlap with the query -- reachable only via the salient-terms
     # fallback once the entity is filtered out.

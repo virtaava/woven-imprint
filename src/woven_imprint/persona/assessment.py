@@ -162,4 +162,6 @@ class TurnAssessor:
             except (ValueError, TypeError, KeyError):
                 facts = []
         entities = self._parse_entities(data.get("entities"))
-        return TurnAssessment(emotion=emotion, relationship=rel, beat=beat, facts=facts, entities=entities, raw=data)
+        return TurnAssessment(
+            emotion=emotion, relationship=rel, beat=beat, facts=facts, entities=entities, raw=data
+        )

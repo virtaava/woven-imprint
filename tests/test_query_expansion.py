@@ -48,11 +48,11 @@ def test_generate_expansions_caps_dedups_and_drops_originals():
     llm = FakeExpansionLLM(
         [
             "  Museum Visit ",
-            "museum visit",          # case-fold duplicate after strip
+            "museum visit",  # case-fold duplicate after strip
             "How many art events did I attend?",  # equals original -> dropped
-            "",                       # empty -> dropped
+            "",  # empty -> dropped
             "concert attended",
-            "play attended",          # beyond n=2 cap once dups removed
+            "play attended",  # beyond n=2 cap once dups removed
         ]
     )
     out = _generate_expansions(llm, "How many art events did I attend?", 2)
@@ -62,9 +62,9 @@ def test_generate_expansions_caps_dedups_and_drops_originals():
 @pytest.mark.parametrize(
     "bad",
     [
-        {"queries": ["a"]},   # dict, not list
-        [1, 2, 3],             # non-string items
-        "not json-list",       # plain string
+        {"queries": ["a"]},  # dict, not list
+        [1, 2, 3],  # non-string items
+        "not json-list",  # plain string
     ],
 )
 def test_generate_expansions_garbage_payload_returns_empty(bad):

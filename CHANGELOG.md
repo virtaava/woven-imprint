@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Tier 3r (debt batch, 2026-09-05)
+- `_run_bookkeeping` no longer notes arc bookkeeping as healthy when no story beat
+  parsed/applied this turn (health-tracking accuracy; `parse_beat` mutates the arc in
+  place, so `out.beat is None` means nothing happened).
+- `link_entities` scans with `limit=None` instead of a silent 100,000-row ceiling.
+- `persona/assessment.py` module docstring mentions the Tier 3o `entities` field.
+- Triaged off the queue with reasons: `memory_tokens` per-section enforcement is a
+  chat-path behavior change deserving its own measured slice (Plus bar), not a cleanup
+  batch; the `run_plus` aggregation-guard and `abstain_analysis` threshold items could
+  not be reproduced against current code and are presumed fixed by earlier tiers.
+
 ### Results — Tier 3q (2026-09-05): preference answer stage adopted for LME — headline 0.699
 - `--pref-stage`: closed-regex routing of advice-request questions to an assistant-style
   preference-grounded reply. **LME-S 0.656 → 0.699** (preference 3/17 → 9/17, abstain 7/7,

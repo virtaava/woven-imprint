@@ -3,6 +3,7 @@
 [![CI](https://github.com/virtaava/woven-imprint/actions/workflows/ci.yml/badge.svg)](https://github.com/virtaava/woven-imprint/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/woven-imprint.svg)](https://pypi.org/project/woven-imprint/)
 
 **Persistent Character Infrastructure**
 
@@ -50,6 +51,26 @@ No existing tool does all of this. Woven Imprint does.
 | One bookkeeping LLM call per turn | **Measured** | `bench_longhorizon: bookkeeping_call_count` |
 | Memory is a user-editable artifact — pinned memories are never dropped by the context budget | **Measured** | `bench_longhorizon: pinned_always_present`, server tests (`PATCH`/`DELETE /api/memory/{id}`, `/api/facts/{id}`) |
 | External benchmarks: LoCoMo / LoCoMo-Plus / LongMemEval-S, local judge | **Measured** | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
+
+## Benchmarks
+
+Measured on the standard long-term conversational-memory benchmarks with a fully local
+judge (Qwen3.5-35B) — same judge for memory mode and the full-context baseline, so the
+comparison is fair. Every number below is reproducible from this repo
+(`python -m eval.external run ...`); [docs/BENCHMARKS.md](docs/BENCHMARKS.md) documents
+the exact protocol, every prompt, and the complete improvement history — including the
+changes we measured and rejected.
+
+| benchmark | woven-imprint (memory) | full-context baseline |
+|---|---:|---:|
+| **LoCoMo** (1,986 questions) | **J 0.674** · adversarial abstention 0.888 | 0.696 at ~5.7× more prompt tokens |
+| **LongMemEval-S** (100 questions) | **J 0.699** | transcripts don't fit a 64K window |
+| **LoCoMo-Plus** cognitive (401 probes) | **0.356** | 0.135 |
+
+Memory mode reaches 97% of the full-context ceiling on LoCoMo at a fraction of the
+tokens, and beats full context 2.6× on the cognitive-cue test. Local-judge scores are
+not comparable to GPT-4o-judged numbers from other systems' papers — the full-context
+baseline under the identical judge is the honest yardstick.
 
 ## Installation
 
@@ -172,6 +193,13 @@ growth, callback generation. Chunkable and idempotent — built to run while a p
 `observe()` narrates ground truth from a game or simulation straight into memory
 ("Keeper fed you an extra portion") — no dialogue pair, no LLM generation required.
 
+### Entity Handles
+Every exchange's memories carry LLM-extracted entity names (`metadata.entities`) at zero
+extra cost — the field rides the existing bookkeeping call. Backfill older stores with
+`woven-imprint link-entities <character>`. Opt-in retrieval experiments built on them
+(query expansion, entity-pivot second pass) ship default-off with their measurements
+published in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+
 ### Health Surface
 `health()` exposes per-subsystem success/failure counters, so an app notices when a
 small model quietly starts failing fact extraction — instead of the character silently
@@ -224,8 +252,7 @@ The arc matches the novel: hostility peaks at the Hunsford proposal (trust -0.22
 flips after Darcy rescues the Bennets (affection turns positive), and resolves at the second
 proposal (trust +0.06, affection +0.22, familiarity 0.99).
 
-Deterministic benchmark suites run in CI; the current numbers are generated into [docs/RESULTS.md](docs/RESULTS.md) by `eval/render_results.py`. Four live persistence tests need a real model.
-LoCoMo, LoCoMo-Plus, and LongMemEval-S numbers, judged by the local brain against a full-context baseline, are documented in [docs/BENCHMARKS.md](docs/BENCHMARKS.md). LoCoMo J 0.67 (memory; 2.2 points under full context at ~5.7x fewer tokens, adversarial abstention 0.88) vs 0.70 (full context); LongMemEval-S 0.70 (100-question sample; K=100 + hardened abstention + aggregation & preference answer stages); LoCoMo-Plus cognitive 0.36 (regression root-caused to prompt section order and fixed; see BENCHMARKS).
+Deterministic benchmark suites run in CI; the current numbers are generated into [docs/RESULTS.md](docs/RESULTS.md) by `eval/render_results.py`. Four live persistence tests need a real model. External benchmark results are summarized in the [Benchmarks](#benchmarks) section above and fully documented in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 Covers memory recall, cross-session persistence, consolidation, belief revision,
 relationship bounds, persona consistency, adversarial persona resistance, and contradiction handling.
 

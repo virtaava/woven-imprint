@@ -59,9 +59,11 @@ def setup():
     cfg = get_config().memory
     original_second_pass = cfg.retrieval_second_pass
     original_entities = cfg.second_pass_entities
+    original_max_df = cfg.second_pass_entity_max_df
     yield storage, embedder, retriever, cfg
     cfg.retrieval_second_pass = original_second_pass
     cfg.second_pass_entities = original_entities
+    cfg.second_pass_entity_max_df = original_max_df
     storage.close()
 
 
@@ -457,3 +459,134 @@ def test_second_pass_entities_flag_off_is_byte_identical(setup):
     assert target_entity in results_on, "target_entity must appear when entities=True (entity pivot)"
     # Mutation guard: the entity path finds different targets than the salient path.
     assert results_on != results_off_1, "entity pivot must produce different results than salient terms"
+
+
+# ── (f) second_pass_entity_max_df: Tier 3p DF-aware entity pivot filter ────
+#
+# Spec: docs/superpowers/specs/2026-09-05-tier3p-df-entity-pivot.md
+#
+# Construction: a corpus where a flooding entity ("Caroline", on 60% of the
+# store's rows) would — if pivoted on — pull a high-importance but WRONG row
+# into the top results, while a rare entity ("Zephyrbeast", on exactly one
+# row) pivots straight to the RIGHT (target) row. `weight_semantic` /
+# `weight_keyword` / `weight_recency` are zeroed and `weight_importance`
+# raised to 1.0 so the outcome hinges purely on relevance-gate ELIGIBILITY —
+# i.e. purely on which entity term the DF filter allowed into the
+# second-pass FTS pivot, not on incidental keyword/semantic tie-breaking
+# (`Zephyrbeast`'s rarity would otherwise win the keyword axis outright
+# regardless of the filter, masking the effect being tested).
+def test_second_pass_entity_df_filter_drops_flooding_entity(setup):
+    storage, embedder, retriever, cfg = setup
+    query = "lighthouse keeper journal entry"
+    # Seed matches the query; carries both entities in its metadata.
+    _add_with_entities(
+        storage,
+        embedder,
+        "lighthouse keeper journal entry written today",
+        ["Caroline", "Zephyrbeast"],
+    )
+    # Target: reachable ONLY via the rare entity "Zephyrbeast" (content has zero
+    # word overlap with the query or the seed); deliberately the LOWEST
+    # importance in the store so it can only win by being gate-eligible at all.
+    target = _add(storage, embedder, "Zephyrbeast slept beneath the ferns", importance=0.01)
+    # The wrong row: reachable only via the flooding entity "Caroline"; highest
+    # importance in the store, so if it becomes gate-eligible it outranks
+    # everything else on the importance axis.
+    wrong_row = _add(
+        storage, embedder, "Caroline wrong row special content here", importance=1.0
+    )
+    # 11 more "Caroline" rows (12 total incl. wrong_row) so "Caroline" sits on
+    # 60% of the store's 20 rows -- well above a 0.05 max_df ceiling.
+    for i in range(11):
+        _add(storage, embedder, f"Caroline organized paperwork day {i}", importance=0.3)
+    # 6 filler rows sharing no vocabulary with anything above, padding the
+    # store to 20 rows total (Caroline: 12/20 = 60%, Zephyrbeast: 1/20 = 5%).
+    for i in range(6):
+        _add(storage, embedder, f"store opening hours {i} daily", importance=0.3)
+
+    assert storage.fts_term_count("c1", "Caroline") == 12
+    assert storage.fts_term_count("c1", "Zephyrbeast") == 1
+
+    # Verify neither target nor wrong_row matches the query directly via FTS —
+    # both are reachable only through the second-pass entity pivot.
+    fts_match = {m["id"] for m in storage.fts_search("c1", query, limit=20)}
+    assert target not in fts_match and wrong_row not in fts_match
+
+    orig_weights = (
+        cfg.weight_semantic,
+        cfg.weight_keyword,
+        cfg.weight_recency,
+        cfg.weight_importance,
+    )
+    cfg.weight_semantic = 0.0
+    cfg.weight_keyword = 0.0
+    cfg.weight_recency = 0.0
+    cfg.weight_importance = 1.0
+    cfg.retrieval_second_pass = 1
+    cfg.second_pass_entities = True
+    try:
+        # POSITIVE (filter on, default 0.05): "Caroline" (df=12/20=0.60) is
+        # dropped, "Zephyrbeast" (df=1/20=0.05) survives -- the rare-entity
+        # target appears, and the flood-entity wrong row does NOT displace it.
+        cfg.second_pass_entity_max_df = 0.05
+        results_filtered = [m["id"] for m in retriever.retrieve(query, limit=2)]
+        assert target in results_filtered, (
+            "DF filter on: rare-entity target must appear via the Zephyrbeast pivot"
+        )
+        assert wrong_row not in results_filtered, (
+            "DF filter on: flooding-entity wrong row must NOT displace the target"
+        )
+
+        # NEGATIVE CONTROL: filter effectively off (max_df=1.0 -- both entities'
+        # DF ratios are <= 1.0) must produce a DIFFERENT outcome: the flooding
+        # entity is now pivot-eligible too, its high-importance wrong row wins
+        # the importance axis outright, and the low-importance target is
+        # crowded out of the small top-K.
+        cfg.second_pass_entity_max_df = 1.0
+        results_unfiltered = [m["id"] for m in retriever.retrieve(query, limit=2)]
+        assert wrong_row in results_unfiltered, (
+            "negative control (max_df=1.0): wrong row must appear once Caroline is pivot-eligible"
+        )
+        assert target not in results_unfiltered, (
+            "negative control (max_df=1.0): flooding entity must displace the target"
+        )
+        assert results_filtered != results_unfiltered, (
+            "DF filter must change the outcome relative to the max_df=1.0 negative control"
+        )
+    finally:
+        cfg.weight_semantic, cfg.weight_keyword, cfg.weight_recency, cfg.weight_importance = (
+            orig_weights
+        )
+
+
+def test_second_pass_entity_df_filter_empty_after_filter_falls_back_to_salient_terms(setup):
+    """All extracted entities filtered out by DF -> `terms` empties -> the
+    existing `_salient_terms` fallback (shared with an empty entity union)
+    fires unchanged, per spec §Mechanism 3."""
+    storage, embedder, retriever, cfg = setup
+    query = "expedition planning update"
+    # Seed matches query; its only entity ("Everyone") floods the store, so it
+    # is dropped by the DF filter, leaving an empty `terms` list.
+    _add_with_entities(
+        storage, embedder, "mountain expedition planned eagerly", ["Everyone"]
+    )
+    # Target shares the salient term "mountain" with the seed (>= 5 chars),
+    # zero overlap with the query -- reachable only via the salient-terms
+    # fallback once the entity is filtered out.
+    target = _add(storage, embedder, "mountain caves explored carefully", importance=0.01)
+    # "Everyone" floods 11 more rows (12/17 = ~0.71, well above max_df=0.05).
+    for i in range(11):
+        _add(storage, embedder, f"Everyone gathered for meeting {i} today", importance=0.3)
+    for i in range(4):
+        _add(storage, embedder, f"weather satellite data temperature {i}", importance=0.5)
+
+    fts_match = {m["id"] for m in storage.fts_search("c1", query, limit=20)}
+    assert target not in fts_match
+
+    cfg.retrieval_second_pass = 1
+    cfg.second_pass_entities = True
+    cfg.second_pass_entity_max_df = 0.05
+    results = [m["id"] for m in retriever.retrieve(query, limit=3)]
+    assert target in results, (
+        "an entity list that filters to empty must fall through to _salient_terms"
+    )

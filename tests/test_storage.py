@@ -162,6 +162,65 @@ class TestMemoryCRUD:
         assert len(results) >= 1
         assert results[0]["id"] == "m1"
 
+    def test_fts_term_count(self, storage):
+        """Tier 3p (docs/superpowers/specs/2026-09-05-tier3p-df-entity-pivot.md):
+        `fts_term_count` backs the DF-aware entity pivot filter -- counts,
+        sanitization (`re.findall(r"\\w+", ...)`, quoted), and the
+        sanitizes-to-nothing -> 0 case, same discipline as `fts_search`."""
+        storage.save_character("c1", "Alice", {})
+        storage.save_memory(
+            {
+                "id": "m1",
+                "character_id": "c1",
+                "tier": "buffer",
+                "content": "Caroline organized paperwork today",
+            }
+        )
+        storage.save_memory(
+            {
+                "id": "m2",
+                "character_id": "c1",
+                "tier": "buffer",
+                "content": "Caroline chewed garden hose",
+            }
+        )
+        storage.save_memory(
+            {
+                "id": "m3",
+                "character_id": "c1",
+                "tier": "buffer",
+                "content": "Dogs are loyal companions",
+            }
+        )
+        # Counts: term matching two rows.
+        assert storage.fts_term_count("c1", "Caroline") == 2
+        # A term matching no rows.
+        assert storage.fts_term_count("c1", "Zephyrbeast") == 0
+        # Sanitization: FTS5 operator characters stripped, matches unaffected.
+        assert storage.fts_term_count("c1", 'Caroline" OR "*') == 2
+        # A term that sanitizes to nothing (pure punctuation/operators) -> 0,
+        # without raising and without querying a malformed MATCH expression.
+        assert storage.fts_term_count("c1", '"*() OR') == 0
+        assert storage.fts_term_count("c1", "") == 0
+
+    def test_fts_term_count_scoped_to_character_and_active_status(self, storage):
+        storage.save_character("c1", "Alice", {})
+        storage.save_character("c2", "Bob", {})
+        storage.save_memory(
+            {"id": "m1", "character_id": "c1", "tier": "buffer", "content": "Caroline visited"}
+        )
+        storage.save_memory(
+            {"id": "m2", "character_id": "c2", "tier": "buffer", "content": "Caroline visited"}
+        )
+        storage.save_memory(
+            {"id": "m3", "character_id": "c1", "tier": "buffer", "content": "Caroline archived"}
+        )
+        storage.update_memory_status("m3", "archived")
+        # Only c1's active memories count -- m2 (other character) and m3
+        # (archived) are excluded, same scoping as fts_search.
+        assert storage.fts_term_count("c1", "Caroline") == 1
+        assert storage.fts_term_count("c2", "Caroline") == 1
+
     def test_embedding_roundtrip(self, storage):
         storage.save_character("c1", "Alice", {})
         vec = [0.1, 0.2, 0.3, 0.4]

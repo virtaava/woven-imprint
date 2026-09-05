@@ -145,12 +145,26 @@ class MemoryConfig:
     # behave exactly as before. Off by default pending the pre-registered
     # locomo-t3oEnt bar.
     second_pass_entities: bool = False
+    # Tier 3p (docs/superpowers/specs/2026-09-05-tier3p-df-entity-pivot.md):
+    # DF-aware filter on `second_pass_entities` — two-speaker stores make most
+    # entity handles low-discriminative (a speaker name matches half the
+    # rows), so the entity pivot floods the candidate pool instead of
+    # narrowing it (Tier 3o measured regression: 0.638 vs 0.674 no-second-pass
+    # baseline). An entity is pivot-eligible only if its FTS document count is
+    # <= `second_pass_entity_max_df * len(candidate pool)` (the candidate
+    # pool already in hand at that point in `retrieve()`, no extra query);
+    # entities above the ceiling are dropped, and an empty result after
+    # filtering falls back to `_salient_terms` unchanged. No effect unless
+    # `second_pass_entities=True`. Validated: `0 < value <= 1`.
+    second_pass_entity_max_df: float = 0.05
 
     def __post_init__(self):
         if self.query_expansion < 0:
             raise ValueError("query_expansion must be >= 0")
         if self.query_expansion_weight <= 0:
             raise ValueError("query_expansion_weight must be > 0")
+        if not (0 < self.second_pass_entity_max_df <= 1):
+            raise ValueError("second_pass_entity_max_df must be > 0 and <= 1")
 
 
 @dataclass
@@ -539,6 +553,7 @@ memory:
   # (aggregation/multi-hop recall); +1 LLM call + 1 embed_batch + N fts_search when on.
   # query_expansion_weight: 0.5    # RRF weight of each expansion's ranked lists.
   # second_pass_entities: false   # second-pass FTS pivots on seeds' metadata.entities
+  # second_pass_entity_max_df: 0.05  # entity pivot-eligible only if FTS doc-count <= this * pool size
 
 context:
   total_tokens: 6000
